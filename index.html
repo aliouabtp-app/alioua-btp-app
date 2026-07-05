@@ -246,6 +246,38 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   max-width:100%;
 }
 .chart-wrap canvas{ max-width:100%; }
+.chart-share-btn{
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  width:100%;
+  margin-top:8px;
+  background:var(--stone);
+  border:1px solid var(--line);
+  border-radius:9px;
+  padding:8px;
+  font-size:11.5px;
+  font-weight:700;
+  color:var(--navy-deep);
+  font-family:inherit;
+  cursor:pointer;
+}
+.chart-share-btn svg{ width:14px; height:14px; }
+
+.table-download-btn{
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  width:100%;
+  margin-top:-2px;
+  margin-bottom:8px;
+  background:var(--stone);
+  border:1px solid var(--line);
+  border-top:none;
+  border-radius:0 0 9px 9px;
+  padding:7px;
+  font-size:11px;
+  font-weight:700;
+  color:var(--navy-deep);
+  font-family:inherit;
+  cursor:pointer;
+}
 
 .img-wrap{
   margin:8px 0;
@@ -289,6 +321,18 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 .img-loading span:nth-child(3){animation-delay:.4s;}
 .img-loading-label{ font-size:11.5px; color:var(--ink-soft); }
 .img-error{ padding:14px; font-size:12px; color:var(--maroon); text-align:center; }
+
+.appt-action-card{
+  margin:8px 0;
+  background:#EAF6EE;
+  border:1px solid #B7E0C3;
+  border-radius:12px;
+  padding:11px 13px;
+  font-size:12.5px;
+  color:#1C7C3F;
+  line-height:1.7;
+}
+.appt-action-icon{ margin-left:4px; }
 .msg time{
   display:block;
   font-family:'IBM Plex Mono', monospace;
@@ -1018,6 +1062,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
           <button class="btn-primary" id="txAddBtn">➕ إضافة عملية</button>
         </div>
         <div class="chart-wrap" id="accountingChartWrap"><canvas id="accountingChart"></canvas></div>
+        <button class="table-download-btn" id="exportReportBtn" style="border-radius:9px; border:1px solid var(--line); margin-bottom:12px;">⬇️ تحميل التقرير الإجمالي (CSV)</button>
         <div id="txList"></div>
       </div>
 
@@ -1159,6 +1204,12 @@ const SYSTEM_PROMPT = `اسمك "يونس"، وأنت المساعد الذكي 
 \`\`\`
 لا تستعمل الرسم البياني أو الصورة إلا إذا كانا يخدمون الطلب فعلاً، ولا تكررهم بلا داعي.
 
+لما المستخدم يطلب منك تضيف موعد، تذكير، أو تحدد له وقت لشي (متل "ذكرني بـ..."، "ضيف موعد..."، "عندي اجتماع يوم...")، استعمل بالضبط هاد الشكل بسطر لحاله، وJSON صحيح جوّاه، بعد ما تأكد فاهم التاريخ والوقت المطلوبين (استعمل التاريخ الحالي المعطى لك تحت لحساب "غدا"، "بعد غد"، أسماء الأيام، إلخ):
+\`\`\`add_appointment
+{"title":"عنوان الموعد", "date":"YYYY-MM-DD", "time":"HH:MM", "notes":"ملاحظات اختيارية"}
+\`\`\`
+بعد ما تولّد هاد الكتلة، أكّد للمستخدم بجملة قصيرة إنك ضفت الموعد. إذا التاريخ أو الوقت مو واضحين من كلام المستخدم، اسأله يحددهم قبل ما تولّد الكتلة.
+
 خلي أسلوبك مهني ومباشر ومختصر يناسب رجل أعمال مشغول. رتب الأرقام والجداول بوضوح عند الحاجة. لا تخترع أرقامًا أو حقائق عن الشركة إن لم تُعطَ لك.`;
 
 let messages = []; // {role: 'user'|'model', text, time}
@@ -1233,6 +1284,7 @@ function renderMessages(){
   messages.forEach(m=>{
     const div = document.createElement('div');
     div.className = 'msg ' + (m.role === 'user' ? 'user' : 'bot');
+    div.setAttribute('dir', 'auto');
     if(m.role === 'user'){
       const imgHtml = m.image ? `<img class="msg-img" src="data:${m.image.mime};base64,${m.image.data}">` : '';
       div.innerHTML = imgHtml + escapeHtml(m.text).replace(/\n/g,'<br>') + `<time>${fmtTime(m.time)}</time>`;
@@ -1253,17 +1305,18 @@ function escapeHtml(str){
   return d.innerHTML;
 }
 
-/* ---------- عرض غني: نص + جداول + رسوم بيانية + صور ---------- */
+/* ---------- عرض غني: نص + جداول + رسوم بيانية + صور + مواعيد ---------- */
 function renderRichBotContent(container, rawText){
-  // نقسم النص لأجزاء: كتل chart، كتل image، وبقية النص
-  const blockRegex = /```chart\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)/g;
+  // نقسم النص لأجزاء: كتل chart، كتل image، كتل add_appointment، وبقية النص
+  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)/g;
   let lastIndex = 0;
   let match;
   const parts = [];
   while((match = blockRegex.exec(rawText)) !== null){
     if(match.index > lastIndex){ parts.push({type:'text', content: rawText.slice(lastIndex, match.index)}); }
     if(match[1] !== undefined){ parts.push({type:'chart', content: match[1].trim()}); }
-    else{ parts.push({type:'image', content: (match[2] !== undefined ? match[2] : match[3]).trim()}); }
+    else if(match[2] !== undefined){ parts.push({type:'add_appointment', content: match[2].trim()}); }
+    else{ parts.push({type:'image', content: (match[3] !== undefined ? match[3] : match[4]).trim()}); }
     lastIndex = blockRegex.lastIndex;
   }
   if(lastIndex < rawText.length){ parts.push({type:'text', content: rawText.slice(lastIndex)}); }
@@ -1274,6 +1327,8 @@ function renderRichBotContent(container, rawText){
       appendTextWithTables(container, part.content);
     }else if(part.type === 'chart'){
       appendChart(container, part.content);
+    }else if(part.type === 'add_appointment'){
+      appendAppointmentAction(container, part.content);
     }else if(part.type === 'image'){
       appendImage(container, part.content);
     }
@@ -1288,6 +1343,7 @@ function appendTextWithTables(container, text){
   function flushText(){
     if(buffer.length === 0) return;
     const span = document.createElement('div');
+    span.setAttribute('dir', 'auto');
     span.innerHTML = escapeHtml(buffer.join('\n')).replace(/\n/g,'<br>');
     container.appendChild(span);
     buffer = [];
@@ -1300,15 +1356,16 @@ function appendTextWithTables(container, text){
     if(rows.length === 0){ tableLines=[]; return; }
     const table = document.createElement('table');
     table.className = 'msg-table';
+    table.setAttribute('dir', 'auto');
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
-    rows[0].forEach(h=>{ const th=document.createElement('th'); th.textContent=h; headRow.appendChild(th); });
+    rows[0].forEach(h=>{ const th=document.createElement('th'); th.textContent=h; th.setAttribute('dir','auto'); headRow.appendChild(th); });
     thead.appendChild(headRow);
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
     rows.slice(1).forEach(r=>{
       const tr = document.createElement('tr');
-      r.forEach(c=>{ const td=document.createElement('td'); td.textContent=c; tr.appendChild(td); });
+      r.forEach(c=>{ const td=document.createElement('td'); td.textContent=c; td.setAttribute('dir','auto'); tr.appendChild(td); });
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -1316,6 +1373,17 @@ function appendTextWithTables(container, text){
     wrap.className = 'table-wrap';
     wrap.appendChild(table);
     container.appendChild(wrap);
+
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'table-download-btn';
+    dlBtn.innerHTML = '⬇️ تحميل الجدول (CSV)';
+    dlBtn.addEventListener('click', ()=>{
+      const csv = rows.map(r=> r.map(c=> '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+      const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+      shareImageBlob(blob, 'جدول-'+Date.now()+'.csv');
+    });
+    container.appendChild(dlBtn);
+
     tableLines = [];
   }
 
@@ -1368,9 +1436,41 @@ function appendChart(container, jsonText){
         }
       }
     });
+    setTimeout(()=>{
+      canvas.toBlob(blob=>{
+        if(!blob) return;
+        const btn = document.createElement('button');
+        btn.className = 'chart-share-btn';
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"></line></svg><span>تحميل / مشاركة</span>`;
+        btn.addEventListener('click', ()=> shareImageBlob(blob, 'رسم-بياني-'+Date.now()+'.png'));
+        wrap.appendChild(btn);
+      }, 'image/png');
+    }, 150);
   }catch(e){
     wrap.innerHTML = '<div style="font-size:12px; color:var(--ink-soft);">تعذّر عرض الرسم البياني</div>';
   }
+}
+
+function appendAppointmentAction(container, jsonText){
+  const wrap = document.createElement('div');
+  wrap.className = 'appt-action-card';
+  try{
+    const data = JSON.parse(jsonText);
+    if(!data.title || !data.date || !data.time) throw new Error('ناقص بيانات');
+    const dt = `${data.date}T${data.time}`;
+    const list = loadAppts();
+    list.push({id:'a'+Date.now(), title:data.title, dt, notes:data.notes||'', done:false, notified:false});
+    saveAppts(list);
+    const dObj = new Date(dt);
+    const whenStr = dObj.toLocaleString('ar', {weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'});
+    wrap.innerHTML = `<span class="appt-action-icon">✅</span> تمت إضافة الموعد <strong>"${escapeHtml(data.title)}"</strong> بتاريخ ${whenStr} لقائمة المواعيد.`;
+    if(typeof renderAppts === 'function' && document.getElementById('viewAppt')?.classList.contains('active')){
+      renderAppts();
+    }
+  }catch(e){
+    wrap.innerHTML = `<span class="appt-action-icon">⚠️</span> ما قدرت أضيف الموعد، صار خطأ بالبيانات.`;
+  }
+  container.appendChild(wrap);
 }
 
 function appendImage(container, prompt){
@@ -1527,6 +1627,12 @@ async function callGemini(key, msgs){
     return { role: m.role === 'user' ? 'user' : 'model', parts };
   });
 
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
+  const dayName = now.toLocaleDateString('ar', {weekday:'long'});
+  const timeStr = now.toTimeString().slice(0,5);
+  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.`;
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
   let res;
   try{
@@ -1534,7 +1640,7 @@ async function callGemini(key, msgs){
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        system_instruction: {parts:[{text: SYSTEM_PROMPT}]},
+        system_instruction: {parts:[{text: fullSystemPrompt}]},
         contents,
         generationConfig: {temperature:0.7, maxOutputTokens:1024}
       })
@@ -1697,6 +1803,7 @@ function speakText(text){
   window.speechSynthesis.cancel();
   const clean = text
     .replace(/```chart[\s\S]*?```/g, ' فيه رسم بياني بالرد. ')
+    .replace(/```add_appointment[\s\S]*?```/g, ' تمت إضافة الموعد. ')
     .replace(/```image:[\s\S]*?```/g, ' فيه صورة بالرد. ')
     .replace(/```image:.+/g, ' فيه صورة بالرد. ')
     .replace(/^\s*\|.*\|\s*$/gm, '')
@@ -1704,7 +1811,11 @@ function speakText(text){
   const utter = new SpeechSynthesisUtterance(clean);
   const chosenName = localStorage.getItem(VOICE_NAME_KEY);
   const voices = window.speechSynthesis.getVoices();
-  const chosenVoice = voices.find(v=>v.name === chosenName);
+  let chosenVoice = voices.find(v=>v.name === chosenName);
+  if(!chosenVoice){
+    // ما في صوت محفوظ أو ما لقيناه، دور على أي صوت عربي متوفر بالجهاز
+    chosenVoice = voices.find(v=> v.lang && v.lang.toLowerCase().startsWith('ar'));
+  }
   if(chosenVoice){
     utter.voice = chosenVoice;
     utter.lang = chosenVoice.lang;
@@ -2001,6 +2112,20 @@ document.getElementById('typeExpenseBtn').addEventListener('click', ()=>{
   document.getElementById('typeIncomeBtn').classList.remove('active');
 });
 
+document.getElementById('exportReportBtn').addEventListener('click', ()=>{
+  const list = loadTx().slice().sort((a,b)=> new Date(a.date) - new Date(b.date));
+  const income = list.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const expense = list.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const rows = [['التاريخ','النوع','الفئة','الملاحظة','المبلغ (درهم)']];
+  list.forEach(t=> rows.push([t.date, t.type==='income'?'دخل':'مصروف', t.category, t.note||'', t.amount]));
+  rows.push(['', '', '', 'إجمالي الدخل', income]);
+  rows.push(['', '', '', 'إجمالي المصروف', expense]);
+  rows.push(['', '', '', 'الصافي', income-expense]);
+  const csv = rows.map(r=> r.map(c=> '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  shareImageBlob(blob, 'تقرير-محاسبي-ALIOUA-BTP-'+new Date().toISOString().slice(0,10)+'.csv');
+});
+
 document.getElementById('txAddBtn').addEventListener('click', ()=>{
   const amount = parseFloat(document.getElementById('txAmount').value);
   const category = document.getElementById('txCategory').value.trim() || (currentTxType==='income'?'دخل':'مصروف');
@@ -2099,6 +2224,7 @@ document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
 const CLIENTS_KEY = 'alioua_btp_clients';
 const INVOICES_KEY = 'alioua_btp_invoices';
 let openClientId = null;
+let editClientId = null;
 
 function loadClients(){ try{ return JSON.parse(localStorage.getItem(CLIENTS_KEY)||'[]'); }catch(e){ return []; } }
 function saveClients(l){ localStorage.setItem(CLIENTS_KEY, JSON.stringify(l)); }
@@ -2143,11 +2269,34 @@ function renderClients(){
       </div>
       <div class="lc-actions">
         <button class="lc-btn" data-open="${client.id}">🧾 فاتورة جديدة</button>
+        <button class="lc-btn" data-edit-client="${client.id}">✏️ تعديل</button>
+        <button class="lc-btn" data-report-client="${client.id}">📊 تقرير أداء</button>
       </div>
+      <div id="editForm_${client.id}"></div>
       <div id="invForm_${client.id}"></div>
       <div id="invList_${client.id}"></div>
     `;
     el.appendChild(card);
+
+    if(editClientId === client.id){
+      const editHost = card.querySelector('#editForm_'+client.id);
+      editHost.className = 'lc-invoice-form';
+      editHost.innerHTML = `
+        <input type="text" id="editName_${client.id}" dir="auto" value="${escapeHtml(client.name)}" placeholder="اسم العميل" style="margin-bottom:8px;">
+        <input type="text" id="editPhone_${client.id}" dir="auto" value="${escapeHtml(client.phone||'')}" placeholder="رقم الهاتف" style="margin-bottom:8px;">
+        <button class="btn-primary" id="editSave_${client.id}">💾 حفظ التعديل</button>
+      `;
+      editHost.querySelector('#editSave_'+client.id).addEventListener('click', ()=>{
+        const newName = document.getElementById('editName_'+client.id).value.trim();
+        const newPhone = document.getElementById('editPhone_'+client.id).value.trim();
+        if(!newName) return;
+        const list = loadClients();
+        const c = list.find(x=>x.id === client.id);
+        if(c){ c.name = newName; c.phone = newPhone; saveClients(list); }
+        editClientId = null;
+        renderClients();
+      });
+    }
 
     if(clientInvoices.length){
       const invListEl = card.querySelector('#invList_'+client.id);
@@ -2209,7 +2358,28 @@ function renderClients(){
   el.querySelectorAll('[data-open]').forEach(b=>{
     b.addEventListener('click', ()=>{
       openClientId = (openClientId === b.dataset.open) ? null : b.dataset.open;
+      editClientId = null;
       renderClients();
+    });
+  });
+  el.querySelectorAll('[data-edit-client]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      editClientId = (editClientId === b.dataset.editClient) ? null : b.dataset.editClient;
+      openClientId = null;
+      renderClients();
+    });
+  });
+  el.querySelectorAll('[data-report-client]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const client = loadClients().find(c=>c.id === b.dataset.reportClient);
+      if(!client) return;
+      const clientInvoices = invoices.filter(i=>i.clientId === client.id);
+      const total = clientInvoices.reduce((s,i)=>s+invoiceTotal(i),0);
+      const paid = clientInvoices.filter(i=>i.status==='paid').reduce((s,i)=>s+invoiceTotal(i),0);
+      const due = total - paid;
+      const linesDetail = clientInvoices.map(i=>`- فاتورة ${i.date}: ${invoiceTotal(i).toLocaleString('ar')} درهم (${i.status==='paid'?'مدفوعة':'معلّقة'})`).join('\n');
+      const msg = `جهّز لي جدول أداء احترافي للعميل "${client.name}" باسم شركة ALIOUA BTP، فيه: عدد الفواتير (${clientInvoices.length})، الإجمالي (${total.toLocaleString('ar')} درهم)، المدفوع (${paid.toLocaleString('ar')} درهم)، المتبقي (${due.toLocaleString('ar')} درهم). تفاصيل الفواتير:\n${linesDetail || 'لا يوجد فواتير بعد'}`;
+      goToChatWithText(msg);
     });
   });
   el.querySelectorAll('.lc-del').forEach(b=>{
@@ -2234,6 +2404,8 @@ function renderClients(){
 
 /* ---------- الموردين ---------- */
 const SUPPLIERS_KEY = 'alioua_btp_suppliers';
+let editSupplierId = null;
+let purchaseSupplierId = null;
 function loadSuppliers(){ try{ return JSON.parse(localStorage.getItem(SUPPLIERS_KEY)||'[]'); }catch(e){ return []; } }
 function saveSuppliers(l){ localStorage.setItem(SUPPLIERS_KEY, JSON.stringify(l)); }
 
@@ -2261,7 +2433,8 @@ function renderSuppliers(){
   }
   el.innerHTML = '';
   list.forEach(sup=>{
-    const spent = tx.filter(t=>t.type==='expense' && t.category === sup.name).reduce((s,t)=>s+t.amount,0);
+    const purchases = tx.filter(t=>t.type==='expense' && t.supplierId === sup.id);
+    const spent = purchases.reduce((s,t)=>s+t.amount,0);
     const card = document.createElement('div');
     card.className = 'list-card';
     card.innerHTML = `
@@ -2275,9 +2448,71 @@ function renderSuppliers(){
       </div>
       <div class="lc-actions">
         <button class="lc-btn" data-quick="${sup.id}">💸 تسجيل شراء</button>
+        <button class="lc-btn" data-edit-sup="${sup.id}">✏️ تعديل</button>
       </div>
+      <div id="supEditForm_${sup.id}"></div>
+      <div id="supPurchaseForm_${sup.id}"></div>
+      <div id="supPurchaseList_${sup.id}"></div>
     `;
     el.appendChild(card);
+
+    if(purchases.length){
+      const listEl = card.querySelector('#supPurchaseList_'+sup.id);
+      purchases.slice().reverse().forEach(p=>{
+        const row = document.createElement('div');
+        row.className = 'lc-invoice-item';
+        row.innerHTML = `<span dir="auto">${p.date} — ${escapeHtml(p.note||'شراء')}</span><span>${p.amount.toLocaleString('ar')} درهم</span>`;
+        listEl.appendChild(row);
+      });
+    }
+
+    if(editSupplierId === sup.id){
+      const editHost = card.querySelector('#supEditForm_'+sup.id);
+      editHost.className = 'lc-invoice-form';
+      editHost.innerHTML = `
+        <input type="text" id="supEditName_${sup.id}" dir="auto" value="${escapeHtml(sup.name)}" placeholder="اسم المورد" style="margin-bottom:8px;">
+        <input type="text" id="supEditCat_${sup.id}" dir="auto" value="${escapeHtml(sup.category||'')}" placeholder="نوع المواد" style="margin-bottom:8px;">
+        <input type="text" id="supEditPhone_${sup.id}" dir="auto" value="${escapeHtml(sup.phone||'')}" placeholder="رقم الهاتف" style="margin-bottom:8px;">
+        <button class="btn-primary" id="supEditSave_${sup.id}">💾 حفظ التعديل</button>
+      `;
+      editHost.querySelector('#supEditSave_'+sup.id).addEventListener('click', ()=>{
+        const newName = document.getElementById('supEditName_'+sup.id).value.trim();
+        if(!newName) return;
+        const l = loadSuppliers();
+        const s = l.find(x=>x.id === sup.id);
+        if(s){
+          s.name = newName;
+          s.category = document.getElementById('supEditCat_'+sup.id).value.trim();
+          s.phone = document.getElementById('supEditPhone_'+sup.id).value.trim();
+          saveSuppliers(l);
+        }
+        editSupplierId = null;
+        renderSuppliers();
+      });
+    }
+
+    if(purchaseSupplierId === sup.id){
+      const pHost = card.querySelector('#supPurchaseForm_'+sup.id);
+      pHost.className = 'lc-invoice-form';
+      pHost.innerHTML = `
+        <input type="text" id="pDesc_${sup.id}" dir="auto" placeholder="اسم/وصف المشترى (مثلاً: إسمنت 50 كيس)" style="margin-bottom:8px;">
+        <input type="number" id="pAmount_${sup.id}" dir="ltr" placeholder="المبلغ (درهم)" inputmode="decimal" style="margin-bottom:8px;">
+        <input type="date" id="pDate_${sup.id}" style="margin-bottom:8px;">
+        <button class="btn-primary" id="pSave_${sup.id}">💾 حفظ الشراء</button>
+      `;
+      pHost.querySelector('#pDate_'+sup.id).valueAsDate = new Date();
+      pHost.querySelector('#pSave_'+sup.id).addEventListener('click', ()=>{
+        const desc = document.getElementById('pDesc_'+sup.id).value.trim();
+        const amount = parseFloat(document.getElementById('pAmount_'+sup.id).value);
+        const date = document.getElementById('pDate_'+sup.id).value || new Date().toISOString().slice(0,10);
+        if(!amount || amount <= 0) return;
+        const txs = loadTx();
+        txs.push({id:'t'+Date.now(), type:'expense', amount, category: sup.name, date, note: desc || 'شراء من مورد', supplierId: sup.id});
+        saveTx(txs);
+        purchaseSupplierId = null;
+        renderSuppliers();
+      });
+    }
   });
   el.querySelectorAll('.lc-del').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -2287,13 +2522,15 @@ function renderSuppliers(){
   });
   el.querySelectorAll('[data-quick]').forEach(b=>{
     b.addEventListener('click', ()=>{
-      const sup = list.find(s=>s.id === b.dataset.quick);
-      const amountStr = prompt('مبلغ الشراء من ' + sup.name + ' (درهم):');
-      const amount = parseFloat(amountStr);
-      if(!amount || amount <= 0) return;
-      const txs = loadTx();
-      txs.push({id:'t'+Date.now(), type:'expense', amount, category: sup.name, date: new Date().toISOString().slice(0,10), note:'شراء من مورد'});
-      saveTx(txs);
+      purchaseSupplierId = (purchaseSupplierId === b.dataset.quick) ? null : b.dataset.quick;
+      editSupplierId = null;
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-edit-sup]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      editSupplierId = (editSupplierId === b.dataset.editSup) ? null : b.dataset.editSup;
+      purchaseSupplierId = null;
       renderSuppliers();
     });
   });
