@@ -1174,7 +1174,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 
 const STORAGE_KEY = 'alioua_btp_api_key';
 const HISTORY_KEY = 'alioua_btp_chat_history';
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-3.5-flash';
+const FALLBACK_MODEL = 'gemini-2.5-flash';
 
 const chatEl = document.getElementById('chat');
 const inputEl = document.getElementById('msgInput');
@@ -1619,7 +1620,7 @@ async function sendMessage(){
 }
 
 async function callGemini(key, msgs){
-  const contents = msgs.slice(-20).map(m=>{
+  const contents = msgs.slice(-14).map(m=>{
     const parts = [];
     if(m.text) parts.push({text: m.text});
     if(m.image) parts.push({inlineData:{mimeType: m.image.mime, data: m.image.data}});
@@ -1633,20 +1634,29 @@ async function callGemini(key, msgs){
   const timeStr = now.toTimeString().slice(0,5);
   const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
-  let res;
-  try{
-    res = await fetch(url, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        system_instruction: {parts:[{text: fullSystemPrompt}]},
-        contents,
-        generationConfig: {temperature:0.7, maxOutputTokens:1024}
-      })
-    });
-  }catch(e){
-    const err = new Error('NETWORK'); err.detail = 'ما قدرنا نوصلو للإنترنت. تأكد من اتصالك.'; throw err;
+  async function tryModel(modelId){
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`;
+    let res;
+    try{
+      res = await fetch(url, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          system_instruction: {parts:[{text: fullSystemPrompt}]},
+          contents,
+          generationConfig: {temperature:0.7, maxOutputTokens:1024}
+        })
+      });
+    }catch(e){
+      const err = new Error('NETWORK'); err.detail = 'ما قدرنا نوصلو للإنترنت. تأكد من اتصالك.'; throw err;
+    }
+    return res;
+  }
+
+  let res = await tryModel(MODEL);
+  // إذا النموذج الجديد مو متوفر بعد لحسابك، نرجع تلقائيًا للنموذج الاحتياطي
+  if(res.status === 404 && MODEL !== FALLBACK_MODEL){
+    res = await tryModel(FALLBACK_MODEL);
   }
 
   if(res.status === 400 || res.status === 403){ throw new Error('AUTH'); }
