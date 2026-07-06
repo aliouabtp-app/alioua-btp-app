@@ -2225,6 +2225,7 @@ const CLIENTS_KEY = 'alioua_btp_clients';
 const INVOICES_KEY = 'alioua_btp_invoices';
 let openClientId = null;
 let editClientId = null;
+let editInvoiceId = null;
 
 function loadClients(){ try{ return JSON.parse(localStorage.getItem(CLIENTS_KEY)||'[]'); }catch(e){ return []; } }
 function saveClients(l){ localStorage.setItem(CLIENTS_KEY, JSON.stringify(l)); }
@@ -2308,35 +2309,47 @@ function renderClients(){
           <span style="display:flex; align-items:center; gap:6px;">
             <span class="lc-badge ${inv.status}">${inv.status==='paid'?'مدفوعة':'معلّقة'}</span>
             <button class="lc-btn" data-toggle-inv="${inv.id}" style="padding:3px 8px; font-size:10px;">${inv.status==='paid'?'إلغاء':'تسديد'}</button>
+            <button class="lc-btn" data-edit-inv="${inv.id}" style="padding:3px 8px; font-size:10px;">✏️</button>
+            <button class="lc-btn" data-del-inv="${inv.id}" style="padding:3px 8px; font-size:10px;">🗑</button>
           </span>
         `;
         invListEl.appendChild(row);
       });
     }
 
-    if(openClientId === client.id){
+    if(openClientId === client.id || editInvoiceId){
+      const editingInv = editInvoiceId ? invoices.find(i=>i.id===editInvoiceId) : null;
+      if(openClientId === client.id || (editingInv && editingInv.clientId === client.id)){
       const formHost = card.querySelector('#invForm_'+client.id);
       formHost.className = 'lc-invoice-form';
       formHost.innerHTML = `
         <div id="invRows_${client.id}"></div>
         <button class="lc-btn" id="invAddRow_${client.id}" style="margin-bottom:8px;">➕ بند جديد</button>
-        <button class="btn-primary" id="invSave_${client.id}">💾 حفظ الفاتورة</button>
+        <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">تاريخ الفاتورة</label>
+        <input type="date" id="invDate_${client.id}" style="margin-bottom:10px;">
+        <button class="btn-primary" id="invSave_${client.id}">💾 ${editingInv ? 'حفظ التعديل' : 'حفظ الفاتورة'}</button>
       `;
       const rowsHost = formHost.querySelector('#invRows_'+client.id);
-      function addInvRow(){
+      function addInvRow(desc, qty, price){
         const row = document.createElement('div');
         row.className = 'quote-row';
         row.innerHTML = `
-          <input type="text" class="q-desc" dir="auto" placeholder="وصف البند">
-          <input type="number" class="q-qty" dir="ltr" placeholder="الكمية" value="1" inputmode="decimal">
-          <input type="number" class="q-price" dir="ltr" placeholder="السعر" inputmode="decimal">
+          <input type="text" class="q-desc" dir="auto" placeholder="وصف البند" value="${desc?escapeHtml(desc):''}">
+          <input type="number" class="q-qty" dir="ltr" placeholder="الكمية" value="${qty||1}" inputmode="decimal">
+          <input type="number" class="q-price" dir="ltr" placeholder="السعر" value="${price||''}" inputmode="decimal">
           <button class="q-del">✕</button>
         `;
         rowsHost.appendChild(row);
         row.querySelector('.q-del').addEventListener('click', ()=> row.remove());
       }
-      addInvRow();
-      formHost.querySelector('#invAddRow_'+client.id).addEventListener('click', addInvRow);
+      if(editingInv){
+        editingInv.items.forEach(it=> addInvRow(it.desc, it.qty, it.price));
+        formHost.querySelector('#invDate_'+client.id).value = editingInv.date;
+      }else{
+        addInvRow();
+        formHost.querySelector('#invDate_'+client.id).valueAsDate = new Date();
+      }
+      formHost.querySelector('#invAddRow_'+client.id).addEventListener('click', ()=>addInvRow());
       formHost.querySelector('#invSave_'+client.id).addEventListener('click', ()=>{
         const items = [];
         rowsHost.querySelectorAll('.quote-row').forEach(row=>{
@@ -2346,13 +2359,35 @@ function renderClients(){
           if(desc && qty && price) items.push({desc, qty, price});
         });
         if(items.length === 0) return;
+        const date = formHost.querySelector('#invDate_'+client.id).value || new Date().toISOString().slice(0,10);
         const invs = loadInvoices();
-        invs.push({id:'i'+Date.now(), clientId: client.id, items, status:'pending', date: new Date().toISOString().slice(0,10)});
+        if(editingInv){
+          const target = invs.find(i=>i.id === editingInv.id);
+          if(target){ target.items = items; target.date = date; }
+          editInvoiceId = null;
+        }else{
+          invs.push({id:'i'+Date.now(), clientId: client.id, items, status:'pending', date});
+        }
         saveInvoices(invs);
         openClientId = null;
         renderClients();
       });
+      }
     }
+  });
+
+  el.querySelectorAll('[data-edit-inv]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      editInvoiceId = (editInvoiceId === b.dataset.editInv) ? null : b.dataset.editInv;
+      openClientId = null;
+      renderClients();
+    });
+  });
+  el.querySelectorAll('[data-del-inv]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      saveInvoices(loadInvoices().filter(i=>i.id !== b.dataset.delInv));
+      renderClients();
+    });
   });
 
   el.querySelectorAll('[data-open]').forEach(b=>{
@@ -2404,10 +2439,25 @@ function renderClients(){
 
 /* ---------- الموردين ---------- */
 const SUPPLIERS_KEY = 'alioua_btp_suppliers';
+const PURCHASES_KEY = 'alioua_btp_purchases';
 let editSupplierId = null;
 let purchaseSupplierId = null;
+let editPurchaseId = null;
 function loadSuppliers(){ try{ return JSON.parse(localStorage.getItem(SUPPLIERS_KEY)||'[]'); }catch(e){ return []; } }
 function saveSuppliers(l){ localStorage.setItem(SUPPLIERS_KEY, JSON.stringify(l)); }
+function loadPurchases(){ try{ return JSON.parse(localStorage.getItem(PURCHASES_KEY)||'[]'); }catch(e){ return []; } }
+function savePurchases(l){ localStorage.setItem(PURCHASES_KEY, JSON.stringify(l)); }
+function purchaseTotal(p){ return p.items.reduce((s,it)=> s + (it.amount||0), 0); }
+function syncPurchaseTx(purchase, supplierName){
+  const txs = loadTx();
+  let t = txs.find(x=>x.purchaseId === purchase.id);
+  const total = purchaseTotal(purchase);
+  const note = purchase.items.map(it=>it.desc).filter(Boolean).join('، ') || 'شراء من مورد';
+  if(t){ t.amount = total; t.date = purchase.date; t.category = supplierName; t.note = note; }
+  else{ txs.push({id:'t'+Date.now(), type:'expense', amount: total, category: supplierName, date: purchase.date, note, supplierId: purchase.supplierId, purchaseId: purchase.id}); }
+  saveTx(txs);
+}
+function deletePurchaseTx(purchaseId){ saveTx(loadTx().filter(t=>t.purchaseId !== purchaseId)); }
 
 document.getElementById('supplierAddBtn').addEventListener('click', ()=>{
   const name = document.getElementById('supplierName').value.trim();
@@ -2425,7 +2475,7 @@ document.getElementById('supplierAddBtn').addEventListener('click', ()=>{
 
 function renderSuppliers(){
   const list = loadSuppliers();
-  const tx = loadTx();
+  const purchases = loadPurchases();
   const el = document.getElementById('supplierList');
   if(list.length === 0){
     el.innerHTML = '<div class="empty-hint">ما عندك موردين بعد. ضيف أول مورد فوق ⬆️</div>';
@@ -2433,8 +2483,8 @@ function renderSuppliers(){
   }
   el.innerHTML = '';
   list.forEach(sup=>{
-    const purchases = tx.filter(t=>t.type==='expense' && t.supplierId === sup.id);
-    const spent = purchases.reduce((s,t)=>s+t.amount,0);
+    const supPurchases = purchases.filter(p=>p.supplierId === sup.id);
+    const spent = supPurchases.reduce((s,p)=>s+purchaseTotal(p),0);
     const card = document.createElement('div');
     card.className = 'list-card';
     card.innerHTML = `
@@ -2456,12 +2506,20 @@ function renderSuppliers(){
     `;
     el.appendChild(card);
 
-    if(purchases.length){
+    if(supPurchases.length){
       const listEl = card.querySelector('#supPurchaseList_'+sup.id);
-      purchases.slice().reverse().forEach(p=>{
+      supPurchases.slice().reverse().forEach(p=>{
         const row = document.createElement('div');
         row.className = 'lc-invoice-item';
-        row.innerHTML = `<span dir="auto">${p.date} — ${escapeHtml(p.note||'شراء')}</span><span>${p.amount.toLocaleString('ar')} درهم</span>`;
+        const itemsSummary = p.items.map(it=>it.desc).filter(Boolean).join('، ') || 'شراء';
+        row.innerHTML = `
+          <span dir="auto">${p.date} — ${escapeHtml(itemsSummary)}</span>
+          <span style="display:flex; align-items:center; gap:6px;">
+            <span>${purchaseTotal(p).toLocaleString('ar')} درهم</span>
+            <button class="lc-btn" data-edit-purchase="${p.id}" style="padding:3px 8px; font-size:10px;">✏️</button>
+            <button class="lc-btn" data-del-purchase="${p.id}" style="padding:3px 8px; font-size:10px;">🗑</button>
+          </span>
+        `;
         listEl.appendChild(row);
       });
     }
@@ -2491,24 +2549,58 @@ function renderSuppliers(){
       });
     }
 
-    if(purchaseSupplierId === sup.id){
+    const editingPurchase = editPurchaseId ? supPurchases.find(p=>p.id === editPurchaseId) : null;
+    if(purchaseSupplierId === sup.id || editingPurchase){
       const pHost = card.querySelector('#supPurchaseForm_'+sup.id);
       pHost.className = 'lc-invoice-form';
       pHost.innerHTML = `
-        <input type="text" id="pDesc_${sup.id}" dir="auto" placeholder="اسم/وصف المشترى (مثلاً: إسمنت 50 كيس)" style="margin-bottom:8px;">
-        <input type="number" id="pAmount_${sup.id}" dir="ltr" placeholder="المبلغ (درهم)" inputmode="decimal" style="margin-bottom:8px;">
-        <input type="date" id="pDate_${sup.id}" style="margin-bottom:8px;">
-        <button class="btn-primary" id="pSave_${sup.id}">💾 حفظ الشراء</button>
+        <div id="pRows_${sup.id}"></div>
+        <button class="lc-btn" id="pAddRow_${sup.id}" style="margin-bottom:8px;">➕ بند جديد</button>
+        <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">تاريخ الشراء</label>
+        <input type="date" id="pDate_${sup.id}" style="margin-bottom:10px;">
+        <button class="btn-primary" id="pSave_${sup.id}">💾 ${editingPurchase ? 'حفظ التعديل' : 'حفظ الشراء'}</button>
       `;
-      pHost.querySelector('#pDate_'+sup.id).valueAsDate = new Date();
+      const rowsHost = pHost.querySelector('#pRows_'+sup.id);
+      function addPRow(desc, amount){
+        const row = document.createElement('div');
+        row.className = 'quote-row';
+        row.innerHTML = `
+          <input type="text" class="q-desc" dir="auto" placeholder="اسم/وصف المشترى (مثلاً: إسمنت 50 كيس)" value="${desc?escapeHtml(desc):''}">
+          <input type="number" class="q-price" dir="ltr" placeholder="المبلغ" value="${amount||''}" inputmode="decimal">
+          <button class="q-del">✕</button>
+        `;
+        rowsHost.appendChild(row);
+        row.querySelector('.q-del').addEventListener('click', ()=> row.remove());
+      }
+      if(editingPurchase){
+        editingPurchase.items.forEach(it=> addPRow(it.desc, it.amount));
+        pHost.querySelector('#pDate_'+sup.id).value = editingPurchase.date;
+      }else{
+        addPRow();
+        pHost.querySelector('#pDate_'+sup.id).valueAsDate = new Date();
+      }
+      pHost.querySelector('#pAddRow_'+sup.id).addEventListener('click', ()=>addPRow());
       pHost.querySelector('#pSave_'+sup.id).addEventListener('click', ()=>{
-        const desc = document.getElementById('pDesc_'+sup.id).value.trim();
-        const amount = parseFloat(document.getElementById('pAmount_'+sup.id).value);
-        const date = document.getElementById('pDate_'+sup.id).value || new Date().toISOString().slice(0,10);
-        if(!amount || amount <= 0) return;
-        const txs = loadTx();
-        txs.push({id:'t'+Date.now(), type:'expense', amount, category: sup.name, date, note: desc || 'شراء من مورد', supplierId: sup.id});
-        saveTx(txs);
+        const items = [];
+        rowsHost.querySelectorAll('.quote-row').forEach(row=>{
+          const desc = row.querySelector('.q-desc').value.trim();
+          const amount = parseFloat(row.querySelector('.q-price').value) || 0;
+          if(desc && amount) items.push({desc, amount});
+        });
+        if(items.length === 0) return;
+        const date = pHost.querySelector('#pDate_'+sup.id).value || new Date().toISOString().slice(0,10);
+        const all = loadPurchases();
+        let purchase;
+        if(editingPurchase){
+          purchase = all.find(p=>p.id === editingPurchase.id);
+          purchase.items = items; purchase.date = date;
+          editPurchaseId = null;
+        }else{
+          purchase = {id:'p'+Date.now(), supplierId: sup.id, date, items};
+          all.push(purchase);
+        }
+        savePurchases(all);
+        syncPurchaseTx(purchase, sup.name);
         purchaseSupplierId = null;
         renderSuppliers();
       });
@@ -2524,6 +2616,7 @@ function renderSuppliers(){
     b.addEventListener('click', ()=>{
       purchaseSupplierId = (purchaseSupplierId === b.dataset.quick) ? null : b.dataset.quick;
       editSupplierId = null;
+      editPurchaseId = null;
       renderSuppliers();
     });
   });
@@ -2531,6 +2624,20 @@ function renderSuppliers(){
     b.addEventListener('click', ()=>{
       editSupplierId = (editSupplierId === b.dataset.editSup) ? null : b.dataset.editSup;
       purchaseSupplierId = null;
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-edit-purchase]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      editPurchaseId = (editPurchaseId === b.dataset.editPurchase) ? null : b.dataset.editPurchase;
+      purchaseSupplierId = null;
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-del-purchase]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      savePurchases(loadPurchases().filter(p=>p.id !== b.dataset.delPurchase));
+      deletePurchaseTx(b.dataset.delPurchase);
       renderSuppliers();
     });
   });
