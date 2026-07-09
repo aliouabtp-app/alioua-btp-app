@@ -951,6 +951,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -1175,8 +1176,17 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
     </div>
 
     <div style="margin-top:14px;">
+      <p class="mini-title" style="margin-bottom:8px;">🗓️ ربط Google Calendar (اختياري)</p>
+      <input type="text" id="gcalClientIdInput" placeholder="Client ID...apps.googleusercontent.com">
+      <p style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">لما تربطي، كل موعد يضيفو يونس كيتزاد تلقائيًا لـ Google Calendar ديالك بتذكير قبل بـ30 و5 دقايق — هادشي كيخليك توصلك تنبيهات حتى والتطبيق مسكّر. تحتاجي تسويي Client ID خاص بيك من <a href="https://console.cloud.google.com/apis/credentials" target="_blank">console.cloud.google.com</a> (اسألي يونس/الدعم فالتفاصيل).</p>
+      <button class="btn-ghost" id="gcalConnectBtn" style="width:100%; margin-top:8px;">🔗 ربط الحساب</button>
+      <p id="gcalStatus" style="font-size:12px; margin-top:6px; color:var(--ink-soft);">غير متصل</p>
+    </div>
+
+    <div style="margin-top:14px;">
       <p class="mini-title" style="margin-bottom:8px;">🔊 صوت القراءة</p>
       <select id="voiceSelect" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink);"></select>
+      <p id="voiceStatusNote" style="font-size:11px; color:#b45309; margin-top:6px; line-height:1.5; display:none;"></p>
     </div>
   </div>
 </div>
@@ -1482,6 +1492,126 @@ function appendChart(container, jsonText){
   }
 }
 
+/* ---------- Google Calendar ---------- */
+const GCAL_CLIENT_ID_KEY = 'alioua_btp_gcal_client_id';
+const GCAL_TOKEN_KEY = 'alioua_btp_gcal_token';
+let gcalTokenClient = null;
+let gcalAccessToken = null;
+let gcalTokenExpiry = 0;
+
+function getGcalClientId(){ return localStorage.getItem(GCAL_CLIENT_ID_KEY) || ''; }
+function setGcalClientId(v){ localStorage.setItem(GCAL_CLIENT_ID_KEY, v); }
+
+function loadGcalToken(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(GCAL_TOKEN_KEY) || 'null');
+    if(raw && raw.access_token && raw.expiry > Date.now()){
+      gcalAccessToken = raw.access_token;
+      gcalTokenExpiry = raw.expiry;
+    }
+  }catch(e){}
+}
+function saveGcalToken(token, expiresInSec){
+  gcalAccessToken = token;
+  gcalTokenExpiry = Date.now() + ((expiresInSec||3500)*1000) - 60000;
+  localStorage.setItem(GCAL_TOKEN_KEY, JSON.stringify({access_token: token, expiry: gcalTokenExpiry}));
+}
+loadGcalToken();
+
+function updateGcalStatusUI(){
+  const el = document.getElementById('gcalStatus');
+  if(!el) return;
+  if(gcalAccessToken && gcalTokenExpiry > Date.now()){
+    el.textContent = '✅ متصل بـ Google Calendar';
+    el.style.color = '#2e7d32';
+  }else{
+    el.textContent = 'غير متصل';
+    el.style.color = 'var(--ink-soft)';
+  }
+}
+
+function initGcalTokenClient(clientId){
+  if(!clientId || !window.google || !google.accounts || !google.accounts.oauth2) return null;
+  return google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/calendar.events',
+    callback: (resp)=>{
+      if(resp && resp.access_token){
+        saveGcalToken(resp.access_token, resp.expires_in);
+        updateGcalStatusUI();
+      }
+    }
+  });
+}
+
+document.getElementById('gcalConnectBtn')?.addEventListener('click', ()=>{
+  const clientId = document.getElementById('gcalClientIdInput').value.trim();
+  if(!clientId){
+    alert('حطي أولاً Client ID ديال Google قبل ما تربطي الحساب.');
+    return;
+  }
+  setGcalClientId(clientId);
+  if(!window.google || !google.accounts || !google.accounts.oauth2){
+    alert('مكتبة Google ماتحملاتش بعد. تأكدي من الإنترنت وجربي مرة ثانية بعد شوي.');
+    return;
+  }
+  gcalTokenClient = initGcalTokenClient(clientId);
+  if(!gcalTokenClient){
+    alert('ما قدرتش نجهز الاتصال بـ Google. تأكدي من الـ Client ID.');
+    return;
+  }
+  gcalTokenClient.requestAccessToken({prompt: 'consent'});
+});
+
+async function ensureGcalToken(){
+  if(gcalAccessToken && gcalTokenExpiry > Date.now()) return gcalAccessToken;
+  const clientId = getGcalClientId();
+  if(!clientId || !window.google || !google.accounts || !google.accounts.oauth2) return null;
+  if(!gcalTokenClient) gcalTokenClient = initGcalTokenClient(clientId);
+  if(!gcalTokenClient) return null;
+  return new Promise((resolve)=>{
+    gcalTokenClient.callback = (resp)=>{
+      if(resp && resp.access_token){
+        saveGcalToken(resp.access_token, resp.expires_in);
+        updateGcalStatusUI();
+        resolve(resp.access_token);
+      }else{
+        resolve(null);
+      }
+    };
+    try{ gcalTokenClient.requestAccessToken({prompt: ''}); }
+    catch(e){ resolve(null); }
+  });
+}
+
+async function syncApptToGoogleCalendar(appt){
+  const clientId = getGcalClientId();
+  if(!clientId) return null; // ما ضافش الربط، تخطي بصمت بلا ما يعطل الموعد المحلي
+  const token = await ensureGcalToken();
+  if(!token) return null;
+  const startDt = new Date(appt.dt);
+  const endDt = new Date(startDt.getTime() + 60*60000);
+  const body = {
+    summary: appt.title,
+    description: appt.notes || '',
+    start: {dateTime: startDt.toISOString()},
+    end: {dateTime: endDt.toISOString()},
+    reminders: {
+      useDefault: false,
+      overrides: [ {method:'popup', minutes: 30}, {method:'popup', minutes: 5} ]
+    }
+  };
+  try{
+    const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body: JSON.stringify(body)
+    });
+    if(res.ok){ const data = await res.json(); return data.id || true; }
+  }catch(e){ /* فشل صامت، الموعد يبقى محفوظ محليًا بردو */ }
+  return null;
+}
+
 function appendAppointmentAction(container, jsonText){
   const wrap = document.createElement('div');
   wrap.className = 'appt-action-card';
@@ -1490,7 +1620,8 @@ function appendAppointmentAction(container, jsonText){
     if(!data.title || !data.date || !data.time) throw new Error('ناقص بيانات');
     const dt = `${data.date}T${data.time}`;
     const list = loadAppts();
-    list.push({id:'a'+Date.now(), title:data.title, dt, notes:data.notes||'', done:false, notified:false});
+    const newAppt = {id:'a'+Date.now(), title:data.title, dt, notes:data.notes||'', done:false, notified:false};
+    list.push(newAppt);
     saveAppts(list);
     const dObj = new Date(dt);
     const whenStr = dObj.toLocaleString('ar', {weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'});
@@ -1498,6 +1629,14 @@ function appendAppointmentAction(container, jsonText){
     if(typeof renderAppts === 'function' && document.getElementById('viewAppt')?.classList.contains('active')){
       renderAppts();
     }
+    syncApptToGoogleCalendar(newAppt).then(ok=>{
+      if(ok){
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size:11px; color:#2e7d32; margin-top:4px;';
+        note.textContent = '📅 تمت مزامنته مع Google Calendar';
+        wrap.appendChild(note);
+      }
+    });
   }catch(e){
     wrap.innerHTML = `<span class="appt-action-icon">⚠️</span> ما قدرت أضيف الموعد، صار خطأ بالبيانات.`;
   }
@@ -1867,6 +2006,8 @@ function openModal(isFirstRun){
   apiKeyInput.value = getApiKey();
   openrouterKeyInput.value = getOpenRouterKey();
   mistralKeyInput.value = getMistralKey();
+  document.getElementById('gcalClientIdInput').value = getGcalClientId();
+  updateGcalStatusUI();
   modalErr.classList.remove('show');
   if(isFirstRun){
     modalTitle.textContent = 'أهلاً! خلينا نجهز يونس';
@@ -1891,6 +2032,7 @@ saveKeyBtn.addEventListener('click', ()=>{
   setApiKey(val);
   setOpenRouterKey(openrouterKeyInput.value.trim());
   setMistralKey(mistralKeyInput.value.trim());
+  setGcalClientId(document.getElementById('gcalClientIdInput').value.trim());
   closeModal();
 });
 cancelModalBtn.addEventListener('click', closeModal);
@@ -1964,18 +2106,50 @@ if(SpeechRecognitionAPI){
     autoGrow();
   };
 
-  micBtn.addEventListener('click', ()=>{
+  micBtn.addEventListener('click', async ()=>{
     if(!window.isSecureContext){
       messages.push({role:'model', text:'المايكروفون محتاج رابط آمن (https) حتى يشتغل. التطبيق حاليًا مفتوح كملف محلي. استضفه على رابط مجاني (متل Netlify Drop) وجرب مرة ثانية.', time:Date.now()});
       renderMessages();
       saveHistory();
       return;
     }
-    if(isRecording){ recognition.stop(); }
-    else{
-      try{ recognition.start(); }
-      catch(e){ /* already started */ }
+
+    if(isRecording){ recognition.stop(); return; }
+
+    // تحقق مسبق من حالة إذن المايكروفون (إذا المتصفح كيدعم Permissions API)
+    if(navigator.permissions && navigator.permissions.query){
+      try{
+        const status = await navigator.permissions.query({name:'microphone'});
+        if(status.state === 'denied'){
+          messages.push({role:'model', text:'🎙️ إذن المايكروفون محظور فهاد المتصفح. باش تصلحه:\n1. دوسي على أيقونة القفل 🔒 أو (ⓘ) لي جنب رابط الموقع فوق\n2. دوري على "الأذونات" أو "Permissions" ← "Microphone"\n3. بدليها لـ "السماح / Allow"\n4. سكري الصفحة وأعاودي فتحها من جديد', time:Date.now()});
+          renderMessages();
+          saveHistory();
+          return;
+        }
+      }catch(e){ /* بعض المتصفحات ما كتدعمش الاستعلام عن حالة المايكروفون، نكملو عادي */ }
     }
+
+    // طلب صريح لإذن المايكروفون (كيبين نافذة السماح إذا ماكانتش قررت بعد)
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      stream.getTracks().forEach(t=>t.stop());
+    }catch(permErr){
+      let msg = 'ما قدرت أوصل للمايكروفون.';
+      if(permErr.name === 'NotAllowedError' || permErr.name === 'SecurityError'){
+        msg = '🎙️ رفضتي إذن المايكروفون، أو المتصفح حاجزو تلقائيًا. باش تصلحيه:\n1. دوسي على أيقونة القفل 🔒 لي جنب رابط الموقع فوق\n2. دوري على "الأذونات" ← "Microphone" ← "السماح / Allow"\n3. سكري الصفحة وأعاودي فتحها';
+      }else if(permErr.name === 'NotFoundError'){
+        msg = '🎙️ ما لقيتش مايكروفون متصل بالجهاز. تأكدي المايكروفون ديال الهاتف خدام (جربيه بتطبيق تسجيل صوت عادي).';
+      }else{
+        msg = '🎙️ صار خطأ بالوصول للمايكروفون: ' + (permErr.message || permErr.name || 'غير معروف');
+      }
+      messages.push({role:'model', text: msg, time:Date.now()});
+      renderMessages();
+      saveHistory();
+      return;
+    }
+
+    try{ recognition.start(); }
+    catch(e){ /* already started */ }
   });
 }else{
   micBtn.disabled = true;
@@ -2029,17 +2203,36 @@ function populateVoiceList(){
   const voices = window.speechSynthesis.getVoices();
   if(!voices.length) return;
   const arabicVoices = voices.filter(v=>v.lang && v.lang.toLowerCase().startsWith('ar'));
-  const list = arabicVoices.length ? arabicVoices : voices;
+  const note = document.getElementById('voiceStatusNote');
   const saved = localStorage.getItem(VOICE_NAME_KEY);
   voiceSelect.innerHTML = '';
-  list.forEach(v=>{
-    const opt = document.createElement('option');
-    opt.value = v.name;
-    opt.textContent = v.name + ' (' + v.lang + ')';
-    if(v.name === saved) opt.selected = true;
-    voiceSelect.appendChild(opt);
-  });
-  if(!saved && list.length){ localStorage.setItem(VOICE_NAME_KEY, list[0].name); }
+
+  if(arabicVoices.length){
+    if(note) note.style.display = 'none';
+    arabicVoices.forEach(v=>{
+      const opt = document.createElement('option');
+      opt.value = v.name;
+      opt.textContent = v.name + ' (' + v.lang + ')';
+      if(v.name === saved) opt.selected = true;
+      voiceSelect.appendChild(opt);
+    });
+    // إذا الصوت المحفوظ مو عربي (بقايا من قبل)، أو ما كاين حتى صوت محفوظ، اختاري أول صوت عربي
+    const savedIsArabic = arabicVoices.some(v=>v.name === saved);
+    if(!savedIsArabic){ localStorage.setItem(VOICE_NAME_KEY, arabicVoices[0].name); }
+  }else{
+    // ما كاين حتى صوت عربي مثبت فمحرك النطق ديال الهاتف
+    if(note){
+      note.style.display = 'block';
+      note.textContent = '⚠️ ما كاينش صوت عربي مثبت فهاتفك، فالقراءة الصوتية غادي تخرج بلكنة غريبة. صلحيها من: إعدادات الهاتف ← اللغة والإدخال ← تحويل النص لكلام (Text-to-speech) ← اختاري محرك "Google" ← ثبتي حزمة اللغة العربية.';
+    }
+    localStorage.removeItem(VOICE_NAME_KEY);
+    voices.sort((a,b)=> a.lang.localeCompare(b.lang)).forEach(v=>{
+      const opt = document.createElement('option');
+      opt.value = v.name;
+      opt.textContent = v.name + ' (' + v.lang + ')';
+      voiceSelect.appendChild(opt);
+    });
+  }
 }
 if('speechSynthesis' in window){
   populateVoiceList();
@@ -2259,7 +2452,8 @@ document.getElementById('apptAddBtn').addEventListener('click', ()=>{
   const notes = document.getElementById('apptNotes').value.trim();
   if(!title || !dt) return;
   const list = loadAppts();
-  list.push({id: 'a'+Date.now(), title, dt, notes, done:false, notified:false});
+  const newAppt = {id: 'a'+Date.now(), title, dt, notes, done:false, notified:false};
+  list.push(newAppt);
   saveAppts(list);
   document.getElementById('apptTitle').value = '';
   document.getElementById('apptDateTime').value = '';
@@ -2268,6 +2462,7 @@ document.getElementById('apptAddBtn').addEventListener('click', ()=>{
     Notification.requestPermission();
   }
   renderAppts();
+  syncApptToGoogleCalendar(newAppt);
 });
 
 /* فحص دوري للتذكيرات (يشتغل فقط والتطبيق مفتوح) */
