@@ -1187,6 +1187,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       <p class="mini-title" style="margin-bottom:8px;">🔊 صوت القراءة</p>
       <select id="voiceSelect" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink);"></select>
       <p id="voiceStatusNote" style="font-size:11px; color:#b45309; margin-top:6px; line-height:1.5; display:none;"></p>
+      <button class="btn-ghost" id="voiceTestBtn" style="width:100%; margin-top:8px;">🎧 اختبار الصوت الآن</button>
+      <p id="voiceTestResult" style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;"></p>
     </div>
   </div>
 </div>
@@ -2241,6 +2243,30 @@ if('speechSynthesis' in window){
 voiceSelect.addEventListener('change', ()=>{
   localStorage.setItem(VOICE_NAME_KEY, voiceSelect.value);
   speakText('هكذا رح يسمع صوتي من دابا فصاعدًا');
+});
+
+document.getElementById('voiceTestBtn')?.addEventListener('click', ()=>{
+  const resultEl = document.getElementById('voiceTestResult');
+  if(!('speechSynthesis' in window)){
+    resultEl.textContent = '⚠️ هاد المتصفح ما كيدعمش القراءة الصوتية إطلاقًا.';
+    resultEl.style.color = '#b45309';
+    return;
+  }
+  const voices = window.speechSynthesis.getVoices();
+  const arabicVoices = voices.filter(v=>v.lang && v.lang.toLowerCase().startsWith('ar'));
+  if(!voices.length){
+    resultEl.textContent = '⚠️ المتصفح ما رجعش حتى صوت واحد. جربي تسدي Chrome بالكامل (Force Stop) وتعاودي.';
+    resultEl.style.color = '#b45309';
+    return;
+  }
+  if(!arabicVoices.length){
+    resultEl.textContent = `⚠️ لقيت ${voices.length} صوت بالمتصفح، ولكن حتى واحد ماشي عربي. المشكلة مازالت فمستوى الهاتف/المتصفح.`;
+    resultEl.style.color = '#b45309';
+  }else{
+    resultEl.textContent = `✅ لقيت ${arabicVoices.length} صوت عربي: ${arabicVoices.map(v=>v.name).join('، ')}. كنشغل عينة دابا...`;
+    resultEl.style.color = '#2e7d32';
+  }
+  speakText('السلام عليكم، هذا اختبار للصوت العربي فتطبيق يونس');
 });
 
 /* ---------- قفل الرمز السري ---------- */
