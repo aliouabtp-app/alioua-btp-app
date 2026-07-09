@@ -2170,9 +2170,31 @@ voiceToggleBtn.addEventListener('click', ()=>{
   if(!voiceReplyOn) window.speechSynthesis.cancel();
 });
 
+function speakViaGoogleTTS(text){
+  // خدمة صوت Google (نفسها لي كتخدم فـ Google Translate) — بديل لما المتصفح ما عندوش صوت عربي مثبت
+  const chunks = [];
+  let remaining = text.trim();
+  while(remaining.length){
+    if(remaining.length <= 180){ chunks.push(remaining); break; }
+    let cut = remaining.lastIndexOf(' ', 180);
+    if(cut <= 0) cut = 180;
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut).trim();
+  }
+  let i = 0;
+  function playNext(){
+    if(i >= chunks.length) return;
+    const audio = new Audio('https://translate.google.com/translate_tts?ie=UTF-8&tl=ar&client=tw-ob&q=' + encodeURIComponent(chunks[i]));
+    i++;
+    audio.onended = playNext;
+    audio.onerror = playNext;
+    audio.play().catch(()=>{ playNext(); });
+  }
+  playNext();
+}
+
 function speakText(text){
-  if(!voiceReplyOn || !('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
+  if(!voiceReplyOn) return;
   const clean = text
     .replace(/```chart[\s\S]*?```/g, ' فيه رسم بياني بالرد. ')
     .replace(/```add_appointment[\s\S]*?```/g, ' تمت إضافة الموعد. ')
@@ -2180,22 +2202,27 @@ function speakText(text){
     .replace(/```image:.+/g, ' فيه صورة بالرد. ')
     .replace(/^\s*\|.*\|\s*$/gm, '')
     .replace(/[*_#`|]/g,'');
-  const utter = new SpeechSynthesisUtterance(clean);
+
+  const hasBrowserSynth = 'speechSynthesis' in window;
+  const voices = hasBrowserSynth ? window.speechSynthesis.getVoices() : [];
   const chosenName = localStorage.getItem(VOICE_NAME_KEY);
-  const voices = window.speechSynthesis.getVoices();
   let chosenVoice = voices.find(v=>v.name === chosenName);
   if(!chosenVoice){
-    // ما في صوت محفوظ أو ما لقيناه، دور على أي صوت عربي متوفر بالجهاز
     chosenVoice = voices.find(v=> v.lang && v.lang.toLowerCase().startsWith('ar'));
   }
+
   if(chosenVoice){
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(clean);
     utter.voice = chosenVoice;
     utter.lang = chosenVoice.lang;
+    utter.rate = 1;
+    window.speechSynthesis.speak(utter);
   }else{
-    utter.lang = 'ar-SA';
+    // ما كاينش صوت عربي فالمتصفح — نستعملو خدمة Google TTS مباشرة كبديل
+    if(hasBrowserSynth) window.speechSynthesis.cancel();
+    speakViaGoogleTTS(clean);
   }
-  utter.rate = 1;
-  window.speechSynthesis.speak(utter);
 }
 
 /* ---------- اختيار صوت القراءة ---------- */
@@ -2260,7 +2287,8 @@ document.getElementById('voiceTestBtn')?.addEventListener('click', ()=>{
     return;
   }
   if(!arabicVoices.length){
-    resultEl.textContent = `⚠️ لقيت ${voices.length} صوت بالمتصفح، ولكن حتى واحد ماشي عربي. المشكلة مازالت فمستوى الهاتف/المتصفح.`;
+    const uniqueLangs = [...new Set(voices.map(v=>v.lang))].sort().join('، ');
+    resultEl.innerHTML = `⚠️ لقيت ${voices.length} صوت بالمتصفح، ولكن حتى واحد ماشي عربي. يونس دابا غايستعمل تلقائيًا بديل عبر الإنترنت (نفس خدمة Google Translate). كنشغل عينة دابا...<br><br><span style="font-size:10px; word-break:break-all;">اللغات المتوفرة محليًا: ${uniqueLangs}</span>`;
     resultEl.style.color = '#b45309';
   }else{
     resultEl.textContent = `✅ لقيت ${arabicVoices.length} صوت عربي: ${arabicVoices.map(v=>v.name).join('، ')}. كنشغل عينة دابا...`;
