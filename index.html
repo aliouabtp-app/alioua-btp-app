@@ -2076,6 +2076,7 @@ let recognition = null;
 let isRecording = false;
 
 let gotResult = false;
+let errorAlreadyShown = false;
 
 if(SpeechRecognitionAPI){
   recognition = new SpeechRecognitionAPI();
@@ -2086,13 +2087,14 @@ if(SpeechRecognitionAPI){
   recognition.onstart = ()=>{
     isRecording = true;
     gotResult = false;
+    errorAlreadyShown = false;
     micBtn.classList.add('recording');
   };
   recognition.onend = ()=>{
     isRecording = false;
     micBtn.classList.remove('recording');
-    if(!gotResult){
-      messages.push({role:'model', text:'ما قدرت أميّز أي كلام. جرب تحكي بوضوح وقريب من المايكروفون، أو تأكد إنك سمحت للمتصفح بالوصول للمايكروفون.', time:Date.now()});
+    if(!gotResult && !errorAlreadyShown){
+      messages.push({role:'model', text:'ما قدرت أميّز أي كلام. جرب تحكي بوضوح وقريب من المايكروفون فور ما تدوس الزر.', time:Date.now()});
       renderMessages();
       saveHistory();
     }
@@ -2100,12 +2102,18 @@ if(SpeechRecognitionAPI){
   recognition.onerror = (e)=>{
     isRecording = false;
     micBtn.classList.remove('recording');
-    let msg = 'صار خطأ بالمايكروفون، حاول مرة ثانية.';
+    if(e.error === 'no-speech' || e.error === 'aborted'){
+      return; // ما في داعي نزعج المستخدم لهذا، onend رح يتكفل بالتنبيه إذا لزم
+    }
+    let msg = `صار خطأ بالمايكروفون (${e.error}), حاول مرة ثانية.`;
     if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
       msg = 'ما قدرت أوصل للمايكروفون. إذا كنت فاتح التطبيق كملف محلي (file://)، هذا سبب المشكلة — المتصفح ما بيسمح بالمايكروفون إلا من رابط آمن (https). استضف التطبيق برابط مجاني وجرب مرة ثانية.';
-    }else if(e.error === 'no-speech'){
-      return; // ما في داعي نزعج المستخدم لهذا، onend رح يتكفل بالتنبيه
+    }else if(e.error === 'network'){
+      msg = '🌐 خدمة التعرف على الصوت ديال Google محجوبة أو ما وصلاش الإنترنت ليها (بگ شبيه بمشكل الصوت لي طلع قبل). جربي: طفي VPN إذا عندك، بدلي الشبكة (Wifi ↔ بيانات الهاتف)، أو جربي متصفح آخر (Firefox).';
+    }else if(e.error === 'audio-capture'){
+      msg = '🎙️ ما لقيتش مايكروفون خدام. تأكدي ماكاينش تطبيق آخر خدام بالمايكروفون فنفس الوقت، وجربي المايكروفون بتطبيق آخر (تسجيل صوت) باش تتأكدي خدام.';
     }
+    errorAlreadyShown = true;
     messages.push({role:'model', text: msg, time:Date.now()});
     renderMessages();
     saveHistory();
