@@ -2170,8 +2170,7 @@ voiceToggleBtn.addEventListener('click', ()=>{
   if(!voiceReplyOn) window.speechSynthesis.cancel();
 });
 
-function speakViaGoogleTTS(text){
-  // خدمة صوت Google (نفسها لي كتخدم فـ Google Translate) — بديل لما المتصفح ما عندوش صوت عربي مثبت
+function speakViaGoogleTTS(text, onStatus){
   const chunks = [];
   let remaining = text.trim();
   while(remaining.length){
@@ -2182,13 +2181,32 @@ function speakViaGoogleTTS(text){
     remaining = remaining.slice(cut).trim();
   }
   let i = 0;
+  function buildUrl(chunk, client){
+    return `https://translate.google.com/translate_tts?ie=UTF-8&tl=ar&client=${client}&q=` + encodeURIComponent(chunk);
+  }
+  function tryPlay(chunk, client, isRetry){
+    const audio = new Audio(buildUrl(chunk, client));
+    let started = false;
+    audio.addEventListener('playing', ()=>{ started = true; if(onStatus) onStatus('ok'); });
+    audio.addEventListener('ended', playNext);
+    audio.addEventListener('error', ()=>{
+      if(!isRetry){
+        tryPlay(chunk, 'gtx', true); // نجربو صيغة ثانية
+      }else{
+        if(onStatus) onStatus('fail');
+        playNext(); // نكملو للجزء الجاي بلا ما نوقفو كليًا
+      }
+    });
+    audio.play().catch(()=>{
+      if(!isRetry) tryPlay(chunk, 'gtx', true);
+      else{ if(onStatus) onStatus('fail'); playNext(); }
+    });
+  }
   function playNext(){
     if(i >= chunks.length) return;
-    const audio = new Audio('https://translate.google.com/translate_tts?ie=UTF-8&tl=ar&client=tw-ob&q=' + encodeURIComponent(chunks[i]));
+    const chunk = chunks[i];
     i++;
-    audio.onended = playNext;
-    audio.onerror = playNext;
-    audio.play().catch(()=>{ playNext(); });
+    tryPlay(chunk, 'tw-ob', false);
   }
   playNext();
 }
@@ -2288,8 +2306,18 @@ document.getElementById('voiceTestBtn')?.addEventListener('click', ()=>{
   }
   if(!arabicVoices.length){
     const uniqueLangs = [...new Set(voices.map(v=>v.lang))].sort().join('، ');
-    resultEl.innerHTML = `⚠️ لقيت ${voices.length} صوت بالمتصفح، ولكن حتى واحد ماشي عربي. يونس دابا غايستعمل تلقائيًا بديل عبر الإنترنت (نفس خدمة Google Translate). كنشغل عينة دابا...<br><br><span style="font-size:10px; word-break:break-all;">اللغات المتوفرة محليًا: ${uniqueLangs}</span>`;
+    resultEl.innerHTML = `⚠️ لقيت ${voices.length} صوت بالمتصفح، ولكن حتى واحد ماشي عربي. كنجرب البديل عبر الإنترنت...`;
     resultEl.style.color = '#b45309';
+    speakViaGoogleTTS('السلام عليكم، هذا اختبار للصوت العربي فتطبيق يونس', (status)=>{
+      if(status === 'ok'){
+        resultEl.innerHTML = '✅ الصوت البديل خدم! إذا سمعتي الصوت دابا، كلشي مزيان.';
+        resultEl.style.color = '#2e7d32';
+      }else{
+        resultEl.innerHTML = `❌ حتى الصوت البديل ما خدمش (يمكن الإنترنت حاجزها، أو "توفير البيانات/Lite mode" مفعّل فـ Chrome). جربي: طفي VPN إذا عندك، طفي "Data Saver" من إعدادات Chrome (⋮ ← Settings ← Data Saver)، وتأكدي الصوت ديال الهاتف ماشي مسكّت (Silent mode).<br><br><span style="font-size:10px; word-break:break-all;">اللغات المحلية المتوفرة: ${uniqueLangs}</span>`;
+        resultEl.style.color = '#b91c1c';
+      }
+    });
+    return;
   }else{
     resultEl.textContent = `✅ لقيت ${arabicVoices.length} صوت عربي: ${arabicVoices.map(v=>v.name).join('، ')}. كنشغل عينة دابا...`;
     resultEl.style.color = '#2e7d32';
