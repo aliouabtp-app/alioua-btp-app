@@ -1187,6 +1187,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       <p class="mini-title" style="margin-bottom:8px;">🔊 صوت القراءة</p>
       <select id="voiceSelect" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink);"></select>
       <p id="voiceStatusNote" style="font-size:11px; color:#b45309; margin-top:6px; line-height:1.5; display:none;"></p>
+      <input type="text" id="gttsKeyInput" placeholder="مفتاح VoiceRSS (اختياري)" style="margin-top:8px;">
+      <p style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">إذا هاتفك ماعندوش صوت عربي مثبت (بگ معروف فبعض هواتف Samsung)، حطي هنا مفتاح VoiceRSS باش يونس يقرا بصوت عربي دايمًا. مجاني بالكامل (350 طلب باليوم)، بلا بطاقة بنكية، سجلي من <a href="https://www.voicerss.org/registration" target="_blank">voicerss.org/registration</a> وانسخي المفتاح لي كيوصل بالإيميل.</p>
       <button class="btn-ghost" id="voiceTestBtn" style="width:100%; margin-top:8px;">🎧 اختبار الصوت الآن</button>
       <p id="voiceTestResult" style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;"></p>
     </div>
@@ -2009,6 +2011,7 @@ function openModal(isFirstRun){
   openrouterKeyInput.value = getOpenRouterKey();
   mistralKeyInput.value = getMistralKey();
   document.getElementById('gcalClientIdInput').value = getGcalClientId();
+  document.getElementById('gttsKeyInput').value = getGttsKey();
   updateGcalStatusUI();
   modalErr.classList.remove('show');
   if(isFirstRun){
@@ -2035,6 +2038,7 @@ saveKeyBtn.addEventListener('click', ()=>{
   setOpenRouterKey(openrouterKeyInput.value.trim());
   setMistralKey(mistralKeyInput.value.trim());
   setGcalClientId(document.getElementById('gcalClientIdInput').value.trim());
+  setGttsKey(document.getElementById('gttsKeyInput').value.trim());
   closeModal();
 });
 cancelModalBtn.addEventListener('click', closeModal);
@@ -2170,6 +2174,47 @@ voiceToggleBtn.addEventListener('click', ()=>{
   if(!voiceReplyOn) window.speechSynthesis.cancel();
 });
 
+const GTTS_KEY_STORAGE = 'alioua_btp_gtts_key';
+function getGttsKey(){ return localStorage.getItem(GTTS_KEY_STORAGE) || ''; }
+function setGttsKey(v){ localStorage.setItem(GTTS_KEY_STORAGE, v); }
+
+async function speakViaGoogleCloudTTS(text, apiKey, onStatus){
+  // بالرغم من الاسم، هاد الدالة دابا كتخدم VoiceRSS (مجانية بلا بطاقة بنكية)
+  const chunks = [];
+  let remaining = text.trim();
+  while(remaining.length){
+    if(remaining.length <= 300){ chunks.push(remaining); break; }
+    let cut = remaining.lastIndexOf(' ', 300);
+    if(cut <= 0) cut = 300;
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut).trim();
+  }
+  for(const chunk of chunks){
+    try{
+      const url = 'https://api.voicerss.org/?key=' + apiKey + '&hl=ar-sa&src=' + encodeURIComponent(chunk) + '&f=44khz_16bit_stereo';
+      const res = await fetch(url);
+      const contentType = res.headers.get('content-type') || '';
+      if(!res.ok || contentType.indexOf('audio') === -1){
+        const errText = await res.text().catch(()=> '');
+        if(onStatus) onStatus('fail', errText || ('رمز الخطأ: '+res.status));
+        return;
+      }
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      await new Promise((resolve)=>{
+        const audio = new Audio(objUrl);
+        audio.addEventListener('playing', ()=>{ if(onStatus) onStatus('ok'); });
+        audio.addEventListener('ended', ()=>{ URL.revokeObjectURL(objUrl); resolve(); });
+        audio.addEventListener('error', ()=>{ URL.revokeObjectURL(objUrl); resolve(); });
+        audio.play().catch(()=>{ URL.revokeObjectURL(objUrl); resolve(); });
+      });
+    }catch(e){
+      if(onStatus) onStatus('fail', 'خطأ فالاتصال بالإنترنت');
+      return;
+    }
+  }
+}
+
 function speakViaGoogleTTS(text, onStatus){
   const chunks = [];
   let remaining = text.trim();
@@ -2237,9 +2282,13 @@ function speakText(text){
     utter.rate = 1;
     window.speechSynthesis.speak(utter);
   }else{
-    // ما كاينش صوت عربي فالمتصفح — نستعملو خدمة Google TTS مباشرة كبديل
     if(hasBrowserSynth) window.speechSynthesis.cancel();
-    speakViaGoogleTTS(clean);
+    const gttsKey = getGttsKey();
+    if(gttsKey){
+      speakViaGoogleCloudTTS(clean, gttsKey);
+    }else{
+      speakViaGoogleTTS(clean);
+    }
   }
 }
 
@@ -2306,17 +2355,32 @@ document.getElementById('voiceTestBtn')?.addEventListener('click', ()=>{
   }
   if(!arabicVoices.length){
     const uniqueLangs = [...new Set(voices.map(v=>v.lang))].sort().join('، ');
-    resultEl.innerHTML = `⚠️ لقيت ${voices.length} صوت بالمتصفح، ولكن حتى واحد ماشي عربي. كنجرب البديل عبر الإنترنت...`;
-    resultEl.style.color = '#b45309';
-    speakViaGoogleTTS('السلام عليكم، هذا اختبار للصوت العربي فتطبيق يونس', (status)=>{
-      if(status === 'ok'){
-        resultEl.innerHTML = '✅ الصوت البديل خدم! إذا سمعتي الصوت دابا، كلشي مزيان.';
-        resultEl.style.color = '#2e7d32';
-      }else{
-        resultEl.innerHTML = `❌ حتى الصوت البديل ما خدمش (يمكن الإنترنت حاجزها، أو "توفير البيانات/Lite mode" مفعّل فـ Chrome). جربي: طفي VPN إذا عندك، طفي "Data Saver" من إعدادات Chrome (⋮ ← Settings ← Data Saver)، وتأكدي الصوت ديال الهاتف ماشي مسكّت (Silent mode).<br><br><span style="font-size:10px; word-break:break-all;">اللغات المحلية المتوفرة: ${uniqueLangs}</span>`;
-        resultEl.style.color = '#b91c1c';
-      }
-    });
+    const gttsKey = getGttsKey();
+    if(gttsKey){
+      resultEl.innerHTML = `⚠️ لقيت ${voices.length} صوت بالمتصفح، ولكن حتى واحد ماشي عربي. كنجرب VoiceRSS...`;
+      resultEl.style.color = '#b45309';
+      speakViaGoogleCloudTTS('السلام عليكم، هذا اختبار للصوت العربي فتطبيق يونس', gttsKey, (status, detail)=>{
+        if(status === 'ok'){
+          resultEl.innerHTML = '✅ VoiceRSS خدم! إذا سمعتي الصوت دابا، كلشي مزيان.';
+          resultEl.style.color = '#2e7d32';
+        }else{
+          resultEl.innerHTML = `❌ VoiceRSS ما خدمش: ${detail || 'خطأ غير معروف'}. تأكدي المفتاح صحيح ومازال ما استهلكتيش الحصة اليومية (350 طلب).`;
+          resultEl.style.color = '#b91c1c';
+        }
+      });
+    }else{
+      resultEl.innerHTML = `⚠️ لقيت ${voices.length} صوت بالمتصفح، ولكن حتى واحد ماشي عربي. كنجرب البديل عبر الإنترنت...`;
+      resultEl.style.color = '#b45309';
+      speakViaGoogleTTS('السلام عليكم، هذا اختبار للصوت العربي فتطبيق يونس', (status)=>{
+        if(status === 'ok'){
+          resultEl.innerHTML = '✅ الصوت البديل خدم! إذا سمعتي الصوت دابا، كلشي مزيان.';
+          resultEl.style.color = '#2e7d32';
+        }else{
+          resultEl.innerHTML = `❌ حتى الصوت البديل ما خدمش. أحسن حل دابا: ضيفي مفتاح VoiceRSS من الإعدادات (مجاني بلا بطاقة بنكية).<br><br><span style="font-size:10px; word-break:break-all;">اللغات المحلية المتوفرة: ${uniqueLangs}</span>`;
+          resultEl.style.color = '#b91c1c';
+        }
+      });
+    }
     return;
   }else{
     resultEl.textContent = `✅ لقيت ${arabicVoices.length} صوت عربي: ${arabicVoices.map(v=>v.name).join('، ')}. كنشغل عينة دابا...`;
