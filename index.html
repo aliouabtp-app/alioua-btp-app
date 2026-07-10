@@ -1192,6 +1192,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       <button class="btn-ghost" id="voiceTestBtn" style="width:100%; margin-top:8px;">🎧 اختبار الصوت الآن</button>
       <p id="voiceTestResult" style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;"></p>
     </div>
+
+    <button class="btn-primary" id="saveKeyBtn2" style="width:100%; margin-top:18px;">💾 حفظ كل الإعدادات</button>
   </div>
 </div>
 
@@ -2027,11 +2029,12 @@ function openModal(isFirstRun){
 }
 function closeModal(){ modalBackdrop.classList.remove('show'); }
 
-saveKeyBtn.addEventListener('click', ()=>{
+function saveAllSettings(){
   const val = apiKeyInput.value.trim();
   if(!val || val.length < 10){
     modalErr.textContent = 'رجاءً ألصق مفتاح API صحيح.';
     modalErr.classList.add('show');
+    window.scrollTo(0,0);
     return;
   }
   setApiKey(val);
@@ -2040,7 +2043,9 @@ saveKeyBtn.addEventListener('click', ()=>{
   setGcalClientId(document.getElementById('gcalClientIdInput').value.trim());
   setGttsKey(document.getElementById('gttsKeyInput').value.trim());
   closeModal();
-});
+}
+saveKeyBtn.addEventListener('click', saveAllSettings);
+document.getElementById('saveKeyBtn2')?.addEventListener('click', saveAllSettings);
 cancelModalBtn.addEventListener('click', closeModal);
 settingsBtn.addEventListener('click', ()=>openModal(false));
 
