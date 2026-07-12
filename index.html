@@ -955,6 +955,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -1041,6 +1043,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       <p>مصاريفك، عملاؤك، مورديك، ومخزونك بمكان واحد.</p>
       <div class="sub-nav">
         <button class="sub-nav-btn active" data-sub="subExpenses">💰 المصاريف</button>
+        <button class="sub-nav-btn" data-sub="subInvoices">🧾 الفواتير</button>
         <button class="sub-nav-btn" data-sub="subClients">🧑‍💼 العملاء</button>
         <button class="sub-nav-btn" data-sub="subSuppliers">🚚 الموردين</button>
         <button class="sub-nav-btn" data-sub="subInventory">📦 المخزون</button>
@@ -1068,6 +1071,55 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <div class="chart-wrap" id="accountingChartWrap"><canvas id="accountingChart"></canvas></div>
         <button class="table-download-btn" id="exportReportBtn" style="border-radius:9px; border:1px solid var(--line); margin-bottom:12px;">⬇️ تحميل التقرير الإجمالي (CSV)</button>
         <div id="txList"></div>
+      </div>
+
+      <div class="sub-view" id="subInvoices">
+        <div class="card-form">
+          <p class="mini-title" style="margin-bottom:8px;">🏢 معلومات الشركة (تظهر فرأس الفاتورة)</p>
+          <input type="text" id="invCompanyName" placeholder="اسم الشركة">
+          <input type="text" id="invCompanyAddr" dir="auto" placeholder="العنوان" style="margin-top:8px;">
+          <input type="text" id="invCompanyEmail" placeholder="الإيميل" style="margin-top:8px;">
+          <input type="text" id="invCompanyPhone" placeholder="الهاتف" style="margin-top:8px;">
+          <input type="text" id="invCompanyIce" placeholder="ICE" style="margin-top:8px;">
+          <input type="text" id="invCompanyRc" placeholder="RC" style="margin-top:8px;">
+          <input type="text" id="invCompanyPatente" placeholder="Patente" style="margin-top:8px;">
+          <input type="text" id="invCompanyCnss" placeholder="CNSS" style="margin-top:8px;">
+          <input type="text" id="invCompanyIf" placeholder="Identification fiscale" style="margin-top:8px;">
+          <p class="mini-title" style="margin:14px 0 8px;">🏦 حساب بنكي (RIB)</p>
+          <div style="display:flex; gap:6px;">
+            <input type="text" id="invRibBanque" placeholder="Banque" style="flex:1;">
+            <input type="text" id="invRibVille" placeholder="Ville" style="flex:1;">
+          </div>
+          <div style="display:flex; gap:6px; margin-top:8px;">
+            <input type="text" id="invRibCompte" placeholder="N° de compte" style="flex:2;">
+            <input type="text" id="invRibCle" placeholder="Clé" style="flex:1;">
+          </div>
+          <input type="text" id="invRibBic" placeholder="BIC - Code SWIFT" style="margin-top:8px;">
+          <button class="btn-ghost" id="invSaveCompanyBtn" style="width:100%; margin-top:10px;">💾 حفظ معلومات الشركة</button>
+        </div>
+
+        <div class="card-form" style="margin-top:14px;">
+          <p class="mini-title" style="margin-bottom:8px;">🧾 فاتورة جديدة</p>
+          <div style="display:flex; gap:6px;">
+            <input type="text" id="invNumber" placeholder="رقم الفاتورة" style="flex:1;">
+            <input type="date" id="invDate" style="flex:1;">
+          </div>
+          <input type="text" id="invClientName" dir="auto" placeholder="اسم العميل / الشركة" style="margin-top:8px;">
+          <input type="text" id="invClientIce" placeholder="ICE ديال العميل (اختياري)" style="margin-top:8px;">
+          <input type="text" id="invSectionTitle" dir="auto" placeholder="عنوان القسم (مثلاً: ACOMPTE N°1)" style="margin-top:8px;">
+
+          <div id="invItemsList" style="margin-top:10px;"></div>
+          <button class="btn-ghost" id="invAddItemBtn" style="width:100%; margin-top:6px;">➕ إضافة بند</button>
+
+          <div style="display:flex; gap:6px; align-items:center; margin-top:10px;">
+            <span style="font-size:13px; color:var(--ink-soft);">نسبة TVA %</span>
+            <input type="number" id="invTvaRate" value="20" style="flex:1;">
+          </div>
+
+          <div id="invTotalsPreview" style="margin-top:10px; font-size:13px; color:var(--ink); line-height:1.9;"></div>
+
+          <button class="btn-primary" id="invGeneratePdfBtn" style="width:100%; margin-top:12px;">⬇️ توليد الفاتورة PDF</button>
+        </div>
       </div>
 
       <div class="sub-view" id="subClients">
@@ -2991,6 +3043,269 @@ function renderAccounting(){
     }
   });
 }
+
+/* ---------- الفواتير (توليد PDF) ---------- */
+const COMPANY_INFO_KEY = 'alioua_btp_company_info';
+const DEFAULT_COMPANY_INFO = {
+  name: 'ALIOUA BTP',
+  tagline: 'SOCIETE DE BATIMENT ET TRAVAUX PUBLICS',
+  addr: "DR AIT ZAOUG AIT FASKA SIDI DAOUD AIT OURIR MARRAKECH.",
+  email: 'aliouabtp@gmail.com',
+  phone: '0666270491',
+  ice: '002946690000031',
+  rc: '121065',
+  patente: '47520151',
+  cnss: '2901051',
+  ifisc: '50659297',
+  ribBanque: '007', ribVille: '450', ribCompte: '0013462000001142', ribCle: '19',
+  bic: 'BCMAMAMC'
+};
+function loadCompanyInfo(){
+  try{ return {...DEFAULT_COMPANY_INFO, ...JSON.parse(localStorage.getItem(COMPANY_INFO_KEY) || '{}')}; }
+  catch(e){ return {...DEFAULT_COMPANY_INFO}; }
+}
+function saveCompanyInfo(info){
+  localStorage.setItem(COMPANY_INFO_KEY, JSON.stringify(info));
+  if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+}
+
+function fillCompanyForm(){
+  const c = loadCompanyInfo();
+  document.getElementById('invCompanyName').value = c.name;
+  document.getElementById('invCompanyAddr').value = c.addr;
+  document.getElementById('invCompanyEmail').value = c.email;
+  document.getElementById('invCompanyPhone').value = c.phone;
+  document.getElementById('invCompanyIce').value = c.ice;
+  document.getElementById('invCompanyRc').value = c.rc;
+  document.getElementById('invCompanyPatente').value = c.patente;
+  document.getElementById('invCompanyCnss').value = c.cnss;
+  document.getElementById('invCompanyIf').value = c.ifisc;
+  document.getElementById('invRibBanque').value = c.ribBanque;
+  document.getElementById('invRibVille').value = c.ribVille;
+  document.getElementById('invRibCompte').value = c.ribCompte;
+  document.getElementById('invRibCle').value = c.ribCle;
+  document.getElementById('invRibBic').value = c.bic;
+}
+
+document.getElementById('invSaveCompanyBtn')?.addEventListener('click', ()=>{
+  const info = {
+    name: document.getElementById('invCompanyName').value.trim(),
+    tagline: DEFAULT_COMPANY_INFO.tagline,
+    addr: document.getElementById('invCompanyAddr').value.trim(),
+    email: document.getElementById('invCompanyEmail').value.trim(),
+    phone: document.getElementById('invCompanyPhone').value.trim(),
+    ice: document.getElementById('invCompanyIce').value.trim(),
+    rc: document.getElementById('invCompanyRc').value.trim(),
+    patente: document.getElementById('invCompanyPatente').value.trim(),
+    cnss: document.getElementById('invCompanyCnss').value.trim(),
+    ifisc: document.getElementById('invCompanyIf').value.trim(),
+    ribBanque: document.getElementById('invRibBanque').value.trim(),
+    ribVille: document.getElementById('invRibVille').value.trim(),
+    ribCompte: document.getElementById('invRibCompte').value.trim(),
+    ribCle: document.getElementById('invRibCle').value.trim(),
+    bic: document.getElementById('invRibBic').value.trim()
+  };
+  saveCompanyInfo(info);
+  alert('تم حفظ معلومات الشركة ✅');
+});
+
+let invItems = [{desc:'', qty:1, price:0}];
+function renderInvItems(){
+  const wrap = document.getElementById('invItemsList');
+  wrap.innerHTML = '';
+  invItems.forEach((item, idx)=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'border:1px solid var(--line); border-radius:12px; padding:10px; margin-top:8px;';
+    row.innerHTML = `
+      <input type="text" dir="auto" placeholder="وصف البند" value="${escapeHtml(item.desc)}" class="inv-item-desc" style="margin-bottom:6px;">
+      <div style="display:flex; gap:6px;">
+        <input type="number" placeholder="الكمية" value="${item.qty}" class="inv-item-qty" style="flex:1;">
+        <input type="number" placeholder="سعر الوحدة" value="${item.price}" class="inv-item-price" style="flex:1;">
+        <button class="btn-ghost inv-item-del" style="flex:0 0 44px;">🗑</button>
+      </div>
+    `;
+    row.querySelector('.inv-item-desc').addEventListener('input', (e)=>{ invItems[idx].desc = e.target.value; });
+    row.querySelector('.inv-item-qty').addEventListener('input', (e)=>{ invItems[idx].qty = parseFloat(e.target.value)||0; updateInvTotalsPreview(); });
+    row.querySelector('.inv-item-price').addEventListener('input', (e)=>{ invItems[idx].price = parseFloat(e.target.value)||0; updateInvTotalsPreview(); });
+    row.querySelector('.inv-item-del').addEventListener('click', ()=>{
+      if(invItems.length <= 1) return;
+      invItems.splice(idx,1);
+      renderInvItems();
+      updateInvTotalsPreview();
+    });
+    wrap.appendChild(row);
+  });
+}
+document.getElementById('invAddItemBtn')?.addEventListener('click', ()=>{
+  invItems.push({desc:'', qty:1, price:0});
+  renderInvItems();
+});
+
+function numberToFrenchWords(n){
+  n = Math.round(n);
+  if(n === 0) return 'zéro';
+  const units = ['','un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze','treize','quatorze','quinze','seize','dix-sept','dix-huit','dix-neuf'];
+  const tens = ['','','vingt','trente','quarante','cinquante','soixante','soixante','quatre-vingt','quatre-vingt'];
+  function under1000(num){
+    let s = '';
+    const h = Math.floor(num/100), r = num%100;
+    if(h){ s += (h>1? units[h]+' cent' : 'cent') + (h>1 && r===0 ? 's' : '') + (r? ' ' : ''); }
+    if(r){
+      if(r < 20){ s += units[r]; }
+      else{
+        const t = Math.floor(r/10), u = r%10;
+        if(t===7 || t===9){
+          s += tens[t] + (u? '-' + units[10+u] : '-dix');
+        }else{
+          s += tens[t] + (u? '-' + units[u] : (t>=8 && u===0 ? 's' : ''));
+        }
+      }
+    }
+    return s;
+  }
+  const million = Math.floor(n/1000000);
+  const thousand = Math.floor((n%1000000)/1000);
+  const rest = n%1000;
+  let parts = [];
+  if(million) parts.push((million>1? under1000(million)+' millions' : 'un million'));
+  if(thousand) parts.push((thousand>1? under1000(thousand)+' mille' : 'mille'));
+  if(rest || parts.length===0) parts.push(under1000(rest));
+  return parts.join(' ').trim();
+}
+
+function computeInvTotals(){
+  const totalHT = invItems.reduce((s,it)=> s + (it.qty * it.price), 0);
+  const tvaRate = parseFloat(document.getElementById('invTvaRate').value) || 0;
+  const tva = totalHT * tvaRate/100;
+  const ttc = totalHT + tva;
+  return {totalHT, tva, ttc, tvaRate};
+}
+function updateInvTotalsPreview(){
+  const {totalHT, tva, ttc, tvaRate} = computeInvTotals();
+  document.getElementById('invTotalsPreview').innerHTML =
+    `TOTAL HT: <strong>${totalHT.toLocaleString('fr-FR')}</strong> درهم<br>`+
+    `TVA (${tvaRate}%): <strong>${tva.toLocaleString('fr-FR')}</strong> درهم<br>`+
+    `TOTAL TTC: <strong>${ttc.toLocaleString('fr-FR')}</strong> درهم`;
+}
+document.getElementById('invTvaRate')?.addEventListener('input', updateInvTotalsPreview);
+
+document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
+  if(!window.jspdf){ alert('مكتبة توليد PDF ماتحملاتش بعد، تأكدي من الإنترنت وحاولي مرة ثانية.'); return; }
+  const c = loadCompanyInfo();
+  const clientName = document.getElementById('invClientName').value.trim() || '—';
+  const clientIce = document.getElementById('invClientIce').value.trim();
+  const invNumber = document.getElementById('invNumber').value.trim() || ('ABTP-' + Date.now().toString().slice(-6));
+  const invDate = document.getElementById('invDate').value || new Date().toISOString().slice(0,10);
+  const sectionTitle = document.getElementById('invSectionTitle').value.trim();
+  const {totalHT, tva, ttc, tvaRate} = computeInvTotals();
+  const dateFormatted = invDate.split('-').reverse().join('/');
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+  let y = 15;
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(180,30,30);
+  doc.text(c.name, 15, y+5);
+  doc.setFontSize(7); doc.setTextColor(120,90,20);
+  doc.text(c.tagline, 15, y+10);
+
+  doc.setDrawColor(0); doc.rect(130, y-5, 65, 10);
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(30,100,160);
+  doc.text('Facture', 162, y+2, {align:'center'});
+
+  y += 18;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20,20,20);
+  doc.text('Adresse: ' + c.addr, 15, y); y += 5;
+  doc.text('Email: ' + c.email, 15, y); y += 5;
+  doc.text('Téléphone: ' + c.phone, 15, y); y += 5;
+  doc.text('ICE: ' + c.ice, 15, y);
+
+  doc.setFont('helvetica','bold');
+  doc.text('Numéro de facture:', 130, 33);
+  doc.text('Date de facture:', 130, 39);
+  doc.setFont('helvetica','normal');
+  doc.text(invNumber, 175, 33);
+  doc.text(dateFormatted, 175, 39);
+
+  y += 10;
+  doc.setFillColor(90,90,90);
+  doc.rect(15, y, 60, 6, 'F');
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text('Facturer à :', 17, y+4.3);
+  y += 11;
+  doc.setTextColor(20,20,20); doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.text('Société: ' + clientName, 15, y);
+  if(clientIce){ y += 5; doc.text('ICE: ' + clientIce, 15, y); }
+
+  y += 10;
+  const tableBody = [];
+  if(sectionTitle) tableBody.push([{content: sectionTitle, colSpan:4, styles:{fontStyle:'bold', fillColor:[240,240,240]}}]);
+  invItems.forEach(it=>{
+    tableBody.push([it.desc || '', String(it.qty), it.price.toLocaleString('fr-FR'), (it.qty*it.price).toLocaleString('fr-FR')]);
+  });
+  doc.autoTable({
+    startY: y,
+    head: [['Description','Quantité','Prix unitaire HT','Prix total HT']],
+    body: tableBody,
+    theme: 'grid',
+    headStyles:{fillColor:[90,90,90], textColor:255, fontSize:9},
+    bodyStyles:{fontSize:9},
+    margin:{left:15, right:15}
+  });
+  y = doc.lastAutoTable.finalY + 10;
+
+  doc.setFillColor(70,140,190);
+  doc.rect(15, y, 70, 6, 'F');
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text('Numéro de compte bancaire :', 17, y+4.3);
+  y += 10;
+  doc.autoTable({
+    startY: y,
+    head: [['Banque','Ville','N° de compte','Clé RIB']],
+    body: [[c.ribBanque, c.ribVille, c.ribCompte, c.ribCle]],
+    theme:'grid',
+    headStyles:{fillColor:[220,220,220], textColor:20, fontSize:8},
+    bodyStyles:{fontSize:8},
+    margin:{left:15, right:130}
+  });
+  doc.setFontSize(8); doc.setFont('helvetica','normal');
+  doc.text('BIC - Code SWIFT: ' + c.bic, 15, doc.lastAutoTable.finalY + 6);
+
+  let ty = y;
+  doc.setFontSize(10);
+  doc.setFont('helvetica','bold'); doc.text('TOTAL :', 140, ty);
+  doc.setFont('helvetica','normal'); doc.text(totalHT.toLocaleString('fr-FR') + ' Dh', 195, ty, {align:'right'});
+  ty += 6;
+  doc.setFont('helvetica','bold'); doc.text(`TAUX DE ${tvaRate}% TVA :`, 140, ty);
+  doc.setFont('helvetica','normal'); doc.text(tva.toLocaleString('fr-FR') + ' Dh', 195, ty, {align:'right'});
+  ty += 6;
+  doc.setFont('helvetica','bold'); doc.text('TOTAL TTC :', 140, ty);
+  doc.setFont('helvetica','normal'); doc.text(ttc.toLocaleString('fr-FR') + ' Dh', 195, ty, {align:'right'});
+  ty += 8;
+  doc.setFont('helvetica','bold'); doc.setTextColor(30,100,160);
+  doc.text('SOMME FINALE À PAYER :', 140, ty);
+  ty += 6;
+  doc.setFontSize(11); doc.setTextColor(0,0,0);
+  doc.text(numberToFrenchWords(ttc) + ' Dirhams', 140, ty);
+
+  const footerY = 280;
+  doc.setFontSize(7); doc.setTextColor(90,90,90); doc.setFont('helvetica','normal');
+  doc.text(`le siège social ${c.addr} - CNSS n° ${c.cnss}, Patente n° ${c.patente}, RC n° ${c.rc}, ICE n° ${c.ice}, Identification fiscale n° ${c.ifisc}`, 105, footerY, {align:'center', maxWidth:180});
+
+  doc.save('facture-' + invNumber + '.pdf');
+});
+
+document.querySelector('.sub-nav-btn[data-sub="subInvoices"]')?.addEventListener('click', ()=>{
+  fillCompanyForm();
+  if(!document.getElementById('invNumber').value){
+    document.getElementById('invNumber').value = 'ABTP-' + new Date().getFullYear().toString().slice(-2) + '-' + String(Date.now()).slice(-4);
+  }
+  if(!document.getElementById('invDate').value){
+    document.getElementById('invDate').valueAsDate = new Date();
+  }
+  renderInvItems();
+  updateInvTotalsPreview();
+});
 
 /* ---------- تنقل فرعي داخل تبويب المحاسبة ---------- */
 document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
