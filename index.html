@@ -1076,7 +1076,10 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       <div class="sub-view" id="subInvoices">
         <div class="card-form">
           <p class="mini-title" style="margin-bottom:8px;">🏢 معلومات الشركة (تظهر فرأس الفاتورة)</p>
-          <input type="text" id="invCompanyName" placeholder="اسم الشركة">
+          <p style="font-size:11px; color:var(--ink-soft); margin-bottom:6px;">شعار الشركة (صورة PNG أو JPG)</p>
+          <input type="file" id="invLogoInput" accept="image/*">
+          <div id="invLogoPreview" style="margin-top:8px;"></div>
+          <input type="text" id="invCompanyName" placeholder="اسم الشركة" style="margin-top:10px;">
           <input type="text" id="invCompanyAddr" dir="auto" placeholder="العنوان" style="margin-top:8px;">
           <input type="text" id="invCompanyEmail" placeholder="الإيميل" style="margin-top:8px;">
           <input type="text" id="invCompanyPhone" placeholder="الهاتف" style="margin-top:8px;">
@@ -1099,7 +1102,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         </div>
 
         <div class="card-form" style="margin-top:14px;">
-          <p class="mini-title" style="margin-bottom:8px;">🧾 فاتورة جديدة</p>
+          <p class="mini-title" id="invFormTitle" style="margin-bottom:8px;">🧾 فاتورة جديدة</p>
           <div style="display:flex; gap:6px;">
             <input type="text" id="invNumber" placeholder="رقم الفاتورة" style="flex:1;">
             <input type="date" id="invDate" style="flex:1;">
@@ -1119,6 +1122,11 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
           <div id="invTotalsPreview" style="margin-top:10px; font-size:13px; color:var(--ink); line-height:1.9;"></div>
 
           <button class="btn-primary" id="invGeneratePdfBtn" style="width:100%; margin-top:12px;">⬇️ توليد الفاتورة PDF</button>
+        </div>
+
+        <div class="card-form" style="margin-top:14px;">
+          <p class="mini-title" style="margin-bottom:8px;">📋 الفواتير المسجلة</p>
+          <div id="invoicesListWrap"></div>
         </div>
       </div>
 
@@ -2161,6 +2169,8 @@ async function cloudPush(onStatus){
     materials: localStorage.getItem(MATERIALS_KEY) || '[]',
     appointments: localStorage.getItem(APPT_KEY) || '[]',
     chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
+    pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
+    companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     updatedAt: new Date().toISOString()
   };
   const url = `${dbUrl}/yunes_sync/${encodeURIComponent(syncCode)}.json`;
@@ -2209,10 +2219,13 @@ async function cloudPull(onStatus){
     if(data.materials) localStorage.setItem(MATERIALS_KEY, data.materials);
     if(data.appointments) localStorage.setItem(APPT_KEY, data.appointments);
     if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
+    if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
+    if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
     messages = loadHistory();
     renderMessages();
     if(typeof renderAppts === 'function') renderAppts();
     if(typeof renderAccounting === 'function') renderAccounting();
+    if(typeof renderInvoicesList === 'function') renderInvoicesList();
     if(onStatus) onStatus('ok');
   }catch(e){
     if(onStatus) onStatus('fail', 'خطأ فالاتصال بالإنترنت');
@@ -2278,6 +2291,8 @@ document.getElementById('exportSettingsBtn')?.addEventListener('click', ()=>{
     materials: localStorage.getItem(MATERIALS_KEY) || '[]',
     appointments: localStorage.getItem(APPT_KEY) || '[]',
     chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
+    pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
+    companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
@@ -2314,6 +2329,8 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(data.materials) localStorage.setItem(MATERIALS_KEY, data.materials);
       if(data.appointments) localStorage.setItem(APPT_KEY, data.appointments);
       if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
+      if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
+      if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
       apiKeyInput.value = getApiKey();
       openrouterKeyInput.value = getOpenRouterKey();
       mistralKeyInput.value = getMistralKey();
@@ -2324,6 +2341,7 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       renderMessages();
       if(typeof renderAppts === 'function') renderAppts();
       if(typeof renderAccounting === 'function') renderAccounting();
+      if(typeof renderInvoicesList === 'function') renderInvoicesList();
       resultEl.textContent = '✅ تم استرجاع كل الإعدادات والبيانات (فواتير، عملاء، موردين، مواعيد)! دوسي "حفظ" للتأكيد.';
       resultEl.style.color = '#2e7d32';
     }catch(err){
@@ -3058,7 +3076,8 @@ const DEFAULT_COMPANY_INFO = {
   cnss: '2901051',
   ifisc: '50659297',
   ribBanque: '007', ribVille: '450', ribCompte: '0013462000001142', ribCle: '19',
-  bic: 'BCMAMAMC'
+  bic: 'BCMAMAMC',
+  logoDataUrl: ''
 };
 function loadCompanyInfo(){
   try{ return {...DEFAULT_COMPANY_INFO, ...JSON.parse(localStorage.getItem(COMPANY_INFO_KEY) || '{}')}; }
@@ -3085,7 +3104,21 @@ function fillCompanyForm(){
   document.getElementById('invRibCompte').value = c.ribCompte;
   document.getElementById('invRibCle').value = c.ribCle;
   document.getElementById('invRibBic').value = c.bic;
+  const preview = document.getElementById('invLogoPreview');
+  preview.innerHTML = c.logoDataUrl ? `<img src="${c.logoDataUrl}" style="max-height:60px; border-radius:8px;">` : '<span style="font-size:11px; color:var(--ink-soft);">ماكاينش شعار مرفوع بعد.</span>';
 }
+
+let pendingLogoDataUrl = null;
+document.getElementById('invLogoInput')?.addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    pendingLogoDataUrl = ev.target.result;
+    document.getElementById('invLogoPreview').innerHTML = `<img src="${pendingLogoDataUrl}" style="max-height:60px; border-radius:8px;">`;
+  };
+  reader.readAsDataURL(file);
+});
 
 document.getElementById('invSaveCompanyBtn')?.addEventListener('click', ()=>{
   const info = {
@@ -3103,7 +3136,8 @@ document.getElementById('invSaveCompanyBtn')?.addEventListener('click', ()=>{
     ribVille: document.getElementById('invRibVille').value.trim(),
     ribCompte: document.getElementById('invRibCompte').value.trim(),
     ribCle: document.getElementById('invRibCle').value.trim(),
-    bic: document.getElementById('invRibBic').value.trim()
+    bic: document.getElementById('invRibBic').value.trim(),
+    logoDataUrl: pendingLogoDataUrl || loadCompanyInfo().logoDataUrl || ''
   };
   saveCompanyInfo(info);
   alert('تم حفظ معلومات الشركة ✅');
@@ -3183,49 +3217,61 @@ function computeInvTotals(){
 function updateInvTotalsPreview(){
   const {totalHT, tva, ttc, tvaRate} = computeInvTotals();
   document.getElementById('invTotalsPreview').innerHTML =
-    `TOTAL HT: <strong>${totalHT.toLocaleString('fr-FR')}</strong> درهم<br>`+
-    `TVA (${tvaRate}%): <strong>${tva.toLocaleString('fr-FR')}</strong> درهم<br>`+
-    `TOTAL TTC: <strong>${ttc.toLocaleString('fr-FR')}</strong> درهم`;
+    `TOTAL HT: <strong>${fmtMAD(totalHT)}</strong> درهم<br>`+
+    `TVA (${tvaRate}%): <strong>${fmtMAD(tva)}</strong> درهم<br>`+
+    `TOTAL TTC: <strong>${fmtMAD(ttc)}</strong> درهم`;
 }
 document.getElementById('invTvaRate')?.addEventListener('input', updateInvTotalsPreview);
 
-document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
-  if(!window.jspdf){ alert('مكتبة توليد PDF ماتحملاتش بعد، تأكدي من الإنترنت وحاولي مرة ثانية.'); return; }
+function fmtMAD(n){
+  // بلا فاصل آلاف (المشكل كان فـ toLocaleString)، غير فاصلة عشرية إذا كاين كسر
+  const rounded = Math.round(n*100)/100;
+  return (rounded % 1 === 0) ? String(rounded) : rounded.toFixed(2).replace('.', ',');
+}
+
+function buildInvoicePdf(invData){
+  if(!window.jspdf){ alert('مكتبة توليد PDF ماتحملاتش بعد، تأكدي من الإنترنت وحاولي مرة ثانية.'); return null; }
   const c = loadCompanyInfo();
-  const clientName = document.getElementById('invClientName').value.trim() || '—';
-  const clientIce = document.getElementById('invClientIce').value.trim();
-  const invNumber = document.getElementById('invNumber').value.trim() || ('ABTP-' + Date.now().toString().slice(-6));
-  const invDate = document.getElementById('invDate').value || new Date().toISOString().slice(0,10);
-  const sectionTitle = document.getElementById('invSectionTitle').value.trim();
-  const {totalHT, tva, ttc, tvaRate} = computeInvTotals();
+  const {clientName, clientIce, invNumber, invDate, sectionTitle, items, tvaRate} = invData;
+  const totalHT = items.reduce((s,it)=> s + (it.qty*it.price), 0);
+  const tva = totalHT * tvaRate/100;
+  const ttc = totalHT + tva;
   const dateFormatted = invDate.split('-').reverse().join('/');
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'mm', format:'a4'});
   let y = 15;
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(180,30,30);
-  doc.text(c.name, 15, y+5);
-  doc.setFontSize(7); doc.setTextColor(120,90,20);
-  doc.text(c.tagline, 15, y+10);
+  if(c.logoDataUrl){
+    try{ doc.addImage(c.logoDataUrl, 'PNG', 15, y-6, 22, 22); }catch(e){}
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(180,30,30);
+    doc.text(c.name, 40, y+2);
+    doc.setFontSize(6.5); doc.setTextColor(120,90,20);
+    doc.text(c.tagline, 40, y+7, {maxWidth:75});
+  }else{
+    doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(180,30,30);
+    doc.text(c.name, 15, y+5);
+    doc.setFontSize(7); doc.setTextColor(120,90,20);
+    doc.text(c.tagline, 15, y+10);
+  }
 
   doc.setDrawColor(0); doc.rect(130, y-5, 65, 10);
   doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(30,100,160);
   doc.text('Facture', 162, y+2, {align:'center'});
 
-  y += 18;
+  y += 20;
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20,20,20);
-  doc.text('Adresse: ' + c.addr, 15, y); y += 5;
+  doc.text('Adresse: ' + c.addr, 15, y, {maxWidth:110}); y += 5;
   doc.text('Email: ' + c.email, 15, y); y += 5;
   doc.text('Téléphone: ' + c.phone, 15, y); y += 5;
   doc.text('ICE: ' + c.ice, 15, y);
 
-  doc.setFont('helvetica','bold');
-  doc.text('Numéro de facture:', 130, 33);
-  doc.text('Date de facture:', 130, 39);
+  doc.setFont('helvetica','bold'); doc.setTextColor(20,20,20);
+  doc.text('Numéro de facture:', 130, 35);
+  doc.text('Date de facture:', 130, 41);
   doc.setFont('helvetica','normal');
-  doc.text(invNumber, 175, 33);
-  doc.text(dateFormatted, 175, 39);
+  doc.text(invNumber, 178, 35);
+  doc.text(dateFormatted, 178, 41);
 
   y += 10;
   doc.setFillColor(90,90,90);
@@ -3240,8 +3286,8 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
   y += 10;
   const tableBody = [];
   if(sectionTitle) tableBody.push([{content: sectionTitle, colSpan:4, styles:{fontStyle:'bold', fillColor:[240,240,240]}}]);
-  invItems.forEach(it=>{
-    tableBody.push([it.desc || '', String(it.qty), it.price.toLocaleString('fr-FR'), (it.qty*it.price).toLocaleString('fr-FR')]);
+  items.forEach(it=>{
+    tableBody.push([it.desc || '', String(it.qty), fmtMAD(it.price), fmtMAD(it.qty*it.price)]);
   });
   doc.autoTable({
     startY: y,
@@ -3250,6 +3296,12 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
     theme: 'grid',
     headStyles:{fillColor:[90,90,90], textColor:255, fontSize:9},
     bodyStyles:{fontSize:9},
+    columnStyles:{
+      0:{cellWidth:80},
+      1:{cellWidth:22, halign:'center'},
+      2:{cellWidth:38, halign:'right'},
+      3:{cellWidth:38, halign:'right'}
+    },
     margin:{left:15, right:15}
   });
   y = doc.lastAutoTable.finalY + 10;
@@ -3265,32 +3317,127 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
     body: [[c.ribBanque, c.ribVille, c.ribCompte, c.ribCle]],
     theme:'grid',
     headStyles:{fillColor:[220,220,220], textColor:20, fontSize:8},
-    bodyStyles:{fontSize:8},
+    bodyStyles:{fontSize:8, textColor:20},
     margin:{left:15, right:130}
   });
-  doc.setFontSize(8); doc.setFont('helvetica','normal');
-  doc.text('BIC - Code SWIFT: ' + c.bic, 15, doc.lastAutoTable.finalY + 6);
+  const ribBottomY = doc.lastAutoTable.finalY;
+  doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(20,20,20);
+  doc.text('BIC - Code SWIFT: ' + c.bic, 15, ribBottomY + 6);
 
   let ty = y;
-  doc.setFontSize(10);
-  doc.setFont('helvetica','bold'); doc.text('TOTAL :', 140, ty);
-  doc.setFont('helvetica','normal'); doc.text(totalHT.toLocaleString('fr-FR') + ' Dh', 195, ty, {align:'right'});
-  ty += 6;
-  doc.setFont('helvetica','bold'); doc.text(`TAUX DE ${tvaRate}% TVA :`, 140, ty);
-  doc.setFont('helvetica','normal'); doc.text(tva.toLocaleString('fr-FR') + ' Dh', 195, ty, {align:'right'});
-  ty += 6;
-  doc.setFont('helvetica','bold'); doc.text('TOTAL TTC :', 140, ty);
-  doc.setFont('helvetica','normal'); doc.text(ttc.toLocaleString('fr-FR') + ' Dh', 195, ty, {align:'right'});
-  ty += 8;
-  doc.setFont('helvetica','bold'); doc.setTextColor(30,100,160);
-  doc.text('SOMME FINALE À PAYER :', 140, ty);
+  doc.setFontSize(10); doc.setTextColor(20,20,20);
+  doc.setFont('helvetica','bold'); doc.text('TOTAL :', 138, ty);
+  doc.setFont('helvetica','normal'); doc.text(fmtMAD(totalHT) + ' Dh', 195, ty, {align:'right'});
+  ty += 7;
+  doc.setFont('helvetica','bold'); doc.text(`TAUX DE ${tvaRate}% TVA :`, 138, ty);
+  doc.setFont('helvetica','normal'); doc.text(fmtMAD(tva) + ' Dh', 195, ty, {align:'right'});
+  ty += 7;
+  doc.setFont('helvetica','bold'); doc.text('TOTAL TTC :', 138, ty);
+  doc.setFont('helvetica','normal'); doc.text(fmtMAD(ttc) + ' Dh', 195, ty, {align:'right'});
+  ty += 9;
+  doc.setFont('helvetica','bold'); doc.setTextColor(30,100,160); doc.setFontSize(10);
+  doc.text('SOMME FINALE À PAYER :', 138, ty);
   ty += 6;
   doc.setFontSize(11); doc.setTextColor(0,0,0);
-  doc.text(numberToFrenchWords(ttc) + ' Dirhams', 140, ty);
+  doc.text(numberToFrenchWords(ttc) + ' Dirhams', 138, ty, {maxWidth:60});
 
-  const footerY = 280;
+  ty = Math.max(ty+6, ribBottomY + 14);
+
+  const footerY = 285;
   doc.setFontSize(7); doc.setTextColor(90,90,90); doc.setFont('helvetica','normal');
   doc.text(`le siège social ${c.addr} - CNSS n° ${c.cnss}, Patente n° ${c.patente}, RC n° ${c.rc}, ICE n° ${c.ice}, Identification fiscale n° ${c.ifisc}`, 105, footerY, {align:'center', maxWidth:180});
+
+  return doc;
+}
+
+/* ---------- تخزين وعرض الفواتير ---------- */
+const PDF_INVOICES_KEY = 'alioua_btp_pdf_invoices';
+function loadPdfInvoices(){ try{ return JSON.parse(localStorage.getItem(PDF_INVOICES_KEY) || '[]'); }catch(e){ return []; } }
+function savePdfInvoices(list){
+  localStorage.setItem(PDF_INVOICES_KEY, JSON.stringify(list));
+  if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+}
+
+let editingInvoiceId = null;
+
+function renderInvoicesList(){
+  const wrap = document.getElementById('invoicesListWrap');
+  if(!wrap) return;
+  const list = loadPdfInvoices().slice().sort((a,b)=> b.createdAt - a.createdAt);
+  if(!list.length){ wrap.innerHTML = '<p style="font-size:12px; color:var(--ink-soft); text-align:center; padding:10px;">ماكاينش فواتير مسجلة بعد.</p>'; return; }
+  wrap.innerHTML = '';
+  list.forEach(inv=>{
+    const totalHT = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0);
+    const ttc = totalHT * (1 + inv.tvaRate/100);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-top:8px;';
+    row.innerHTML = `
+      <div>
+        <div style="font-weight:600; font-size:13px;">${escapeHtml(inv.invNumber)} — ${escapeHtml(inv.clientName)}</div>
+        <div style="font-size:11px; color:var(--ink-soft);">${inv.invDate.split('-').reverse().join('/')} · ${fmtMAD(ttc)} Dh TTC</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="btn-ghost inv-edit-btn" data-id="${inv.id}" style="padding:6px 10px; font-size:12px;">✏️ تعديل</button>
+        <button class="btn-ghost inv-pdf-btn" data-id="${inv.id}" style="padding:6px 10px; font-size:12px;">⬇️ PDF</button>
+      </div>
+    `;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll('.inv-edit-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=> loadInvoiceIntoForm(btn.dataset.id));
+  });
+  wrap.querySelectorAll('.inv-pdf-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const inv = loadPdfInvoices().find(i=>i.id === btn.dataset.id);
+      if(!inv) return;
+      const doc = buildInvoicePdf(inv);
+      if(doc) doc.save('facture-' + inv.invNumber + '.pdf');
+    });
+  });
+}
+
+function loadInvoiceIntoForm(id){
+  const inv = loadPdfInvoices().find(i=>i.id === id);
+  if(!inv) return;
+  editingInvoiceId = id;
+  document.getElementById('invNumber').value = inv.invNumber;
+  document.getElementById('invDate').value = inv.invDate;
+  document.getElementById('invClientName').value = inv.clientName;
+  document.getElementById('invClientIce').value = inv.clientIce || '';
+  document.getElementById('invSectionTitle').value = inv.sectionTitle || '';
+  document.getElementById('invTvaRate').value = inv.tvaRate;
+  invItems = inv.items.map(it=>({...it}));
+  renderInvItems();
+  updateInvTotalsPreview();
+  document.getElementById('invFormTitle').textContent = '✏️ تعديل الفاتورة ' + inv.invNumber;
+  document.getElementById('invGeneratePdfBtn').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
+  const clientName = document.getElementById('invClientName').value.trim() || '—';
+  const clientIce = document.getElementById('invClientIce').value.trim();
+  const invNumber = document.getElementById('invNumber').value.trim() || ('ABTP-' + Date.now().toString().slice(-6));
+  const invDate = document.getElementById('invDate').value || new Date().toISOString().slice(0,10);
+  const sectionTitle = document.getElementById('invSectionTitle').value.trim();
+  const tvaRate = parseFloat(document.getElementById('invTvaRate').value) || 0;
+  const items = invItems.map(it=>({...it}));
+
+  const invData = {
+    id: editingInvoiceId || ('inv'+Date.now()),
+    createdAt: editingInvoiceId ? (loadPdfInvoices().find(i=>i.id===editingInvoiceId)?.createdAt || Date.now()) : Date.now(),
+    clientName, clientIce, invNumber, invDate, sectionTitle, items, tvaRate
+  };
+
+  const doc = buildInvoicePdf(invData);
+  if(!doc) return;
+
+  const list = loadPdfInvoices();
+  const idx = list.findIndex(i=>i.id === invData.id);
+  if(idx >= 0) list[idx] = invData; else list.push(invData);
+  savePdfInvoices(list);
+  renderInvoicesList();
+  editingInvoiceId = null;
+  document.getElementById('invFormTitle').textContent = '🧾 فاتورة جديدة';
 
   doc.save('facture-' + invNumber + '.pdf');
 });
@@ -3305,6 +3452,7 @@ document.querySelector('.sub-nav-btn[data-sub="subInvoices"]')?.addEventListener
   }
   renderInvItems();
   updateInvTotalsPreview();
+  renderInvoicesList();
 });
 
 /* ---------- تنقل فرعي داخل تبويب المحاسبة ---------- */
@@ -3937,6 +4085,16 @@ messages = loadHistory();
 renderMessages();
 if(!getApiKey() && !getOpenRouterKey()){
   setTimeout(()=>openModal(true), 400);
+}
+
+// استرجاع تلقائي من السحابة عند فتح التطبيق (إذا كانت المزامنة مفعّلة)
+if(typeof cloudConfigured === 'function' && cloudConfigured()){
+  cloudPull((status)=>{
+    if(status === 'ok'){
+      const note = document.getElementById('cloudSyncResult');
+      if(note){ note.textContent = '✅ تم تحديث البيانات من السحابة عند الفتح.'; note.style.color = '#2e7d32'; }
+    }
+  });
 }
 
 </script>
