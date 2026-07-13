@@ -2148,9 +2148,11 @@ function saveAllSettings(){
 /* ---------- ذاكرة سحابية (Firebase Realtime Database عبر REST، بلا SDK، بلا بطاقة بنكية) ---------- */
 const FB_DBURL_KEY = 'alioua_btp_fb_dburl';
 const SYNC_CODE_KEY = 'alioua_btp_sync_code';
-function getFirebaseDbUrl(){ return (localStorage.getItem(FB_DBURL_KEY) || '').replace(/\/$/, ''); }
+const DEFAULT_FB_DBURL = 'https://yunes-app-f2fde-default-rtdb.europe-west1.firebasedatabase.app';
+const DEFAULT_SYNC_CODE = 'يونس';
+function getFirebaseDbUrl(){ return (localStorage.getItem(FB_DBURL_KEY) || DEFAULT_FB_DBURL).replace(/\/$/, ''); }
 function setFirebaseDbUrl(v){ localStorage.setItem(FB_DBURL_KEY, v.replace(/\/$/, '')); }
-function getSyncCode(){ return localStorage.getItem(SYNC_CODE_KEY) || ''; }
+function getSyncCode(){ return localStorage.getItem(SYNC_CODE_KEY) || DEFAULT_SYNC_CODE; }
 function setSyncCode(v){ localStorage.setItem(SYNC_CODE_KEY, v); }
 
 function cloudConfigured(){
@@ -2171,6 +2173,12 @@ async function cloudPush(onStatus){
     chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
     pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
+    gemini: getApiKey(),
+    kimi: getOpenRouterKey(),
+    mistral: getMistralKey(),
+    gcalClientId: getGcalClientId(),
+    voicerss: getGttsKey(),
+    voiceName: localStorage.getItem(VOICE_NAME_KEY) || '',
     updatedAt: new Date().toISOString()
   };
   const url = `${dbUrl}/yunes_sync/${encodeURIComponent(syncCode)}.json`;
@@ -2221,6 +2229,19 @@ async function cloudPull(onStatus){
     if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
     if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
     if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
+    if(data.gemini) setApiKey(data.gemini);
+    if(data.kimi) setOpenRouterKey(data.kimi);
+    if(data.mistral) setMistralKey(data.mistral);
+    if(data.gcalClientId) setGcalClientId(data.gcalClientId);
+    if(data.voicerss) setGttsKey(data.voicerss);
+    if(data.voiceName) localStorage.setItem(VOICE_NAME_KEY, data.voiceName);
+    if(apiKeyInput){
+      apiKeyInput.value = getApiKey();
+      openrouterKeyInput.value = getOpenRouterKey();
+      mistralKeyInput.value = getMistralKey();
+      const gcalEl = document.getElementById('gcalClientIdInput'); if(gcalEl) gcalEl.value = getGcalClientId();
+      const gttsEl = document.getElementById('gttsKeyInput'); if(gttsEl) gttsEl.value = getGttsKey();
+    }
     messages = loadHistory();
     renderMessages();
     if(typeof renderAppts === 'function') renderAppts();
@@ -3376,25 +3397,36 @@ function renderInvoicesList(){
         <div style="font-weight:600; font-size:13px;">${escapeHtml(inv.invNumber)} — ${escapeHtml(inv.clientName)}</div>
         <div style="font-size:11px; color:var(--ink-soft);">${inv.invDate.split('-').reverse().join('/')} · ${fmtMAD(ttc)} Dh TTC</div>
       </div>
-      <div style="display:flex; gap:6px;">
-        <button class="btn-ghost inv-edit-btn" data-id="${inv.id}" style="padding:6px 10px; font-size:12px;">✏️ تعديل</button>
-        <button class="btn-ghost inv-pdf-btn" data-id="${inv.id}" style="padding:6px 10px; font-size:12px;">⬇️ PDF</button>
+      <div style="display:flex; gap:4px;">
+        <button type="button" class="btn-ghost" data-act="edit" data-id="${inv.id}" style="padding:6px 8px; font-size:12px;">✏️</button>
+        <button type="button" class="btn-ghost" data-act="pdf" data-id="${inv.id}" style="padding:6px 8px; font-size:12px;">⬇️</button>
+        <button type="button" class="btn-ghost" data-act="del" data-id="${inv.id}" style="padding:6px 8px; font-size:12px; color:#b91c1c;">🗑</button>
       </div>
     `;
     wrap.appendChild(row);
   });
-  wrap.querySelectorAll('.inv-edit-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=> loadInvoiceIntoForm(btn.dataset.id));
-  });
-  wrap.querySelectorAll('.inv-pdf-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const inv = loadPdfInvoices().find(i=>i.id === btn.dataset.id);
-      if(!inv) return;
-      const doc = buildInvoicePdf(inv);
-      if(doc) doc.save('facture-' + inv.invNumber + '.pdf');
-    });
-  });
 }
+
+// معالج موحد (event delegation) — كيخدم دايمًا حتى لو تعاود بناء اللائحة
+document.getElementById('invoicesListWrap')?.addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-act]');
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const act = btn.dataset.act;
+  if(act === 'edit'){
+    loadInvoiceIntoForm(id);
+  }else if(act === 'pdf'){
+    const inv = loadPdfInvoices().find(i=>i.id === id);
+    if(!inv) return;
+    const doc = buildInvoicePdf(inv);
+    if(doc) doc.save('facture-' + inv.invNumber + '.pdf');
+  }else if(act === 'del'){
+    if(!confirm('متأكدة بغيتي تمسحي هاد الفاتورة؟ ما تقدريش ترجعيها بعد.')) return;
+    const list = loadPdfInvoices().filter(i=>i.id !== id);
+    savePdfInvoices(list);
+    renderInvoicesList();
+  }
+});
 
 function loadInvoiceIntoForm(id){
   const inv = loadPdfInvoices().find(i=>i.id === id);
@@ -4083,18 +4115,24 @@ renderAppts();
 renderAccounting();
 messages = loadHistory();
 renderMessages();
-if(!getApiKey() && !getOpenRouterKey()){
-  setTimeout(()=>openModal(true), 400);
+
+function decideOpenSetupModal(){
+  if(!getApiKey() && !getOpenRouterKey()){
+    setTimeout(()=>openModal(true), 400);
+  }
 }
 
-// استرجاع تلقائي من السحابة عند فتح التطبيق (إذا كانت المزامنة مفعّلة)
+// إذا المزامنة السحابية معمرة، نسترجعو أولاً (فيهم المفاتيح) قبل ما نقرروا واش نفتحو نافذة الإعداد
 if(typeof cloudConfigured === 'function' && cloudConfigured()){
   cloudPull((status)=>{
     if(status === 'ok'){
       const note = document.getElementById('cloudSyncResult');
       if(note){ note.textContent = '✅ تم تحديث البيانات من السحابة عند الفتح.'; note.style.color = '#2e7d32'; }
     }
+    decideOpenSetupModal();
   });
+}else{
+  decideOpenSetupModal();
 }
 
 </script>
