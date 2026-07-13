@@ -3243,25 +3243,25 @@ function buildInvoicePdf(invData){
   let y = 15;
 
   if(c.logoDataUrl){
-    try{ doc.addImage(c.logoDataUrl, 'PNG', 15, y-6, 22, 22); }catch(e){}
-    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(180,30,30);
-    doc.text(c.name, 40, y+2);
-    doc.setFontSize(6.5); doc.setTextColor(120,90,20);
-    doc.text(c.tagline, 40, y+7, {maxWidth:75});
+    try{ doc.addImage(c.logoDataUrl, 'PNG', 15, 6, 32, 32); }catch(e){}
+    y = 44;
   }else{
     doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(180,30,30);
     doc.text(c.name, 15, y+5);
     doc.setFontSize(7); doc.setTextColor(120,90,20);
     doc.text(c.tagline, 15, y+10);
+    y += 20;
   }
 
-  doc.setDrawColor(0); doc.rect(130, y-5, 65, 10);
+  doc.setDrawColor(0); doc.rect(130, 10, 65, 10);
   doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(30,100,160);
-  doc.text('Facture', 162, y+2, {align:'center'});
+  doc.text('Facture', 162, 17, {align:'center'});
 
-  y += 20;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20,20,20);
-  doc.text('Adresse: ' + c.addr, 15, y, {maxWidth:110}); y += 5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(20,20,20);
+  const addrLines = doc.splitTextToSize('Adresse: ' + c.addr, 110);
+  doc.text(addrLines, 15, y);
+  y += addrLines.length * 4.2 + 1;
+  doc.setFontSize(9);
   doc.text('Email: ' + c.email, 15, y); y += 5;
   doc.text('Téléphone: ' + c.phone, 15, y); y += 5;
   doc.text('ICE: ' + c.ice, 15, y);
