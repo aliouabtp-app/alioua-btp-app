@@ -1046,7 +1046,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <button class="sub-nav-btn" data-sub="subInvoices">🧾 الفواتير</button>
         <button class="sub-nav-btn" data-sub="subClients">🧑‍💼 العملاء</button>
         <button class="sub-nav-btn" data-sub="subSuppliers">🚚 الموردين</button>
-        <button class="sub-nav-btn" data-sub="subInventory">📦 المخزون</button>
+        <button class="sub-nav-btn" data-sub="subCaisse">💵 سيولة</button>
       </div>
     </div>
     <div class="tab-scroll">
@@ -1149,18 +1149,28 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <div id="supplierList"></div>
       </div>
 
-      <div class="sub-view" id="subInventory">
+      <div class="sub-view" id="subCaisse">
         <div class="card-form">
-          <input type="text" id="matName" dir="auto" placeholder="اسم المادة (إسمنت، حديد...)">
-          <input type="text" id="matUnit" dir="auto" placeholder="الوحدة (كيس، طن، متر...)">
-          <input type="number" id="matQty" placeholder="الكمية الحالية" inputmode="decimal">
-          <input type="number" id="matPrice" placeholder="سعر الوحدة (درهم)" inputmode="decimal">
-          <button class="btn-primary" id="matAddBtn">➕ إضافة مادة</button>
+          <p class="mini-title" style="margin-bottom:8px;">💵 تسجيل مصروف نقدي</p>
+          <select id="caisseCategory" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink);">
+            <option value="المشتريات والإمدادات">المشتريات والإمدادات</option>
+            <option value="النقل">النقل</option>
+            <option value="الوقود">الوقود</option>
+            <option value="الخدمات اللوجستية">الخدمات اللوجستية</option>
+            <option value="شراء المعدات">شراء المعدات</option>
+            <option value="تأجير المعدات / خدمات متنوعة">تأجير المعدات / خدمات متنوعة</option>
+            <option value="تقديم الخدمات">تقديم الخدمات</option>
+            <option value="خدمات متنوعة">خدمات متنوعة</option>
+          </select>
+          <input type="number" id="caisseAmount" placeholder="المبلغ (درهم)" inputmode="decimal" style="margin-top:8px;">
+          <input type="date" id="caisseDate" style="margin-top:8px;">
+          <input type="text" id="caisseNote" dir="auto" placeholder="ملاحظة (اختياري)" style="margin-top:8px;">
+          <button class="btn-primary" id="caisseAddBtn" style="margin-top:10px;">➕ تسجيل المصروف</button>
         </div>
         <div class="summary-cards" style="grid-template-columns:1fr;">
-          <div class="s-card net"><span class="s-label">قيمة المخزون الإجمالية</span><span class="s-val" id="matTotalValue">0</span></div>
+          <div class="s-card net"><span class="s-label">مجموع المصاريف النقدية</span><span class="s-val" id="caisseTotalValue">0</span></div>
         </div>
-        <div id="matList"></div>
+        <div id="caisseList"></div>
       </div>
 
     </div>
@@ -2168,7 +2178,7 @@ async function cloudPush(onStatus){
     clients: localStorage.getItem(CLIENTS_KEY) || '[]',
     suppliers: localStorage.getItem(SUPPLIERS_KEY) || '[]',
     purchases: localStorage.getItem(PURCHASES_KEY) || '[]',
-    materials: localStorage.getItem(MATERIALS_KEY) || '[]',
+    caisse: localStorage.getItem(CAISSE_KEY) || '[]',
     appointments: localStorage.getItem(APPT_KEY) || '[]',
     chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
     pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
@@ -2225,7 +2235,7 @@ async function cloudPull(onStatus){
     if(data.clients) localStorage.setItem(CLIENTS_KEY, data.clients);
     if(data.suppliers) localStorage.setItem(SUPPLIERS_KEY, data.suppliers);
     if(data.purchases) localStorage.setItem(PURCHASES_KEY, data.purchases);
-    if(data.materials) localStorage.setItem(MATERIALS_KEY, data.materials);
+    if(data.caisse) localStorage.setItem(CAISSE_KEY, data.caisse);
     if(data.appointments) localStorage.setItem(APPT_KEY, data.appointments);
     if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
     if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
@@ -2249,6 +2259,7 @@ async function cloudPull(onStatus){
     if(typeof renderAppts === 'function') renderAppts();
     if(typeof renderAccounting === 'function') renderAccounting();
     if(typeof renderInvoicesList === 'function') renderInvoicesList();
+    if(typeof renderCaisse === 'function') renderCaisse();
     if(onStatus) onStatus('ok');
   }catch(e){
     if(onStatus) onStatus('fail', 'خطأ فالاتصال بالإنترنت');
@@ -2311,7 +2322,7 @@ document.getElementById('exportSettingsBtn')?.addEventListener('click', ()=>{
     clients: localStorage.getItem(CLIENTS_KEY) || '[]',
     suppliers: localStorage.getItem(SUPPLIERS_KEY) || '[]',
     purchases: localStorage.getItem(PURCHASES_KEY) || '[]',
-    materials: localStorage.getItem(MATERIALS_KEY) || '[]',
+    caisse: localStorage.getItem(CAISSE_KEY) || '[]',
     appointments: localStorage.getItem(APPT_KEY) || '[]',
     chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
     pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
@@ -2350,7 +2361,7 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(data.clients) localStorage.setItem(CLIENTS_KEY, data.clients);
       if(data.suppliers) localStorage.setItem(SUPPLIERS_KEY, data.suppliers);
       if(data.purchases) localStorage.setItem(PURCHASES_KEY, data.purchases);
-      if(data.materials) localStorage.setItem(MATERIALS_KEY, data.materials);
+      if(data.caisse) localStorage.setItem(CAISSE_KEY, data.caisse);
       if(data.appointments) localStorage.setItem(APPT_KEY, data.appointments);
       if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
       if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
@@ -2367,6 +2378,7 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(typeof renderAppts === 'function') renderAppts();
       if(typeof renderAccounting === 'function') renderAccounting();
       if(typeof renderInvoicesList === 'function') renderInvoicesList();
+      if(typeof renderCaisse === 'function') renderCaisse();
       resultEl.textContent = '✅ تم استرجاع كل الإعدادات والبيانات (فواتير، عملاء، موردين، مواعيد)! دوسي "حفظ" للتأكيد.';
       resultEl.style.color = '#2e7d32';
     }catch(err){
@@ -3498,7 +3510,7 @@ document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
     document.querySelectorAll('.sub-view').forEach(v=>v.classList.toggle('active', v.id === btn.dataset.sub));
     if(btn.dataset.sub === 'subClients') renderClients();
     if(btn.dataset.sub === 'subSuppliers') renderSuppliers();
-    if(btn.dataset.sub === 'subInventory') renderInventory();
+    if(btn.dataset.sub === 'subCaisse'){ document.getElementById('caisseDate').valueAsDate = new Date(); renderCaisse(); }
   });
 });
 
@@ -3764,7 +3776,7 @@ function buildPurchaseOrderPdf(po){
 
   if(c.logoDataUrl){
     try{ doc.addImage(c.logoDataUrl, 'PNG', 15, 8, 58, 20); }catch(e){}
-    y = 30;
+    y = 34;
   }else{
     doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(180,30,30);
     doc.text(c.name, 15, y+5);
@@ -3796,16 +3808,16 @@ function buildPurchaseOrderPdf(po){
   doc.text(po.supplierName || '—', 155, y+13, {align:'center'});
 
   y += 24;
-  // مربعات تاريخ وعنوان التسليم
-  doc.rect(15, y, 60, 8);
-  doc.rect(80, y, 60, 8);
+  // مربعات تاريخ وعنوان التسليم (ارتفاع كافي باش النص ما يتراكبش مع القيمة)
+  doc.rect(15, y, 60, 14);
+  doc.rect(80, y, 60, 14);
   doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(0,0,0);
   doc.text('Date de livraison', 45, y+5, {align:'center'});
   doc.text('Adresse de livraison', 110, y+5, {align:'center'});
-  y += 14;
   doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  if(po.deliveryDate) doc.text(po.deliveryDate.split('-').reverse().join('/'), 45, y-8, {align:'center'});
-  if(po.deliveryAddr) doc.text(po.deliveryAddr, 110, y-8, {align:'center', maxWidth:55});
+  if(po.deliveryDate) doc.text(po.deliveryDate.split('-').reverse().join('/'), 45, y+11, {align:'center'});
+  if(po.deliveryAddr) doc.text(po.deliveryAddr, 110, y+11, {align:'center', maxWidth:55});
+  y += 20;
 
   doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(0,0,0);
   doc.text('Bon de Commande', 15, y);
@@ -3831,11 +3843,7 @@ function buildPurchaseOrderPdf(po){
     },
     margin:{left:15, right:15}
   });
-  y = doc.lastAutoTable.finalY + 30;
-
-  if(c.logoDataUrl){
-    try{ doc.addImage(c.logoDataUrl, 'PNG', 100, y-22, 45, 16); }catch(e){}
-  }
+  y = doc.lastAutoTable.finalY + 10;
 
   doc.autoTable({
     startY: y,
@@ -4262,72 +4270,55 @@ function renderSuppliers(){
   });
 }
 
-/* ---------- المخزون ---------- */
-const MATERIALS_KEY = 'alioua_btp_materials';
-function loadMaterials(){ try{ return JSON.parse(localStorage.getItem(MATERIALS_KEY)||'[]'); }catch(e){ return []; } }
-function saveMaterials(l){ localStorage.setItem(MATERIALS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+/* ---------- سيولة / Caisse ---------- */
+const CAISSE_KEY = 'alioua_btp_caisse';
+function loadCaisse(){ try{ return JSON.parse(localStorage.getItem(CAISSE_KEY)||'[]'); }catch(e){ return []; } }
+function saveCaisse(l){ localStorage.setItem(CAISSE_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 
-document.getElementById('matAddBtn').addEventListener('click', ()=>{
-  const name = document.getElementById('matName').value.trim();
-  const unit = document.getElementById('matUnit').value.trim() || 'وحدة';
-  const qty = parseFloat(document.getElementById('matQty').value) || 0;
-  const price = parseFloat(document.getElementById('matPrice').value) || 0;
-  if(!name) return;
-  const list = loadMaterials();
-  list.push({id:'m'+Date.now(), name, unit, qty, price});
-  saveMaterials(list);
-  document.getElementById('matName').value = '';
-  document.getElementById('matUnit').value = '';
-  document.getElementById('matQty').value = '';
-  document.getElementById('matPrice').value = '';
-  renderInventory();
+document.getElementById('caisseAddBtn').addEventListener('click', ()=>{
+  const category = document.getElementById('caisseCategory').value;
+  const amount = parseFloat(document.getElementById('caisseAmount').value) || 0;
+  const date = document.getElementById('caisseDate').value || new Date().toISOString().slice(0,10);
+  const note = document.getElementById('caisseNote').value.trim();
+  if(!amount) return;
+  const list = loadCaisse();
+  list.push({id:'c'+Date.now(), category, amount, date, note});
+  saveCaisse(list);
+  document.getElementById('caisseAmount').value = '';
+  document.getElementById('caisseNote').value = '';
+  renderCaisse();
 });
 
-function renderInventory(){
-  const list = loadMaterials();
-  const totalValue = list.reduce((s,m)=> s + (m.qty*m.price), 0);
-  document.getElementById('matTotalValue').textContent = totalValue.toLocaleString('ar') + ' درهم';
+function renderCaisse(){
+  const list = loadCaisse().slice().sort((a,b)=> new Date(b.date) - new Date(a.date));
+  const totalValue = list.reduce((s,c)=> s + c.amount, 0);
+  document.getElementById('caisseTotalValue').textContent = totalValue.toLocaleString('ar') + ' درهم';
 
-  const el = document.getElementById('matList');
+  const el = document.getElementById('caisseList');
   if(list.length === 0){
-    el.innerHTML = '<div class="empty-hint">ما فيه مواد بالمخزون بعد. ضيف أول مادة فوق ⬆️</div>';
+    el.innerHTML = '<div class="empty-hint">ما فيه مصاريف نقدية مسجلة بعد. ضيف أول مصروف فوق ⬆️</div>';
     return;
   }
   el.innerHTML = '';
-  list.forEach(mat=>{
+  list.forEach(c=>{
     const card = document.createElement('div');
-    card.className = 'list-card' + (mat.qty <= 5 ? ' mat-low' : '');
+    card.className = 'list-card';
     card.innerHTML = `
       <div class="lc-row">
         <div class="lc-body">
-          <div class="lc-title" dir="auto">${escapeHtml(mat.name)}${mat.qty<=5?' ⚠️':''}</div>
-          <div class="lc-meta" dir="auto">${mat.price.toLocaleString('ar')} درهم / ${escapeHtml(mat.unit)} — القيمة: ${(mat.qty*mat.price).toLocaleString('ar')} درهم</div>
+          <div class="lc-title" dir="auto">${escapeHtml(c.category)}</div>
+          <div class="lc-meta" dir="auto">${c.date.split('-').reverse().join('/')}${c.note ? ' — ' + escapeHtml(c.note) : ''}</div>
         </div>
-        <div class="mat-qty-controls">
-          <button class="mat-qty-btn" data-adj="-1" data-id="${mat.id}">−</button>
-          <span style="font-weight:800; font-family:'IBM Plex Mono', monospace; min-width:32px; text-align:center;">${mat.qty}</span>
-          <button class="mat-qty-btn" data-adj="1" data-id="${mat.id}">+</button>
-        </div>
-        <button class="lc-del" data-id="${mat.id}">🗑</button>
+        <div class="lc-balance">${c.amount.toLocaleString('ar')} درهم</div>
+        <button class="lc-del" data-id="${c.id}">🗑</button>
       </div>
     `;
     el.appendChild(card);
   });
-  el.querySelectorAll('.mat-qty-btn').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      const list = loadMaterials();
-      const mat = list.find(m=>m.id === b.dataset.id);
-      if(mat){
-        mat.qty = Math.max(0, mat.qty + parseFloat(b.dataset.adj));
-        saveMaterials(list);
-        renderInventory();
-      }
-    });
-  });
   el.querySelectorAll('.lc-del').forEach(b=>{
     b.addEventListener('click', ()=>{
-      saveMaterials(loadMaterials().filter(m=>m.id !== b.dataset.id));
-      renderInventory();
+      saveCaisse(loadCaisse().filter(c=>c.id !== b.dataset.id));
+      renderCaisse();
     });
   });
 }
