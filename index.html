@@ -2172,6 +2172,7 @@ async function cloudPush(onStatus){
     appointments: localStorage.getItem(APPT_KEY) || '[]',
     chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
     pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
+    purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     gemini: getApiKey(),
     kimi: getOpenRouterKey(),
@@ -2228,6 +2229,7 @@ async function cloudPull(onStatus){
     if(data.appointments) localStorage.setItem(APPT_KEY, data.appointments);
     if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
     if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
+    if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
     if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
     if(data.gemini) setApiKey(data.gemini);
     if(data.kimi) setOpenRouterKey(data.kimi);
@@ -2313,6 +2315,7 @@ document.getElementById('exportSettingsBtn')?.addEventListener('click', ()=>{
     appointments: localStorage.getItem(APPT_KEY) || '[]',
     chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
     pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
+    purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     exportedAt: new Date().toISOString()
   };
@@ -2351,6 +2354,7 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(data.appointments) localStorage.setItem(APPT_KEY, data.appointments);
       if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
       if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
+    if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
       if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
       apiKeyInput.value = getApiKey();
       openrouterKeyInput.value = getOpenRouterKey();
@@ -3723,11 +3727,150 @@ let editSupplierId = null;
 let purchaseSupplierId = null;
 let editPurchaseId = null;
 let historySupplierId = null;
+let poSupplierId = null;
+let editPoId = null;
+let poHistorySupplierId = null;
 function loadSuppliers(){ try{ return JSON.parse(localStorage.getItem(SUPPLIERS_KEY)||'[]'); }catch(e){ return []; } }
 function saveSuppliers(l){ localStorage.setItem(SUPPLIERS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function loadPurchases(){ try{ return JSON.parse(localStorage.getItem(PURCHASES_KEY)||'[]'); }catch(e){ return []; } }
 function savePurchases(l){ localStorage.setItem(PURCHASES_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function purchaseTotal(p){ return p.items.reduce((s,it)=> s + (it.amount||0), 0); }
+/* ---------- طلبات الشراء (Bon de Commande) ---------- */
+const PURCHASE_ORDERS_KEY = 'alioua_btp_purchase_orders';
+function loadPurchaseOrders(){ try{ return JSON.parse(localStorage.getItem(PURCHASE_ORDERS_KEY)||'[]'); }catch(e){ return []; } }
+function savePurchaseOrders(list){
+  localStorage.setItem(PURCHASE_ORDERS_KEY, JSON.stringify(list));
+  if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+}
+
+function computePoTotals(po){
+  const totalTTC = po.items.reduce((s,it)=> s + (it.qty*it.price - (it.remise||0)), 0);
+  const tvaRate = po.tvaRate || 0;
+  const totalHT = tvaRate ? totalTTC / (1 + tvaRate/100) : totalTTC;
+  const tvaAmount = totalTTC - totalHT;
+  const escompte = po.escompte || 0;
+  const acompte = po.acompte || 0;
+  const netAPayer = totalTTC - escompte - acompte;
+  return {totalHT, tvaAmount, totalTTC, escompte, acompte, netAPayer};
+}
+
+function buildPurchaseOrderPdf(po){
+  if(!window.jspdf){ alert('مكتبة توليد PDF ماتحملاتش بعد، تأكدي من الإنترنت وحاولي مرة ثانية.'); return null; }
+  const c = loadCompanyInfo();
+  const totals = computePoTotals(po);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+  let y = 15;
+
+  if(c.logoDataUrl){
+    try{ doc.addImage(c.logoDataUrl, 'PNG', 15, 8, 58, 20); }catch(e){}
+    y = 30;
+  }else{
+    doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(180,30,30);
+    doc.text(c.name, 15, y+5);
+    doc.setFontSize(7); doc.setTextColor(120,90,20);
+    doc.text(c.tagline, 15, y+10);
+    y += 18;
+  }
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20,20,20);
+  doc.text('ICE: ' + c.ice, 15, y);
+  y += 8;
+
+  // مربع رقم/تاريخ
+  doc.setDrawColor(0);
+  doc.rect(15, y, 65, 16);
+  doc.line(15, y+8, 80, y+8);
+  doc.line(47.5, y, 47.5, y+16);
+  doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text('Numéro', 17, y+5.5);
+  doc.text('Date', 49.5, y+5.5);
+  doc.setFont('helvetica','normal');
+  doc.text(po.poNumber, 17, y+12.5);
+  doc.text(po.poDate.split('-').reverse().join('/'), 49.5, y+12.5);
+
+  // مربع Fournisseur
+  doc.rect(115, y-2, 80, 20);
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(30,100,160);
+  doc.text('FOURNISSEUR', 155, y+4, {align:'center'});
+  doc.setFontSize(12); doc.setTextColor(0,0,0);
+  doc.text(po.supplierName || '—', 155, y+13, {align:'center'});
+
+  y += 24;
+  // مربعات تاريخ وعنوان التسليم
+  doc.rect(15, y, 60, 8);
+  doc.rect(80, y, 60, 8);
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(0,0,0);
+  doc.text('Date de livraison', 45, y+5, {align:'center'});
+  doc.text('Adresse de livraison', 110, y+5, {align:'center'});
+  y += 14;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  if(po.deliveryDate) doc.text(po.deliveryDate.split('-').reverse().join('/'), 45, y-8, {align:'center'});
+  if(po.deliveryAddr) doc.text(po.deliveryAddr, 110, y-8, {align:'center', maxWidth:55});
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(0,0,0);
+  doc.text('Bon de Commande', 15, y);
+  y += 7;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text('créé par : ' + (po.creator || ''), 15, y);
+  y += 8;
+
+  const tableBody = po.items.map(it=>[
+    it.ref || '', it.desc || '', String(it.qty), it.unit || '',
+    fmtMAD(it.price), it.remise ? fmtMAD(it.remise) : '', fmtMAD(it.qty*it.price - (it.remise||0))
+  ]);
+  doc.autoTable({
+    startY: y,
+    head: [['Référence','Désignation','Qté','unité','Px unitaire ttc','Remise','Montant ttc']],
+    body: tableBody,
+    theme:'grid',
+    headStyles:{fillColor:[230,230,230], textColor:20, fontSize:8, fontStyle:'bold'},
+    bodyStyles:{fontSize:8},
+    columnStyles:{
+      0:{cellWidth:22}, 1:{cellWidth:58}, 2:{cellWidth:14, halign:'center'}, 3:{cellWidth:16, halign:'center'},
+      4:{cellWidth:24, halign:'right'}, 5:{cellWidth:18, halign:'right'}, 6:{cellWidth:28, halign:'right'}
+    },
+    margin:{left:15, right:15}
+  });
+  y = doc.lastAutoTable.finalY + 30;
+
+  if(c.logoDataUrl){
+    try{ doc.addImage(c.logoDataUrl, 'PNG', 100, y-22, 45, 16); }catch(e){}
+  }
+
+  doc.autoTable({
+    startY: y,
+    head: [['Montant de base','Taux TVA','Montant']],
+    body: [[fmtMAD(totals.totalHT), po.tvaRate + '%', fmtMAD(totals.tvaAmount)]],
+    theme:'grid',
+    headStyles:{fillColor:[230,230,230], textColor:20, fontSize:8, fontStyle:'bold'},
+    bodyStyles:{fontSize:9, halign:'center'},
+    margin:{left:15, right:105}
+  });
+  y = doc.lastAutoTable.finalY + 8;
+
+  doc.autoTable({
+    startY: y,
+    head: [['Total HT','Escompte','Total TTc','Acompte','Net a payer']],
+    body: [[fmtMAD(totals.totalHT), totals.escompte?fmtMAD(totals.escompte):'', fmtMAD(totals.totalTTC), totals.acompte?fmtMAD(totals.acompte):'', fmtMAD(totals.netAPayer)]],
+    theme:'grid',
+    headStyles:{fillColor:[230,230,230], textColor:20, fontSize:8, fontStyle:'bold'},
+    bodyStyles:{fontSize:9, halign:'center'},
+    margin:{left:15, right:15}
+  });
+  y = doc.lastAutoTable.finalY + 10;
+
+  doc.setDrawColor(0);
+  doc.rect(15, y, 180, 16);
+  doc.setFont('helvetica','bold'); doc.setFontSize(8);
+  doc.text('NB', 20, y+5);
+  doc.setFont('helvetica','normal');
+  doc.text(": Facture à envoyer en trois exemplaires accompagnés d'une copie du BC", 30, y+5);
+  doc.text("et du BL signé et cacheté par nos service.", 105, y+9, {align:'center'});
+  doc.text('TOUT DOSSIER INCOMPLET  SERA RETOURNE AU FOURNISSEUR', 105, y+13, {align:'center'});
+
+  return doc;
+}
+
 function syncPurchaseTx(purchase, supplierName){
   const txs = loadTx();
   let t = txs.find(x=>x.purchaseId === purchase.id);
@@ -3765,6 +3908,7 @@ function renderSuppliers(){
   list.forEach(sup=>{
     const supPurchases = purchases.filter(p=>p.supplierId === sup.id);
     const spent = supPurchases.reduce((s,p)=>s+purchaseTotal(p),0);
+    const supPOs = loadPurchaseOrders().filter(po=>po.supplierId === sup.id);
     const card = document.createElement('div');
     card.className = 'list-card';
     card.innerHTML = `
@@ -3780,10 +3924,13 @@ function renderSuppliers(){
         <button class="lc-btn" data-quick="${sup.id}">💸 تسجيل شراء</button>
         <button class="lc-btn" data-edit-sup="${sup.id}">✏️ تعديل</button>
         <button class="lc-btn" data-history="${sup.id}">📜 سجل المشتريات (${supPurchases.length})</button>
+        <button class="lc-btn" data-po="${sup.id}">🧾 طلب شراء (${supPOs.length})</button>
       </div>
       <div id="supEditForm_${sup.id}"></div>
       <div id="supPurchaseForm_${sup.id}"></div>
       <div id="supPurchaseList_${sup.id}"></div>
+      <div id="supPoForm_${sup.id}"></div>
+      <div id="supPoList_${sup.id}"></div>
     `;
     el.appendChild(card);
 
@@ -3806,6 +3953,29 @@ function renderSuppliers(){
           </span>
         `;
         listEl.appendChild(row);
+      });
+    }
+
+    if(poHistorySupplierId === sup.id){
+      const poListEl = card.querySelector('#supPoList_'+sup.id);
+      poListEl.style.marginTop = '8px';
+      if(supPOs.length === 0){
+        poListEl.innerHTML = '<div class="empty-hint" style="padding:14px 6px;">ما فيه طلبات شراء مسجّلة بعد لهاد المورد.</div>';
+      }
+      supPOs.slice().reverse().forEach(po=>{
+        const totals = computePoTotals(po);
+        const row = document.createElement('div');
+        row.className = 'lc-invoice-item';
+        row.innerHTML = `
+          <span dir="auto">${escapeHtml(po.poNumber)} — ${po.poDate.split('-').reverse().join('/')}</span>
+          <span style="display:flex; align-items:center; gap:6px;">
+            <span>${fmtMAD(totals.netAPayer)} درهم</span>
+            <button class="lc-btn" data-edit-po="${po.id}" style="padding:3px 8px; font-size:10px;">✏️</button>
+            <button class="lc-btn" data-print-po="${po.id}" style="padding:3px 8px; font-size:10px;">⬇️</button>
+            <button class="lc-btn" data-del-po="${po.id}" style="padding:3px 8px; font-size:10px;">🗑</button>
+          </span>
+        `;
+        poListEl.appendChild(row);
       });
     }
 
@@ -3890,6 +4060,131 @@ function renderSuppliers(){
         renderSuppliers();
       });
     }
+
+    const editingPo = editPoId ? supPOs.find(p=>p.id === editPoId) : null;
+    if(poSupplierId === sup.id || editingPo){
+      const poHost = card.querySelector('#supPoForm_'+sup.id);
+      poHost.className = 'lc-invoice-form';
+      poHost.innerHTML = `
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="poNumber_${sup.id}" placeholder="رقم الطلب" style="flex:1;">
+          <input type="date" id="poDate_${sup.id}" style="flex:1;">
+        </div>
+        <input type="text" id="poCreator_${sup.id}" dir="auto" placeholder="créé par (اسم المسؤول)" style="margin-top:8px;">
+        <div style="display:flex; gap:6px; margin-top:8px;">
+          <input type="date" id="poDeliveryDate_${sup.id}" placeholder="تاريخ التسليم" style="flex:1;">
+          <input type="text" id="poDeliveryAddr_${sup.id}" dir="auto" placeholder="عنوان التسليم" style="flex:1;">
+        </div>
+        <div id="poRows_${sup.id}" style="margin-top:10px;"></div>
+        <button class="lc-btn" id="poAddRow_${sup.id}" style="margin-top:6px;">➕ بند جديد</button>
+        <div style="display:flex; gap:6px; margin-top:10px;">
+          <div style="flex:1;">
+            <label style="font-size:11px; color:var(--ink-soft);">TVA %</label>
+            <input type="number" id="poTva_${sup.id}" value="20">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px; color:var(--ink-soft);">Escompte</label>
+            <input type="number" id="poEscompte_${sup.id}" value="0">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px; color:var(--ink-soft);">Acompte</label>
+            <input type="number" id="poAcompte_${sup.id}" value="0">
+          </div>
+        </div>
+        <div id="poTotalsPreview_${sup.id}" style="margin-top:10px; font-size:12.5px; color:var(--ink); line-height:1.8;"></div>
+        <button class="btn-primary" id="poSave_${sup.id}" style="margin-top:10px;">💾 ${editingPo ? 'حفظ التعديل وتنزيل PDF' : 'حفظ طلب الشراء وتنزيل PDF'}</button>
+      `;
+      const poRowsHost = poHost.querySelector('#poRows_'+sup.id);
+      function addPoRow(ref, desc, qty, unit, price, remise){
+        const row = document.createElement('div');
+        row.style.cssText = 'border:1px solid var(--line); border-radius:10px; padding:8px; margin-top:6px;';
+        row.innerHTML = `
+          <div style="display:flex; gap:5px;">
+            <input type="text" class="po-ref" placeholder="Référence" value="${ref?escapeHtml(ref):''}" style="flex:1;">
+            <input type="text" class="po-desc" dir="auto" placeholder="Désignation" value="${desc?escapeHtml(desc):''}" style="flex:2;">
+          </div>
+          <div style="display:flex; gap:5px; margin-top:5px;">
+            <input type="number" class="po-qty" placeholder="Qté" value="${qty||1}" style="flex:1;">
+            <input type="text" class="po-unit" placeholder="unité" value="${unit?escapeHtml(unit):'KG'}" style="flex:1;">
+            <input type="number" class="po-price" placeholder="Px unitaire ttc" value="${price||0}" style="flex:1;">
+            <input type="number" class="po-remise" placeholder="Remise" value="${remise||0}" style="flex:1;">
+            <button class="po-del" style="flex:0 0 32px;">✕</button>
+          </div>
+        `;
+        poRowsHost.appendChild(row);
+        row.querySelector('.po-del').addEventListener('click', ()=>{ row.remove(); updatePoTotalsPreview(); });
+        row.querySelectorAll('input').forEach(inp=> inp.addEventListener('input', updatePoTotalsPreview));
+      }
+      function collectPoItems(){
+        const items = [];
+        poRowsHost.querySelectorAll('div[style*="border"]').forEach(row=>{
+          const ref = row.querySelector('.po-ref')?.value.trim();
+          const desc = row.querySelector('.po-desc')?.value.trim();
+          const qty = parseFloat(row.querySelector('.po-qty')?.value) || 0;
+          const unit = row.querySelector('.po-unit')?.value.trim() || '';
+          const price = parseFloat(row.querySelector('.po-price')?.value) || 0;
+          const remise = parseFloat(row.querySelector('.po-remise')?.value) || 0;
+          if(desc || ref) items.push({ref, desc, qty, unit, price, remise});
+        });
+        return items;
+      }
+      function updatePoTotalsPreview(){
+        const items = collectPoItems();
+        const tvaRate = parseFloat(poHost.querySelector('#poTva_'+sup.id).value) || 0;
+        const escompte = parseFloat(poHost.querySelector('#poEscompte_'+sup.id).value) || 0;
+        const acompte = parseFloat(poHost.querySelector('#poAcompte_'+sup.id).value) || 0;
+        const totals = computePoTotals({items, tvaRate, escompte, acompte});
+        poHost.querySelector('#poTotalsPreview_'+sup.id).innerHTML =
+          `Total HT: <strong>${fmtMAD(totals.totalHT)}</strong> · TVA (${tvaRate}%): <strong>${fmtMAD(totals.tvaAmount)}</strong><br>`+
+          `Total TTC: <strong>${fmtMAD(totals.totalTTC)}</strong> · Net à payer: <strong>${fmtMAD(totals.netAPayer)}</strong> درهم`;
+      }
+      if(editingPo){
+        poHost.querySelector('#poNumber_'+sup.id).value = editingPo.poNumber;
+        poHost.querySelector('#poDate_'+sup.id).value = editingPo.poDate;
+        poHost.querySelector('#poCreator_'+sup.id).value = editingPo.creator || '';
+        poHost.querySelector('#poDeliveryDate_'+sup.id).value = editingPo.deliveryDate || '';
+        poHost.querySelector('#poDeliveryAddr_'+sup.id).value = editingPo.deliveryAddr || '';
+        poHost.querySelector('#poTva_'+sup.id).value = editingPo.tvaRate;
+        poHost.querySelector('#poEscompte_'+sup.id).value = editingPo.escompte;
+        poHost.querySelector('#poAcompte_'+sup.id).value = editingPo.acompte;
+        editingPo.items.forEach(it=> addPoRow(it.ref, it.desc, it.qty, it.unit, it.price, it.remise));
+      }else{
+        poHost.querySelector('#poDate_'+sup.id).valueAsDate = new Date();
+        poHost.querySelector('#poNumber_'+sup.id).value = 'BC' + String(Date.now()).slice(-6);
+        addPoRow();
+      }
+      updatePoTotalsPreview();
+      poHost.querySelector('#poAddRow_'+sup.id).addEventListener('click', ()=>{ addPoRow(); updatePoTotalsPreview(); });
+      poHost.querySelector('#poSave_'+sup.id).addEventListener('click', ()=>{
+        const items = collectPoItems();
+        if(items.length === 0) return;
+        const poData = {
+          id: editingPo ? editingPo.id : ('po'+Date.now()),
+          supplierId: sup.id,
+          supplierName: sup.name,
+          createdAt: editingPo ? editingPo.createdAt : Date.now(),
+          poNumber: poHost.querySelector('#poNumber_'+sup.id).value.trim() || ('BC'+Date.now()),
+          poDate: poHost.querySelector('#poDate_'+sup.id).value || new Date().toISOString().slice(0,10),
+          creator: poHost.querySelector('#poCreator_'+sup.id).value.trim(),
+          deliveryDate: poHost.querySelector('#poDeliveryDate_'+sup.id).value,
+          deliveryAddr: poHost.querySelector('#poDeliveryAddr_'+sup.id).value.trim(),
+          items,
+          tvaRate: parseFloat(poHost.querySelector('#poTva_'+sup.id).value) || 0,
+          escompte: parseFloat(poHost.querySelector('#poEscompte_'+sup.id).value) || 0,
+          acompte: parseFloat(poHost.querySelector('#poAcompte_'+sup.id).value) || 0
+        };
+        const list = loadPurchaseOrders();
+        const idx = list.findIndex(p=>p.id === poData.id);
+        if(idx >= 0) list[idx] = poData; else list.push(poData);
+        savePurchaseOrders(list);
+        const doc = buildPurchaseOrderPdf(poData);
+        if(doc) doc.save('bon-commande-' + poData.poNumber + '.pdf');
+        poSupplierId = null;
+        editPoId = null;
+        poHistorySupplierId = sup.id;
+        renderSuppliers();
+      });
+    }
   });
   el.querySelectorAll('.lc-del').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -3929,6 +4224,39 @@ function renderSuppliers(){
   el.querySelectorAll('[data-history]').forEach(b=>{
     b.addEventListener('click', ()=>{
       historySupplierId = (historySupplierId === b.dataset.history) ? null : b.dataset.history;
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-po]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      poSupplierId = (poSupplierId === b.dataset.po) ? null : b.dataset.po;
+      poHistorySupplierId = b.dataset.po;
+      editPoId = null;
+      purchaseSupplierId = null;
+      editSupplierId = null;
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-edit-po]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      editPoId = (editPoId === b.dataset.editPo) ? null : b.dataset.editPo;
+      const po = loadPurchaseOrders().find(p=>p.id === editPoId);
+      poSupplierId = po ? po.supplierId : null;
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-print-po]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const po = loadPurchaseOrders().find(p=>p.id === b.dataset.printPo);
+      if(!po) return;
+      const doc = buildPurchaseOrderPdf(po);
+      if(doc) doc.save('bon-commande-' + po.poNumber + '.pdf');
+    });
+  });
+  el.querySelectorAll('[data-del-po]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      if(!confirm('متأكدة بغيتي تمسحي هاد طلب الشراء؟')) return;
+      savePurchaseOrders(loadPurchaseOrders().filter(p=>p.id !== b.dataset.delPo));
       renderSuppliers();
     });
   });
