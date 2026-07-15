@@ -3090,23 +3090,68 @@ document.getElementById('txAddBtn').addEventListener('click', ()=>{
 function renderAccounting(){
   const list = loadTx().sort((a,b)=> new Date(b.date) - new Date(a.date));
   const income = list.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-  const expense = list.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const caisseTotalForSummary = loadCaisseData().bons.reduce((s,b)=> s+bonTotal(b), 0);
+  const expense = list.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0) + caisseTotalForSummary;
   document.getElementById('sumIncome').textContent = income.toLocaleString('ar');
   document.getElementById('sumExpense').textContent = expense.toLocaleString('ar');
   document.getElementById('sumNet').textContent = (income-expense).toLocaleString('ar');
 
   const el = document.getElementById('txList');
-  if(list.length === 0){
+  // نجمّعو الحركات: مشتريات مرتبطة بمورد (purchaseId)، فواتير مرتبطة بعميل (invoiceId)، وحركات يدوية عامة (بلا ربط)
+  const supplierTotals = {}; // supplierName -> amount
+  const clientTotals = {};   // clientName -> amount
+  let manualList = [];
+  list.forEach(tx=>{
+    if(tx.purchaseId){
+      supplierTotals[tx.category] = (supplierTotals[tx.category]||0) + tx.amount;
+    }else if(tx.invoiceId){
+      clientTotals[tx.category] = (clientTotals[tx.category]||0) + tx.amount;
+    }else{
+      manualList.push(tx);
+    }
+  });
+  const caisseTotal = caisseTotalForSummary;
+
+  const rows = [];
+  Object.keys(supplierTotals).forEach(name=>{
+    rows.push({kind:'supplier', label: '🚚 ' + name, amount: supplierTotals[name], type:'expense'});
+  });
+  Object.keys(clientTotals).forEach(name=>{
+    rows.push({kind:'client', label: '🧑‍💼 ' + name, amount: clientTotals[name], type:'income'});
+  });
+  if(caisseTotal > 0){
+    rows.push({kind:'caisse', label: '💵 سيولة (مصاريف نقدية)', amount: caisseTotal, type:'expense'});
+  }
+
+  if(rows.length === 0 && manualList.length === 0){
     el.innerHTML = '<div class="empty-hint">ما فيه عمليات بعد. ضيف أول عملية فوق ⬆️</div>';
   }else{
     el.innerHTML = '';
-    list.forEach(tx=>{
+    if(rows.length){
+      const hint = document.createElement('div');
+      hint.style.cssText = 'font-size:11px; color:var(--ink-soft); padding:4px 2px 8px;';
+      hint.textContent = 'مجاميع إجمالية — للتفاصيل ادخلي لقسم الموردين/العملاء/سيولة.';
+      el.appendChild(hint);
+    }
+    rows.sort((a,b)=> b.amount - a.amount).forEach(r=>{
+      const div = document.createElement('div');
+      div.className = 'tx-item ' + r.type;
+      div.innerHTML = `
+        <div class="tx-body">
+          <div class="tx-cat" dir="ltr" style="text-align:right;">${escapeHtml(r.label)}</div>
+        </div>
+        <div class="tx-amt">${r.type==='income'?'+':'-'}${r.amount.toLocaleString('ar')}</div>
+      `;
+      el.appendChild(div);
+    });
+    // الحركات اليدوية (بلا ربط بمورد/عميل) تبقى تتبين فرديًا بحال ما كانت
+    manualList.forEach(tx=>{
       const div = document.createElement('div');
       div.className = 'tx-item ' + tx.type;
       div.innerHTML = `
         <div class="tx-body">
-          <div class="tx-cat" dir="auto">${escapeHtml(tx.category)}</div>
-          <div class="tx-meta" dir="auto">${tx.date}${tx.note? ' · '+escapeHtml(tx.note) : ''}</div>
+          <div class="tx-cat" dir="ltr" style="text-align:right;">${escapeHtml(tx.category)}</div>
+          <div class="tx-meta" dir="ltr" style="text-align:right;">${tx.date}${tx.note? ' · '+escapeHtml(tx.note) : ''}</div>
         </div>
         <div class="tx-amt">${tx.type==='income'?'+':'-'}${tx.amount.toLocaleString('ar')}</div>
         <button class="tx-del" data-id="${tx.id}">🗑</button>
