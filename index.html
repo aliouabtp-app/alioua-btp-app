@@ -1335,6 +1335,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <button class="btn-ghost" id="cloudPullBtn" style="flex:1;">📥 استرجاع من السحابة</button>
       </div>
       <p id="cloudSyncResult" style="font-size:11px; color:var(--ink-soft); margin-top:6px;"></p>
+      <p id="lastSyncDisplay" style="font-size:11px; color:var(--ink-soft); margin-top:4px; font-weight:600;"></p>
     </div>
 
     <div style="margin-top:18px; border-top:1px solid var(--line); padding-top:16px;">
@@ -2171,6 +2172,7 @@ async function callMistral(mKey, msgs){
 
 /* ---------- الإعدادات ---------- */
 function openModal(isFirstRun){
+  if(typeof updateLastSyncDisplay === 'function') updateLastSyncDisplay();
   apiKeyInput.value = getApiKey();
   openrouterKeyInput.value = getOpenRouterKey();
   mistralKeyInput.value = getMistralKey();
@@ -2261,10 +2263,21 @@ async function cloudPush(onStatus){
       if(onStatus) onStatus('fail', errData?.error || ('رمز الخطأ: '+res.status));
       return;
     }
+    localStorage.setItem('alioua_btp_last_sync', new Date().toISOString());
+    updateLastSyncDisplay();
     if(onStatus) onStatus('ok');
   }catch(e){
     if(onStatus) onStatus('fail', 'خطأ فالاتصال بالإنترنت');
   }
+}
+function updateLastSyncDisplay(){
+  const el = document.getElementById('lastSyncDisplay');
+  if(!el) return;
+  const t = localStorage.getItem('alioua_btp_last_sync');
+  if(!t){ el.textContent = 'ما كاين حتى مزامنة ناجحة بعد.'; return; }
+  const diffMin = Math.round((Date.now() - new Date(t).getTime())/60000);
+  const when = diffMin < 1 ? 'دابا' : (diffMin < 60 ? `منذ ${diffMin} د` : new Date(t).toLocaleString('ar'));
+  el.textContent = '✅ آخر مزامنة ناجحة: ' + when;
 }
 
 let cloudSyncTimer = null;
@@ -3293,24 +3306,16 @@ function renderInvItems(){
     const row = document.createElement('div');
     row.style.cssText = 'border:1px solid var(--line); border-radius:12px; padding:10px; margin-top:8px;';
     row.innerHTML = `
-      <input type="text" dir="ltr" placeholder="Désignation" value="${escapeHtml(item.desc)}" class="inv-item-desc" style="margin-bottom:6px; font-size:14px; padding:12px;">
+      <input type="text" dir="ltr" placeholder="Description" value="${escapeHtml(item.desc)}" class="inv-item-desc" style="margin-bottom:6px; font-size:14px; padding:12px;">
       <div style="display:flex; gap:6px;">
-        <input type="text" dir="ltr" placeholder="N° Bon de commande" value="${escapeHtml(item.bonNumber||'')}" class="inv-item-bon" style="flex:1;">
-        <input type="date" value="${item.date||''}" class="inv-item-date" style="flex:1;">
-      </div>
-      <div style="display:flex; gap:6px; margin-top:6px;">
-        <input type="number" placeholder="QUANTITE" value="${item.qty}" class="inv-item-qty" style="flex:1;">
-        <input type="text" dir="ltr" placeholder="UNITE" value="${escapeHtml(item.unit||'')}" class="inv-item-unit" style="flex:1;">
-        <input type="number" placeholder="P unitaire" value="${item.price}" class="inv-item-price" style="flex:1;">
+        <input type="number" placeholder="Quantité" value="${item.qty}" class="inv-item-qty" style="flex:1;">
+        <input type="number" placeholder="Prix unitaire HT" value="${item.price}" class="inv-item-price" style="flex:1;">
         <button class="btn-ghost inv-item-del" style="flex:0 0 40px;">🗑</button>
       </div>
       <div class="inv-item-total" style="margin-top:6px; font-size:12px; color:var(--ink-soft);">Total: ${fmtMAD(item.qty*item.price)} درهم</div>
     `;
     row.querySelector('.inv-item-desc').addEventListener('input', (e)=>{ invItems[idx].desc = e.target.value; });
-    row.querySelector('.inv-item-bon').addEventListener('input', (e)=>{ invItems[idx].bonNumber = e.target.value; });
-    row.querySelector('.inv-item-date').addEventListener('input', (e)=>{ invItems[idx].date = e.target.value; });
     row.querySelector('.inv-item-qty').addEventListener('input', (e)=>{ invItems[idx].qty = parseFloat(e.target.value)||0; updateInvTotalsPreview(); row.querySelector('.inv-item-total').textContent = 'Total: ' + fmtMAD(invItems[idx].qty*invItems[idx].price) + ' درهم'; });
-    row.querySelector('.inv-item-unit').addEventListener('input', (e)=>{ invItems[idx].unit = e.target.value; });
     row.querySelector('.inv-item-price').addEventListener('input', (e)=>{ invItems[idx].price = parseFloat(e.target.value)||0; updateInvTotalsPreview(); row.querySelector('.inv-item-total').textContent = 'Total: ' + fmtMAD(invItems[idx].qty*invItems[idx].price) + ' درهم'; });
     row.querySelector('.inv-item-del').addEventListener('click', ()=>{
       if(invItems.length <= 1) return;
@@ -3322,7 +3327,7 @@ function renderInvItems(){
   });
 }
 document.getElementById('invAddItemBtn')?.addEventListener('click', ()=>{
-  invItems.push({desc:'', bonNumber:'', date:'', qty:1, unit:'', price:0});
+  invItems.push({desc:'', qty:1, price:0});
   renderInvItems();
 });
 
@@ -3436,33 +3441,22 @@ function buildInvoicePdf(invData){
 
   y += 10;
   const tableBody = [];
-  if(sectionTitle) tableBody.push([{content: sectionTitle, colSpan:7, styles:{fontStyle:'bold', fillColor:[240,240,240]}}]);
+  if(sectionTitle) tableBody.push([{content: sectionTitle, colSpan:4, styles:{fontStyle:'bold', fillColor:[240,240,240]}}]);
   items.forEach(it=>{
-    tableBody.push([
-      it.desc || '',
-      it.bonNumber || '',
-      it.date ? it.date.split('-').reverse().join('/') : '',
-      String(it.qty),
-      it.unit || '',
-      fmtMAD(it.price),
-      fmtMAD(it.qty*it.price)
-    ]);
+    tableBody.push([it.desc || '', String(it.qty), fmtMAD(it.price), fmtMAD(it.qty*it.price)]);
   });
   doc.autoTable({
     startY: y,
-    head: [['Désignation','N° Bon de commande','Date','QUANTITE','UNITE','P unitaire','Total']],
+    head: [['Description','Quantité','Prix unitaire HT','Prix total HT']],
     body: tableBody,
     theme: 'grid',
-    headStyles:{fillColor:[90,90,90], textColor:255, fontSize:7.5},
-    bodyStyles:{fontSize:8},
+    headStyles:{fillColor:[90,90,90], textColor:255, fontSize:9},
+    bodyStyles:{fontSize:9},
     columnStyles:{
-      0:{cellWidth:48},
-      1:{cellWidth:28, halign:'center'},
-      2:{cellWidth:20, halign:'center'},
-      3:{cellWidth:18, halign:'center'},
-      4:{cellWidth:16, halign:'center'},
-      5:{cellWidth:22, halign:'right'},
-      6:{cellWidth:28, halign:'right'}
+      0:{cellWidth:80},
+      1:{cellWidth:22, halign:'center'},
+      2:{cellWidth:38, halign:'right'},
+      3:{cellWidth:38, halign:'right'}
     },
     margin:{left:15, right:15}
   });
