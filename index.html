@@ -54,6 +54,33 @@ body{
   position:relative;
 }
 
+/* ---------- تصميم متجاوب للحاسوب / الشاشات العريضة ---------- */
+@media (min-width: 900px){
+  body{
+    overflow:auto;
+    background:linear-gradient(160deg, #0f2a3d, #1a4a63);
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+    min-height:100vh;
+    padding:24px 0;
+  }
+  #app{
+    max-width:640px;
+    height:calc(100vh - 48px);
+    height:calc(100dvh - 48px);
+    min-height:640px;
+    border-radius:20px;
+    box-shadow:0 20px 60px rgba(0,0,0,.35);
+    overflow:hidden;
+  }
+  .modal{ max-width:640px; }
+  .summary-cards{ grid-template-columns:repeat(3, 1fr); }
+}
+@media (min-width: 1200px){
+  #app{ max-width:760px; }
+}
+
 /* ---------- Header ---------- */
 header{
   position:relative;
