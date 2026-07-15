@@ -2239,6 +2239,7 @@ async function cloudPush(onStatus){
     chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
     pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
     purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
+    supplierPayments: localStorage.getItem(SUPPLIER_PAYMENTS_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     gemini: getApiKey(),
     kimi: getOpenRouterKey(),
@@ -2296,6 +2297,7 @@ async function cloudPull(onStatus){
     if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
     if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
     if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
+    if(data.supplierPayments) localStorage.setItem(SUPPLIER_PAYMENTS_KEY, data.supplierPayments);
     if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
     if(data.gemini) setApiKey(data.gemini);
     if(data.kimi) setOpenRouterKey(data.kimi);
@@ -2383,6 +2385,7 @@ document.getElementById('exportSettingsBtn')?.addEventListener('click', ()=>{
     chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
     pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
     purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
+    supplierPayments: localStorage.getItem(SUPPLIER_PAYMENTS_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     exportedAt: new Date().toISOString()
   };
@@ -2422,6 +2425,7 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
       if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
     if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
+    if(data.supplierPayments) localStorage.setItem(SUPPLIER_PAYMENTS_KEY, data.supplierPayments);
       if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
       apiKeyInput.value = getApiKey();
       openrouterKeyInput.value = getOpenRouterKey();
@@ -3884,6 +3888,12 @@ let historySupplierId = null;
 let poSupplierId = null;
 let editPoId = null;
 let poHistorySupplierId = null;
+const SUPPLIER_PAYMENTS_KEY = 'alioua_btp_supplier_payments';
+function loadSupplierPayments(){ try{ return JSON.parse(localStorage.getItem(SUPPLIER_PAYMENTS_KEY)||'[]'); }catch(e){ return []; } }
+function saveSupplierPayments(l){ localStorage.setItem(SUPPLIER_PAYMENTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+let paySupplierId = null;
+let editPaymentId = null;
+let payHistorySupplierId = null;
 function loadSuppliers(){ try{ return JSON.parse(localStorage.getItem(SUPPLIERS_KEY)||'[]'); }catch(e){ return []; } }
 function saveSuppliers(l){ localStorage.setItem(SUPPLIERS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function loadPurchases(){ try{ return JSON.parse(localStorage.getItem(PURCHASES_KEY)||'[]'); }catch(e){ return []; } }
@@ -4059,6 +4069,11 @@ function renderSuppliers(){
     const supPurchases = purchases.filter(p=>p.supplierId === sup.id);
     const spent = supPurchases.reduce((s,p)=>s+purchaseTotal(p),0);
     const supPOs = loadPurchaseOrders().filter(po=>po.supplierId === sup.id);
+    const supPayments = loadSupplierPayments().filter(pay=>pay.supplierId === sup.id);
+    const paid = supPayments.reduce((s,pay)=>s+pay.amount,0);
+    const remaining = spent - paid;
+    const remainingColor = remaining > 0 ? '#b91c1c' : (remaining < 0 ? '#2e7d32' : 'var(--ink-soft)');
+    const remainingLabel = remaining > 0 ? 'مستحق للمورد' : (remaining < 0 ? 'دفعتي زيادة' : 'مسدد بالكامل');
     const card = document.createElement('div');
     card.className = 'list-card';
     card.innerHTML = `
@@ -4070,16 +4085,30 @@ function renderSuppliers(){
         <div class="lc-balance">${spent.toLocaleString('ar')} درهم</div>
         <button class="lc-del" data-id="${sup.id}">🗑</button>
       </div>
+      <div style="display:flex; gap:8px; margin-top:8px; font-size:11.5px;">
+        <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
+          <div style="color:var(--ink-soft);">المدفوع</div>
+          <div style="font-weight:700; color:#2e7d32;">${paid.toLocaleString('ar')} درهم</div>
+        </div>
+        <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
+          <div style="color:var(--ink-soft);">${remainingLabel}</div>
+          <div style="font-weight:700; color:${remainingColor};">${Math.abs(remaining).toLocaleString('ar')} درهم</div>
+        </div>
+      </div>
       <div class="lc-actions">
         <button class="lc-btn" data-quick="${sup.id}">💸 تسجيل شراء</button>
+        <button class="lc-btn" data-pay="${sup.id}">💵 تسجيل دفعة</button>
         <button class="lc-btn" data-edit-sup="${sup.id}">✏️ تعديل</button>
         <button class="lc-btn" data-history="${sup.id}">📜 سجل المشتريات (${supPurchases.length})</button>
         <button class="lc-btn" data-po="${sup.id}">🧾 طلب شراء (${supPOs.length})</button>
+        <button class="lc-btn" data-pay-history="${sup.id}">📋 سجل الدفعات (${supPayments.length})</button>
       </div>
       <div id="supEditForm_${sup.id}"></div>
       <div id="supPurchaseForm_${sup.id}"></div>
       <div id="supPurchaseList_${sup.id}"></div>
       <div id="supPoForm_${sup.id}"></div>
+      <div id="supPayForm_${sup.id}"></div>
+      <div id="supPayList_${sup.id}"></div>
       <div id="supPoList_${sup.id}"></div>
     `;
     el.appendChild(card);
@@ -4370,6 +4399,64 @@ function renderSuppliers(){
         renderSuppliers();
       });
     }
+
+    const editingPayment = editPaymentId ? supPayments.find(p=>p.id === editPaymentId) : null;
+    if(paySupplierId === sup.id || editingPayment){
+      const payHost = card.querySelector('#supPayForm_'+sup.id);
+      payHost.className = 'lc-invoice-form';
+      payHost.innerHTML = `
+        <input type="number" id="payAmount_${sup.id}" placeholder="مبلغ الدفعة (درهم)" inputmode="decimal" value="${editingPayment ? editingPayment.amount : ''}">
+        <input type="date" id="payDate_${sup.id}" style="margin-top:8px;">
+        <input type="text" id="payNote_${sup.id}" dir="auto" placeholder="ملاحظة (اختياري، مثلاً: شيك رقم...)" style="margin-top:8px;" value="${editingPayment ? escapeHtml(editingPayment.note||'') : ''}">
+        <button class="btn-primary" id="paySave_${sup.id}" style="margin-top:10px;">💾 ${editingPayment ? 'حفظ التعديل' : 'حفظ الدفعة'}</button>
+      `;
+      payHost.querySelector('#payDate_'+sup.id).value = editingPayment ? editingPayment.date : new Date().toISOString().slice(0,10);
+      payHost.querySelector('#paySave_'+sup.id).addEventListener('click', ()=>{
+        const amount = parseFloat(payHost.querySelector('#payAmount_'+sup.id).value) || 0;
+        if(!amount) return;
+        const date = payHost.querySelector('#payDate_'+sup.id).value || new Date().toISOString().slice(0,10);
+        const note = payHost.querySelector('#payNote_'+sup.id).value.trim();
+        const all = loadSupplierPayments();
+        if(editingPayment){
+          const p = all.find(x=>x.id === editingPayment.id);
+          p.amount = amount; p.date = date; p.note = note;
+        }else{
+          all.push({id:'pay'+Date.now(), supplierId: sup.id, amount, date, note});
+        }
+        saveSupplierPayments(all);
+        paySupplierId = null;
+        editPaymentId = null;
+        payHistorySupplierId = sup.id;
+        renderSuppliers();
+      });
+    }
+
+    if(payHistorySupplierId === sup.id){
+      const payListHost = card.querySelector('#supPayList_'+sup.id);
+      if(supPayments.length === 0){
+        payListHost.innerHTML = '<div class="empty-hint" style="padding:8px;">ماكاينش دفعات مسجلة بعد.</div>';
+      }else{
+        payListHost.innerHTML = supPayments.slice().sort((a,b)=> new Date(b.date)-new Date(a.date)).map(pay=>`
+          <div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;">
+            <div class="lc-body">
+              <span dir="ltr" style="text-align:right; display:block;">${pay.date.split('-').reverse().join('/')}${pay.note ? ' — '+escapeHtml(pay.note) : ''}</span>
+            </div>
+            <div class="lc-balance" style="color:#2e7d32;">${pay.amount.toLocaleString('ar')} درهم</div>
+            <button class="lc-btn" data-edit-pay="${pay.id}">✏️</button>
+            <button class="lc-del" data-del-pay="${pay.id}">🗑</button>
+          </div>
+        `).join('');
+        payListHost.querySelectorAll('[data-edit-pay]').forEach(b=> b.addEventListener('click', ()=>{
+          editPaymentId = (editPaymentId === b.dataset.editPay) ? null : b.dataset.editPay;
+          paySupplierId = sup.id;
+          renderSuppliers();
+        }));
+        payListHost.querySelectorAll('[data-del-pay]').forEach(b=> b.addEventListener('click', ()=>{
+          saveSupplierPayments(loadSupplierPayments().filter(p=>p.id !== b.dataset.delPay));
+          renderSuppliers();
+        }));
+      }
+    }
   });
   el.querySelectorAll('.lc-del').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -4410,6 +4497,35 @@ function renderSuppliers(){
   el.querySelectorAll('[data-history]').forEach(b=>{
     b.addEventListener('click', ()=>{
       historySupplierId = (historySupplierId === b.dataset.history) ? null : b.dataset.history;
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-pay]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      paySupplierId = (paySupplierId === b.dataset.pay) ? null : b.dataset.pay;
+      editPaymentId = null;
+      purchaseSupplierId = null;
+      editSupplierId = null;
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-edit-pay]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      editPaymentId = (editPaymentId === b.dataset.editPay) ? null : b.dataset.editPay;
+      const pay = loadSupplierPayments().find(p=>p.id === editPaymentId);
+      paySupplierId = pay ? pay.supplierId : null;
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-del-pay]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      saveSupplierPayments(loadSupplierPayments().filter(p=>p.id !== b.dataset.delPay));
+      renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-pay-history]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      payHistorySupplierId = (payHistorySupplierId === b.dataset.payHistory) ? null : b.dataset.payHistory;
       renderSuppliers();
     });
   });
