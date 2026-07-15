@@ -1107,7 +1107,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
             <input type="text" id="invNumber" placeholder="رقم الفاتورة" style="flex:1;">
             <input type="date" id="invDate" style="flex:1;">
           </div>
-          <input type="text" id="invClientName" dir="auto" placeholder="اسم العميل / الشركة" style="margin-top:8px;">
+          <input type="text" id="invClientName" dir="ltr" placeholder="اسم العميل / الشركة" style="margin-top:8px;">
           <input type="text" id="invClientIce" placeholder="ICE ديال العميل (اختياري)" style="margin-top:8px;">
           <input type="text" id="invSectionTitle" dir="auto" placeholder="عنوان القسم (مثلاً: ACOMPTE N°1)" style="margin-top:8px;">
 
@@ -1132,7 +1132,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 
       <div class="sub-view" id="subClients">
         <div class="card-form">
-          <input type="text" id="clientName" dir="auto" placeholder="اسم العميل">
+          <input type="text" id="clientName" dir="ltr" placeholder="اسم العميل">
           <input type="text" id="clientPhone" dir="ltr" placeholder="رقم الهاتف (اختياري)">
           <button class="btn-primary" id="clientAddBtn">➕ إضافة عميل</button>
         </div>
@@ -1141,7 +1141,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 
       <div class="sub-view" id="subSuppliers">
         <div class="card-form">
-          <input type="text" id="supplierName" dir="auto" placeholder="اسم المورد">
+          <input type="text" id="supplierName" dir="ltr" placeholder="اسم المورد">
           <input type="text" id="supplierCategory" dir="auto" placeholder="نوع المواد (إسمنت، حديد...)">
           <input type="text" id="supplierPhone" dir="ltr" placeholder="رقم الهاتف (اختياري)">
           <button class="btn-primary" id="supplierAddBtn">➕ إضافة مورد</button>
@@ -1150,27 +1150,56 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       </div>
 
       <div class="sub-view" id="subCaisse">
-        <div class="card-form">
-          <p class="mini-title" style="margin-bottom:8px;">💵 تسجيل مصروف نقدي</p>
-          <select id="caisseCategory" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink);">
-            <option value="المشتريات والإمدادات">المشتريات والإمدادات</option>
-            <option value="النقل">النقل</option>
-            <option value="الوقود">الوقود</option>
-            <option value="الخدمات اللوجستية">الخدمات اللوجستية</option>
-            <option value="شراء المعدات">شراء المعدات</option>
-            <option value="تأجير المعدات / خدمات متنوعة">تأجير المعدات / خدمات متنوعة</option>
-            <option value="تقديم الخدمات">تقديم الخدمات</option>
-            <option value="خدمات متنوعة">خدمات متنوعة</option>
-          </select>
-          <input type="number" id="caisseAmount" placeholder="المبلغ (درهم)" inputmode="decimal" style="margin-top:8px;">
-          <input type="date" id="caisseDate" style="margin-top:8px;">
-          <input type="text" id="caisseNote" dir="auto" placeholder="ملاحظة (اختياري)" style="margin-top:8px;">
-          <button class="btn-primary" id="caisseAddBtn" style="margin-top:10px;">➕ تسجيل المصروف</button>
-        </div>
         <div class="summary-cards" style="grid-template-columns:1fr;">
-          <div class="s-card net"><span class="s-label">مجموع المصاريف النقدية</span><span class="s-val" id="caisseTotalValue">0</span></div>
+          <div class="s-card net"><span class="s-label">💰 الرصيد المتبقي فالصندوق</span><span class="s-val" id="caisseBalanceValue">0</span></div>
         </div>
-        <div id="caisseList"></div>
+
+        <div style="display:flex; gap:8px; margin-top:10px;">
+          <button class="btn-ghost" id="caisseShowFundBtn" style="flex:1;">➕ تغذية الصندوق</button>
+          <button class="btn-primary" id="caisseShowBonBtn" style="flex:1;">🛒 تسجيل مشترى</button>
+        </div>
+
+        <div class="card-form" id="caisseFundForm" style="display:none; margin-top:12px;">
+          <p class="mini-title" style="margin-bottom:8px;">➕ تغذية الصندوق</p>
+          <input type="number" id="fundAmount" placeholder="المبلغ (درهم)" inputmode="decimal">
+          <input type="date" id="fundDate" style="margin-top:8px;">
+          <input type="text" id="fundNote" dir="auto" placeholder="ملاحظة (اختياري)" style="margin-top:8px;">
+          <button class="btn-primary" id="fundSaveBtn" style="width:100%; margin-top:10px;">💾 حفظ</button>
+        </div>
+
+        <div class="card-form" id="caisseBonForm" style="display:none; margin-top:12px;">
+          <p class="mini-title" id="bonFormTitle" style="margin-bottom:8px;">🛒 بون شراء جديد</p>
+          <div style="display:flex; gap:6px;">
+            <input type="text" id="bonNumber" placeholder="رقم البون" style="flex:1;">
+            <input type="date" id="bonDate" style="flex:1;">
+          </div>
+          <select id="bonCategory" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;">
+            <option value="المشتريات والإمدادات">المشتريات والإمدادات (Achat fourniture)</option>
+            <option value="النقل">النقل (Transport)</option>
+            <option value="الوقود">الوقود (Gasoil)</option>
+            <option value="الخدمات اللوجستية">الخدمات اللوجستية (Logistique)</option>
+            <option value="شراء المعدات">شراء المعدات (Achat matériel)</option>
+            <option value="تأجير المعدات / خدمات متنوعة">تأجير المعدات / خدمات متنوعة (Location)</option>
+            <option value="تقديم الخدمات">تقديم الخدمات (Prestation de service)</option>
+            <option value="خدمات متنوعة">خدمات متنوعة (Divers)</option>
+          </select>
+
+          <div id="bonItemsList" style="margin-top:10px;"></div>
+          <button class="btn-ghost" id="bonAddItemBtn" style="width:100%; margin-top:6px;">➕ إضافة سلعة</button>
+
+          <div id="bonTotalPreview" style="margin-top:10px; font-size:13px; font-weight:700;"></div>
+          <button class="btn-primary" id="bonSaveBtn" style="width:100%; margin-top:10px;">💾 حفظ البون</button>
+        </div>
+
+        <div style="margin-top:16px;">
+          <p class="mini-title" style="margin-bottom:8px;">📋 سجل الحركات</p>
+          <div id="caisseList"></div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <p class="mini-title" style="margin-bottom:8px;">📊 ملخص المصاريف حسب الفئة</p>
+          <div id="caisseCategorySummary"></div>
+        </div>
       </div>
 
     </div>
@@ -3188,16 +3217,25 @@ function renderInvItems(){
     const row = document.createElement('div');
     row.style.cssText = 'border:1px solid var(--line); border-radius:12px; padding:10px; margin-top:8px;';
     row.innerHTML = `
-      <input type="text" dir="auto" placeholder="وصف البند" value="${escapeHtml(item.desc)}" class="inv-item-desc" style="margin-bottom:6px;">
+      <input type="text" dir="ltr" placeholder="Désignation" value="${escapeHtml(item.desc)}" class="inv-item-desc" style="margin-bottom:6px; font-size:14px; padding:12px;">
       <div style="display:flex; gap:6px;">
-        <input type="number" placeholder="الكمية" value="${item.qty}" class="inv-item-qty" style="flex:1;">
-        <input type="number" placeholder="سعر الوحدة" value="${item.price}" class="inv-item-price" style="flex:1;">
-        <button class="btn-ghost inv-item-del" style="flex:0 0 44px;">🗑</button>
+        <input type="text" dir="ltr" placeholder="N° Bon de commande" value="${escapeHtml(item.bonNumber||'')}" class="inv-item-bon" style="flex:1;">
+        <input type="date" value="${item.date||''}" class="inv-item-date" style="flex:1;">
       </div>
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <input type="number" placeholder="QUANTITE" value="${item.qty}" class="inv-item-qty" style="flex:1;">
+        <input type="text" dir="ltr" placeholder="UNITE" value="${escapeHtml(item.unit||'')}" class="inv-item-unit" style="flex:1;">
+        <input type="number" placeholder="P unitaire" value="${item.price}" class="inv-item-price" style="flex:1;">
+        <button class="btn-ghost inv-item-del" style="flex:0 0 40px;">🗑</button>
+      </div>
+      <div class="inv-item-total" style="margin-top:6px; font-size:12px; color:var(--ink-soft);">Total: ${fmtMAD(item.qty*item.price)} درهم</div>
     `;
     row.querySelector('.inv-item-desc').addEventListener('input', (e)=>{ invItems[idx].desc = e.target.value; });
-    row.querySelector('.inv-item-qty').addEventListener('input', (e)=>{ invItems[idx].qty = parseFloat(e.target.value)||0; updateInvTotalsPreview(); });
-    row.querySelector('.inv-item-price').addEventListener('input', (e)=>{ invItems[idx].price = parseFloat(e.target.value)||0; updateInvTotalsPreview(); });
+    row.querySelector('.inv-item-bon').addEventListener('input', (e)=>{ invItems[idx].bonNumber = e.target.value; });
+    row.querySelector('.inv-item-date').addEventListener('input', (e)=>{ invItems[idx].date = e.target.value; });
+    row.querySelector('.inv-item-qty').addEventListener('input', (e)=>{ invItems[idx].qty = parseFloat(e.target.value)||0; updateInvTotalsPreview(); row.querySelector('.inv-item-total').textContent = 'Total: ' + fmtMAD(invItems[idx].qty*invItems[idx].price) + ' درهم'; });
+    row.querySelector('.inv-item-unit').addEventListener('input', (e)=>{ invItems[idx].unit = e.target.value; });
+    row.querySelector('.inv-item-price').addEventListener('input', (e)=>{ invItems[idx].price = parseFloat(e.target.value)||0; updateInvTotalsPreview(); row.querySelector('.inv-item-total').textContent = 'Total: ' + fmtMAD(invItems[idx].qty*invItems[idx].price) + ' درهم'; });
     row.querySelector('.inv-item-del').addEventListener('click', ()=>{
       if(invItems.length <= 1) return;
       invItems.splice(idx,1);
@@ -3208,7 +3246,7 @@ function renderInvItems(){
   });
 }
 document.getElementById('invAddItemBtn')?.addEventListener('click', ()=>{
-  invItems.push({desc:'', qty:1, price:0});
+  invItems.push({desc:'', bonNumber:'', date:'', qty:1, unit:'', price:0});
   renderInvItems();
 });
 
@@ -3322,22 +3360,33 @@ function buildInvoicePdf(invData){
 
   y += 10;
   const tableBody = [];
-  if(sectionTitle) tableBody.push([{content: sectionTitle, colSpan:4, styles:{fontStyle:'bold', fillColor:[240,240,240]}}]);
+  if(sectionTitle) tableBody.push([{content: sectionTitle, colSpan:7, styles:{fontStyle:'bold', fillColor:[240,240,240]}}]);
   items.forEach(it=>{
-    tableBody.push([it.desc || '', String(it.qty), fmtMAD(it.price), fmtMAD(it.qty*it.price)]);
+    tableBody.push([
+      it.desc || '',
+      it.bonNumber || '',
+      it.date ? it.date.split('-').reverse().join('/') : '',
+      String(it.qty),
+      it.unit || '',
+      fmtMAD(it.price),
+      fmtMAD(it.qty*it.price)
+    ]);
   });
   doc.autoTable({
     startY: y,
-    head: [['Description','Quantité','Prix unitaire HT','Prix total HT']],
+    head: [['Désignation','N° Bon de commande','Date','QUANTITE','UNITE','P unitaire','Total']],
     body: tableBody,
     theme: 'grid',
-    headStyles:{fillColor:[90,90,90], textColor:255, fontSize:9},
-    bodyStyles:{fontSize:9},
+    headStyles:{fillColor:[90,90,90], textColor:255, fontSize:7.5},
+    bodyStyles:{fontSize:8},
     columnStyles:{
-      0:{cellWidth:80},
-      1:{cellWidth:22, halign:'center'},
-      2:{cellWidth:38, halign:'right'},
-      3:{cellWidth:38, halign:'right'}
+      0:{cellWidth:48},
+      1:{cellWidth:28, halign:'center'},
+      2:{cellWidth:20, halign:'center'},
+      3:{cellWidth:18, halign:'center'},
+      4:{cellWidth:16, halign:'center'},
+      5:{cellWidth:22, halign:'right'},
+      6:{cellWidth:28, halign:'right'}
     },
     margin:{left:15, right:15}
   });
@@ -3416,6 +3465,7 @@ function renderInvoicesList(){
       <div style="display:flex; gap:4px;">
         <button type="button" class="btn-ghost" data-act="edit" data-id="${inv.id}" style="padding:6px 8px; font-size:12px;">✏️</button>
         <button type="button" class="btn-ghost" data-act="pdf" data-id="${inv.id}" style="padding:6px 8px; font-size:12px;">⬇️</button>
+        <button type="button" class="btn-ghost" data-act="print" data-id="${inv.id}" style="padding:6px 8px; font-size:12px;">🖨️</button>
         <button type="button" class="btn-ghost" data-act="del" data-id="${inv.id}" style="padding:6px 8px; font-size:12px; color:#b91c1c;">🗑</button>
       </div>
     `;
@@ -3436,10 +3486,17 @@ document.getElementById('invoicesListWrap')?.addEventListener('click', (e)=>{
     if(!inv) return;
     const doc = buildInvoicePdf(inv);
     if(doc) doc.save('facture-' + inv.invNumber + '.pdf');
+  }else if(act === 'print'){
+    const inv = loadPdfInvoices().find(i=>i.id === id);
+    if(!inv) return;
+    const doc = buildInvoicePdf(inv);
+    if(doc){ doc.autoPrint(); window.open(doc.output('bloburl'), '_blank'); }
   }else if(act === 'del'){
     if(!confirm('متأكدة بغيتي تمسحي هاد الفاتورة؟ ما تقدريش ترجعيها بعد.')) return;
     const list = loadPdfInvoices().filter(i=>i.id !== id);
     savePdfInvoices(list);
+    deleteInvoiceTx(id);
+    if(typeof renderAccounting === 'function') renderAccounting();
     renderInvoicesList();
   }
 });
@@ -3460,6 +3517,17 @@ function loadInvoiceIntoForm(id){
   document.getElementById('invFormTitle').textContent = '✏️ تعديل الفاتورة ' + inv.invNumber;
   document.getElementById('invGeneratePdfBtn').scrollIntoView({behavior:'smooth', block:'center'});
 }
+
+function syncInvoiceTx(inv){
+  const txs = loadTx();
+  const total = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + inv.tvaRate/100);
+  const note = 'فاتورة ' + inv.invNumber + (inv.clientName ? ' — ' + inv.clientName : '');
+  let t = txs.find(x=>x.invoiceId === inv.id);
+  if(t){ t.amount = total; t.date = inv.invDate; t.category = inv.clientName || 'عميل'; t.note = note; }
+  else{ txs.push({id:'t'+Date.now(), type:'income', amount: total, category: inv.clientName || 'عميل', date: inv.invDate, note, invoiceId: inv.id}); }
+  saveTx(txs);
+}
+function deleteInvoiceTx(invoiceId){ saveTx(loadTx().filter(t=>t.invoiceId !== invoiceId)); }
 
 document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
   const clientName = document.getElementById('invClientName').value.trim() || '—';
@@ -3483,7 +3551,9 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
   const idx = list.findIndex(i=>i.id === invData.id);
   if(idx >= 0) list[idx] = invData; else list.push(invData);
   savePdfInvoices(list);
+  syncInvoiceTx(invData);
   renderInvoicesList();
+  if(typeof renderAccounting === 'function') renderAccounting();
   editingInvoiceId = null;
   document.getElementById('invFormTitle').textContent = '🧾 فاتورة جديدة';
 
@@ -3556,7 +3626,7 @@ function renderClients(){
     card.innerHTML = `
       <div class="lc-row">
         <div class="lc-body">
-          <div class="lc-title" dir="auto">${escapeHtml(client.name)}</div>
+          <div class="lc-title" dir="ltr" style="text-align:right;">${escapeHtml(client.name)}</div>
           <div class="lc-meta" dir="auto">${client.phone ? escapeHtml(client.phone) : 'بدون رقم هاتف'}</div>
         </div>
         <div class="lc-balance ${due>0?'due':'clear'}">${due>0? due.toLocaleString('ar')+' درهم مستحق' : 'مسدد ✓'}</div>
@@ -3922,7 +3992,7 @@ function renderSuppliers(){
     card.innerHTML = `
       <div class="lc-row">
         <div class="lc-body">
-          <div class="lc-title" dir="auto">${escapeHtml(sup.name)}</div>
+          <div class="lc-title" dir="ltr" style="text-align:right;">${escapeHtml(sup.name)}</div>
           <div class="lc-meta" dir="auto">${sup.category ? escapeHtml(sup.category)+' · ' : ''}${sup.phone ? escapeHtml(sup.phone) : 'بدون رقم هاتف'}</div>
         </div>
         <div class="lc-balance">${spent.toLocaleString('ar')} درهم</div>
@@ -3953,7 +4023,7 @@ function renderSuppliers(){
         row.className = 'lc-invoice-item';
         const itemsSummary = p.items.map(it=>it.desc).filter(Boolean).join('، ') || 'شراء';
         row.innerHTML = `
-          <span dir="auto">${p.date} — ${escapeHtml(itemsSummary)}</span>
+          <span dir="ltr" style="text-align:right;">${p.date} — ${escapeHtml(itemsSummary)}</span>
           <span style="display:flex; align-items:center; gap:6px;">
             <span>${purchaseTotal(p).toLocaleString('ar')} درهم</span>
             <button class="lc-btn" data-edit-purchase="${p.id}" style="padding:3px 8px; font-size:10px;">✏️</button>
@@ -3975,7 +4045,7 @@ function renderSuppliers(){
         const row = document.createElement('div');
         row.className = 'lc-invoice-item';
         row.innerHTML = `
-          <span dir="auto">${escapeHtml(po.poNumber)} — ${po.poDate.split('-').reverse().join('/')}</span>
+          <span dir="ltr" style="text-align:right;">${escapeHtml(po.poNumber)} — ${po.poDate.split('-').reverse().join('/')}</span>
           <span style="display:flex; align-items:center; gap:6px;">
             <span>${fmtMAD(totals.netAPayer)} درهم</span>
             <button class="lc-btn" data-edit-po="${po.id}" style="padding:3px 8px; font-size:10px;">✏️</button>
@@ -3991,9 +4061,9 @@ function renderSuppliers(){
       const editHost = card.querySelector('#supEditForm_'+sup.id);
       editHost.className = 'lc-invoice-form';
       editHost.innerHTML = `
-        <input type="text" id="supEditName_${sup.id}" dir="auto" value="${escapeHtml(sup.name)}" placeholder="اسم المورد" style="margin-bottom:8px;">
-        <input type="text" id="supEditCat_${sup.id}" dir="auto" value="${escapeHtml(sup.category||'')}" placeholder="نوع المواد" style="margin-bottom:8px;">
-        <input type="text" id="supEditPhone_${sup.id}" dir="auto" value="${escapeHtml(sup.phone||'')}" placeholder="رقم الهاتف" style="margin-bottom:8px;">
+        <input type="text" id="supEditName_${sup.id}" dir="ltr" value="${escapeHtml(sup.name)}" placeholder="اسم المورد" style="margin-bottom:8px;">
+        <input type="text" id="supEditCat_${sup.id}" dir="ltr" value="${escapeHtml(sup.category||'')}" placeholder="نوع المواد" style="margin-bottom:8px;">
+        <input type="text" id="supEditPhone_${sup.id}" dir="ltr" value="${escapeHtml(sup.phone||'')}" placeholder="رقم الهاتف" style="margin-bottom:8px;">
         <button class="btn-primary" id="supEditSave_${sup.id}">💾 حفظ التعديل</button>
       `;
       editHost.querySelector('#supEditSave_'+sup.id).addEventListener('click', ()=>{
@@ -4019,39 +4089,51 @@ function renderSuppliers(){
       pHost.innerHTML = `
         <div id="pRows_${sup.id}"></div>
         <button class="lc-btn" id="pAddRow_${sup.id}" style="margin-bottom:8px;">➕ بند جديد</button>
-        <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">تاريخ الشراء</label>
-        <input type="date" id="pDate_${sup.id}" style="margin-bottom:10px;">
         <button class="btn-primary" id="pSave_${sup.id}">💾 ${editingPurchase ? 'حفظ التعديل' : 'حفظ الشراء'}</button>
       `;
       const rowsHost = pHost.querySelector('#pRows_'+sup.id);
-      function addPRow(desc, amount){
+      function addPRow(it){
+        it = it || {};
+        if(!it.bonNumber) it.bonNumber = 'BC-' + Date.now().toString().slice(-6) + Math.floor(Math.random()*90+10);
         const row = document.createElement('div');
-        row.className = 'quote-row';
+        row.className = 'purchase-item-row';
+        row.style.cssText = 'border:1px solid var(--line); border-radius:10px; padding:8px; margin-top:6px;';
         row.innerHTML = `
-          <input type="text" class="q-desc" dir="auto" placeholder="اسم/وصف المشترى (مثلاً: إسمنت 50 كيس)" value="${desc?escapeHtml(desc):''}">
-          <input type="number" class="q-price" dir="ltr" placeholder="المبلغ" value="${amount||''}" inputmode="decimal">
-          <button class="q-del">✕</button>
+          <input type="text" class="q-desc" dir="ltr" placeholder="Désignation" value="${it.desc?escapeHtml(it.desc):''}" style="font-size:14px; padding:12px;">
+          <div style="display:flex; gap:5px; margin-top:5px;">
+            <input type="text" class="q-bon" dir="ltr" placeholder="N° Bon de commande" value="${it.bonNumber?escapeHtml(it.bonNumber):''}" style="flex:1;">
+            <input type="date" class="q-date" value="${it.date||''}" style="flex:1;">
+          </div>
+          <div style="display:flex; gap:5px; margin-top:5px;">
+            <input type="number" class="q-qty" placeholder="QUANTITE" value="${it.qty||1}" style="flex:1;">
+            <input type="text" class="q-unit" dir="ltr" placeholder="UNITE" value="${it.unit?escapeHtml(it.unit):''}" style="flex:1;">
+            <input type="number" class="q-price" dir="ltr" placeholder="P unitaire" value="${it.price||''}" inputmode="decimal" style="flex:1;">
+            <button class="q-del" style="flex:0 0 36px;">✕</button>
+          </div>
         `;
         rowsHost.appendChild(row);
         row.querySelector('.q-del').addEventListener('click', ()=> row.remove());
       }
       if(editingPurchase){
-        editingPurchase.items.forEach(it=> addPRow(it.desc, it.amount));
-        pHost.querySelector('#pDate_'+sup.id).value = editingPurchase.date;
+        editingPurchase.items.forEach(it=> addPRow(it));
       }else{
-        addPRow();
-        pHost.querySelector('#pDate_'+sup.id).valueAsDate = new Date();
+        addPRow({date: new Date().toISOString().slice(0,10)});
       }
-      pHost.querySelector('#pAddRow_'+sup.id).addEventListener('click', ()=>addPRow());
+      pHost.querySelector('#pAddRow_'+sup.id).addEventListener('click', ()=>addPRow({date: new Date().toISOString().slice(0,10)}));
       pHost.querySelector('#pSave_'+sup.id).addEventListener('click', ()=>{
         const items = [];
-        rowsHost.querySelectorAll('.quote-row').forEach(row=>{
+        rowsHost.querySelectorAll('.purchase-item-row').forEach(row=>{
           const desc = row.querySelector('.q-desc').value.trim();
-          const amount = parseFloat(row.querySelector('.q-price').value) || 0;
-          if(desc && amount) items.push({desc, amount});
+          const bonNumber = row.querySelector('.q-bon').value.trim();
+          const date = row.querySelector('.q-date').value || new Date().toISOString().slice(0,10);
+          const qty = parseFloat(row.querySelector('.q-qty').value) || 1;
+          const unit = row.querySelector('.q-unit').value.trim();
+          const price = parseFloat(row.querySelector('.q-price').value) || 0;
+          const amount = qty*price;
+          if(desc && amount) items.push({desc, bonNumber, date, qty, unit, price, amount});
         });
         if(items.length === 0) return;
-        const date = pHost.querySelector('#pDate_'+sup.id).value || new Date().toISOString().slice(0,10);
+        const date = items[items.length-1].date;
         const all = loadPurchases();
         let purchase;
         if(editingPurchase){
@@ -4064,6 +4146,29 @@ function renderSuppliers(){
         }
         savePurchases(all);
         syncPurchaseTx(purchase, sup.name);
+
+        // إنشاء/تحديث طلب شراء (Bon de Commande) تلقائيًا بنفس بيانات هاد الشراء
+        const poList = loadPurchaseOrders();
+        let linkedPo = poList.find(p=>p.linkedPurchaseId === purchase.id);
+        const poData = {
+          id: linkedPo ? linkedPo.id : ('po'+Date.now()),
+          linkedPurchaseId: purchase.id,
+          supplierId: sup.id,
+          supplierName: sup.name,
+          createdAt: linkedPo ? linkedPo.createdAt : Date.now(),
+          poNumber: items[0]?.bonNumber || ('BC'+Date.now()),
+          poDate: date,
+          creator: '',
+          deliveryDate: '',
+          deliveryAddr: '',
+          items: items.map(it=>({ref:'', desc:it.desc, qty:it.qty, unit:it.unit, price:it.price, remise:0})),
+          tvaRate: 0,
+          escompte: 0,
+          acompte: 0
+        };
+        const poIdx = poList.findIndex(p=>p.id === poData.id);
+        if(poIdx >= 0) poList[poIdx] = poData; else poList.push(poData);
+        savePurchaseOrders(poList);
         purchaseSupplierId = null;
         renderSuppliers();
       });
@@ -4078,10 +4183,10 @@ function renderSuppliers(){
           <input type="text" id="poNumber_${sup.id}" placeholder="رقم الطلب" style="flex:1;">
           <input type="date" id="poDate_${sup.id}" style="flex:1;">
         </div>
-        <input type="text" id="poCreator_${sup.id}" dir="auto" placeholder="créé par (اسم المسؤول)" style="margin-top:8px;">
+        <input type="text" id="poCreator_${sup.id}" dir="ltr" placeholder="créé par (اسم المسؤول)" style="margin-top:8px;">
         <div style="display:flex; gap:6px; margin-top:8px;">
           <input type="date" id="poDeliveryDate_${sup.id}" placeholder="تاريخ التسليم" style="flex:1;">
-          <input type="text" id="poDeliveryAddr_${sup.id}" dir="auto" placeholder="عنوان التسليم" style="flex:1;">
+          <input type="text" id="poDeliveryAddr_${sup.id}" dir="ltr" placeholder="عنوان التسليم" style="flex:1;">
         </div>
         <div id="poRows_${sup.id}" style="margin-top:10px;"></div>
         <button class="lc-btn" id="poAddRow_${sup.id}" style="margin-top:6px;">➕ بند جديد</button>
@@ -4226,6 +4331,7 @@ function renderSuppliers(){
     b.addEventListener('click', ()=>{
       savePurchases(loadPurchases().filter(p=>p.id !== b.dataset.delPurchase));
       deletePurchaseTx(b.dataset.delPurchase);
+      savePurchaseOrders(loadPurchaseOrders().filter(p=>p.linkedPurchaseId !== b.dataset.delPurchase));
       renderSuppliers();
     });
   });
@@ -4272,55 +4378,261 @@ function renderSuppliers(){
 
 /* ---------- سيولة / Caisse ---------- */
 const CAISSE_KEY = 'alioua_btp_caisse';
-function loadCaisse(){ try{ return JSON.parse(localStorage.getItem(CAISSE_KEY)||'[]'); }catch(e){ return []; } }
-function saveCaisse(l){ localStorage.setItem(CAISSE_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+const CAISSE_CATEGORIES = ['المشتريات والإمدادات','النقل','الوقود','الخدمات اللوجستية','شراء المعدات','تأجير المعدات / خدمات متنوعة','تقديم الخدمات','خدمات متنوعة'];
 
-document.getElementById('caisseAddBtn').addEventListener('click', ()=>{
-  const category = document.getElementById('caisseCategory').value;
-  const amount = parseFloat(document.getElementById('caisseAmount').value) || 0;
-  const date = document.getElementById('caisseDate').value || new Date().toISOString().slice(0,10);
-  const note = document.getElementById('caisseNote').value.trim();
+function loadCaisseData(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(CAISSE_KEY) || 'null');
+    if(raw && typeof raw === 'object' && !Array.isArray(raw)) return {fundings: raw.fundings||[], bons: raw.bons||[]};
+    return {fundings: [], bons: []};
+  }catch(e){ return {fundings: [], bons: []}; }
+}
+function saveCaisseData(data){
+  localStorage.setItem(CAISSE_KEY, JSON.stringify(data));
+  if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+}
+function bonTotal(bon){ return bon.items.reduce((s,it)=> s + (it.qty*it.price), 0); }
+
+let editingFundId = null;
+let editingBonId = null;
+let bonItems = [{desc:'', qty:1, price:0}];
+
+function renderBonItems(){
+  const wrap = document.getElementById('bonItemsList');
+  wrap.innerHTML = '';
+  bonItems.forEach((item, idx)=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'border:1px solid var(--line); border-radius:12px; padding:10px; margin-top:8px;';
+    row.innerHTML = `
+      <input type="text" dir="auto" placeholder="التسمية" value="${escapeHtml(item.desc)}" class="bon-item-desc" style="margin-bottom:6px;">
+      <div style="display:flex; gap:6px;">
+        <input type="number" placeholder="الكمية" value="${item.qty}" class="bon-item-qty" style="flex:1;">
+        <input type="number" placeholder="ثمن الوحدة" value="${item.price}" class="bon-item-price" style="flex:1;">
+        <button class="btn-ghost bon-item-del" style="flex:0 0 44px;">🗑</button>
+      </div>
+    `;
+    row.querySelector('.bon-item-desc').addEventListener('input', (e)=>{ bonItems[idx].desc = e.target.value; });
+    row.querySelector('.bon-item-qty').addEventListener('input', (e)=>{ bonItems[idx].qty = parseFloat(e.target.value)||0; updateBonTotalPreview(); });
+    row.querySelector('.bon-item-price').addEventListener('input', (e)=>{ bonItems[idx].price = parseFloat(e.target.value)||0; updateBonTotalPreview(); });
+    row.querySelector('.bon-item-del').addEventListener('click', ()=>{
+      if(bonItems.length <= 1) return;
+      bonItems.splice(idx,1);
+      renderBonItems();
+      updateBonTotalPreview();
+    });
+    wrap.appendChild(row);
+  });
+}
+function updateBonTotalPreview(){
+  const total = bonItems.reduce((s,it)=> s + (it.qty*it.price), 0);
+  document.getElementById('bonTotalPreview').textContent = 'Total/Bon: ' + fmtMAD(total) + ' درهم';
+}
+document.getElementById('bonAddItemBtn').addEventListener('click', ()=>{
+  bonItems.push({desc:'', qty:1, price:0});
+  renderBonItems();
+});
+
+function resetCaisseForms(){
+  document.getElementById('caisseFundForm').style.display = 'none';
+  document.getElementById('caisseBonForm').style.display = 'none';
+  editingFundId = null;
+  editingBonId = null;
+}
+
+document.getElementById('caisseShowFundBtn').addEventListener('click', ()=>{
+  const visible = document.getElementById('caisseFundForm').style.display === 'block';
+  resetCaisseForms();
+  if(!visible){
+    document.getElementById('caisseFundForm').style.display = 'block';
+    document.getElementById('fundDate').valueAsDate = new Date();
+    document.getElementById('fundAmount').value = '';
+    document.getElementById('fundNote').value = '';
+  }
+});
+document.getElementById('caisseShowBonBtn').addEventListener('click', ()=>{
+  const visible = document.getElementById('caisseBonForm').style.display === 'block';
+  resetCaisseForms();
+  if(!visible){
+    document.getElementById('caisseBonForm').style.display = 'block';
+    document.getElementById('bonFormTitle').textContent = '🛒 بون شراء جديد';
+    document.getElementById('bonDate').valueAsDate = new Date();
+    const data = loadCaisseData();
+    document.getElementById('bonNumber').value = 'B' + (data.bons.length + 1);
+    document.getElementById('bonCategory').value = CAISSE_CATEGORIES[0];
+    bonItems = [{desc:'', qty:1, price:0}];
+    renderBonItems();
+    updateBonTotalPreview();
+  }
+});
+
+document.getElementById('fundSaveBtn').addEventListener('click', ()=>{
+  const amount = parseFloat(document.getElementById('fundAmount').value) || 0;
+  const date = document.getElementById('fundDate').value || new Date().toISOString().slice(0,10);
+  const note = document.getElementById('fundNote').value.trim();
   if(!amount) return;
-  const list = loadCaisse();
-  list.push({id:'c'+Date.now(), category, amount, date, note});
-  saveCaisse(list);
-  document.getElementById('caisseAmount').value = '';
-  document.getElementById('caisseNote').value = '';
+  const data = loadCaisseData();
+  if(editingFundId){
+    const f = data.fundings.find(x=>x.id === editingFundId);
+    if(f){ f.amount = amount; f.date = date; f.note = note; }
+  }else{
+    data.fundings.push({id:'f'+Date.now(), amount, date, note});
+  }
+  saveCaisseData(data);
+  resetCaisseForms();
   renderCaisse();
 });
 
-function renderCaisse(){
-  const list = loadCaisse().slice().sort((a,b)=> new Date(b.date) - new Date(a.date));
-  const totalValue = list.reduce((s,c)=> s + c.amount, 0);
-  document.getElementById('caisseTotalValue').textContent = totalValue.toLocaleString('ar') + ' درهم';
-
-  const el = document.getElementById('caisseList');
-  if(list.length === 0){
-    el.innerHTML = '<div class="empty-hint">ما فيه مصاريف نقدية مسجلة بعد. ضيف أول مصروف فوق ⬆️</div>';
-    return;
+document.getElementById('bonSaveBtn').addEventListener('click', ()=>{
+  const bonNumber = document.getElementById('bonNumber').value.trim() || ('B'+Date.now());
+  const date = document.getElementById('bonDate').value || new Date().toISOString().slice(0,10);
+  const category = document.getElementById('bonCategory').value;
+  const items = bonItems.filter(it=> it.desc.trim() || it.qty || it.price).map(it=>({...it}));
+  if(!items.length) return;
+  const data = loadCaisseData();
+  if(editingBonId){
+    const b = data.bons.find(x=>x.id === editingBonId);
+    if(b){ b.bonNumber = bonNumber; b.date = date; b.category = category; b.items = items; }
+  }else{
+    data.bons.push({id:'b'+Date.now(), bonNumber, date, category, items});
   }
-  el.innerHTML = '';
-  list.forEach(c=>{
-    const card = document.createElement('div');
-    card.className = 'list-card';
-    card.innerHTML = `
-      <div class="lc-row">
-        <div class="lc-body">
-          <div class="lc-title" dir="auto">${escapeHtml(c.category)}</div>
-          <div class="lc-meta" dir="auto">${c.date.split('-').reverse().join('/')}${c.note ? ' — ' + escapeHtml(c.note) : ''}</div>
-        </div>
-        <div class="lc-balance">${c.amount.toLocaleString('ar')} درهم</div>
-        <button class="lc-del" data-id="${c.id}">🗑</button>
-      </div>
-    `;
-    el.appendChild(card);
+  saveCaisseData(data);
+  resetCaisseForms();
+  renderCaisse();
+});
+
+function editFunding(id){
+  const data = loadCaisseData();
+  const f = data.fundings.find(x=>x.id === id);
+  if(!f) return;
+  resetCaisseForms();
+  editingFundId = id;
+  document.getElementById('caisseFundForm').style.display = 'block';
+  document.getElementById('fundAmount').value = f.amount;
+  document.getElementById('fundDate').value = f.date;
+  document.getElementById('fundNote').value = f.note || '';
+  document.getElementById('caisseFundForm').scrollIntoView({behavior:'smooth', block:'center'});
+}
+function editBon(id){
+  const data = loadCaisseData();
+  const b = data.bons.find(x=>x.id === id);
+  if(!b) return;
+  resetCaisseForms();
+  editingBonId = id;
+  document.getElementById('caisseBonForm').style.display = 'block';
+  document.getElementById('bonFormTitle').textContent = '✏️ تعديل البون ' + b.bonNumber;
+  document.getElementById('bonNumber').value = b.bonNumber;
+  document.getElementById('bonDate').value = b.date;
+  document.getElementById('bonCategory').value = b.category;
+  bonItems = b.items.map(it=>({...it}));
+  renderBonItems();
+  updateBonTotalPreview();
+  document.getElementById('caisseBonForm').scrollIntoView({behavior:'smooth', block:'center'});
+}
+function deleteFunding(id){
+  if(!confirm('متأكدة بغيتي تمسحي هاد التغذية؟')) return;
+  const data = loadCaisseData();
+  data.fundings = data.fundings.filter(f=>f.id !== id);
+  saveCaisseData(data);
+  renderCaisse();
+}
+function deleteBon(id){
+  if(!confirm('متأكدة بغيتي تمسحي هاد البون؟')) return;
+  const data = loadCaisseData();
+  data.bons = data.bons.filter(b=>b.id !== id);
+  saveCaisseData(data);
+  renderCaisse();
+}
+
+function renderCaisse(){
+  const data = loadCaisseData();
+  const totalFunding = data.fundings.reduce((s,f)=> s+f.amount, 0);
+  const totalSpent = data.bons.reduce((s,b)=> s+bonTotal(b), 0);
+  const balance = totalFunding - totalSpent;
+
+  const balEl = document.getElementById('caisseBalanceValue');
+  balEl.textContent = fmtMAD(balance) + ' درهم';
+  balEl.style.color = balance < 0 ? '#b91c1c' : '#2e7d32';
+
+  // نحسبو الرصيد التراكمي بعد كل حركة (بترتيب زمني تصاعدي)، بعدها نعرضو الأحدث فوق
+  const chronological = [
+    ...data.fundings.map(f=>({...f, kind:'fund'})),
+    ...data.bons.map(b=>({...b, kind:'bon', amount: bonTotal(b)}))
+  ].sort((a,b)=> (new Date(a.date) - new Date(b.date)) || (Number(a.id.replace(/\D/g,''))||0) - (Number(b.id.replace(/\D/g,''))||0));
+
+  let running = 0;
+  chronological.forEach(r=>{
+    running += (r.kind === 'fund' ? r.amount : -r.amount);
+    r.runningBalance = running;
   });
-  el.querySelectorAll('.lc-del').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      saveCaisse(loadCaisse().filter(c=>c.id !== b.dataset.id));
-      renderCaisse();
+
+  const rows = chronological.slice().reverse();
+
+  const listEl = document.getElementById('caisseList');
+  if(!rows.length){
+    listEl.innerHTML = '<div class="empty-hint">ماكاينش حركات مسجلة بعد.</div>';
+  }else{
+    listEl.innerHTML = '';
+    rows.forEach(r=>{
+      const card = document.createElement('div');
+      card.className = 'list-card';
+      const restColor = r.runningBalance < 0 ? '#b91c1c' : '#2e7d32';
+      const restBadge = `<div style="font-size:11px; color:${restColor}; margin-top:4px; font-weight:700;">الرصيد بعد هاد الحركة: ${fmtMAD(r.runningBalance)} درهم</div>`;
+      if(r.kind === 'fund'){
+        card.innerHTML = `
+          <div class="lc-row">
+            <div class="lc-body">
+              <div class="lc-title" dir="auto">💰 تغذية الصندوق${r.note ? ' — '+escapeHtml(r.note) : ''}</div>
+              <div class="lc-meta" dir="auto">${r.date.split('-').reverse().join('/')}</div>
+              ${restBadge}
+            </div>
+            <div class="lc-balance" style="color:#2e7d32;">+${fmtMAD(r.amount)} درهم</div>
+          </div>
+          <div class="lc-actions">
+            <button class="lc-btn" data-fund-edit="${r.id}">✏️ تعديل</button>
+            <button class="lc-btn" data-fund-del="${r.id}" style="color:#b91c1c;">🗑 حذف</button>
+          </div>
+        `;
+      }else{
+        const total = r.amount;
+        const itemsHtml = r.items.map(it=> `${escapeHtml(it.desc)} — ${it.qty} × ${fmtMAD(it.price)} = ${fmtMAD(it.qty*it.price)} درهم`).join('<br>');
+        card.innerHTML = `
+          <div class="lc-row">
+            <div class="lc-body">
+              <div class="lc-title" dir="auto">🛒 بون <span dir="ltr">${escapeHtml(r.bonNumber)}</span> — ${escapeHtml(r.category)}</div>
+              <div class="lc-meta" dir="auto">${r.date.split('-').reverse().join('/')}</div>
+              <div class="lc-meta" dir="ltr" style="margin-top:4px; line-height:1.7; text-align:right;">${itemsHtml}</div>
+              ${restBadge}
+            </div>
+            <div class="lc-balance" style="color:#b91c1c;">-${fmtMAD(total)} درهم</div>
+          </div>
+          <div class="lc-actions">
+            <button class="lc-btn" data-bon-edit="${r.id}">✏️ تعديل</button>
+            <button class="lc-btn" data-bon-del="${r.id}" style="color:#b91c1c;">🗑 حذف</button>
+          </div>
+        `;
+      }
+      listEl.appendChild(card);
     });
+    listEl.querySelectorAll('[data-fund-edit]').forEach(b=> b.addEventListener('click', ()=> editFunding(b.dataset.fundEdit)));
+    listEl.querySelectorAll('[data-fund-del]').forEach(b=> b.addEventListener('click', ()=> deleteFunding(b.dataset.fundDel)));
+    listEl.querySelectorAll('[data-bon-edit]').forEach(b=> b.addEventListener('click', ()=> editBon(b.dataset.bonEdit)));
+    listEl.querySelectorAll('[data-bon-del]').forEach(b=> b.addEventListener('click', ()=> deleteBon(b.dataset.bonDel)));
+  }
+
+  // ملخص المصاريف حسب الفئة
+  const summaryEl = document.getElementById('caisseCategorySummary');
+  summaryEl.innerHTML = '';
+  CAISSE_CATEGORIES.forEach(cat=>{
+    const catTotal = data.bons.filter(b=>b.category === cat).reduce((s,b)=> s+bonTotal(b), 0);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--line); font-size:13px;';
+    row.innerHTML = `<span dir="auto">${escapeHtml(cat)}</span><strong>${fmtMAD(catTotal)} درهم</strong>`;
+    summaryEl.appendChild(row);
   });
+  const totalRow = document.createElement('div');
+  totalRow.style.cssText = 'display:flex; justify-content:space-between; padding:10px 12px; font-size:14px; font-weight:800; background:var(--stone); border-radius:10px; margin-top:6px;';
+  totalRow.innerHTML = `<span>الإجمالي</span><span>${fmtMAD(totalSpent)} درهم</span>`;
+  summaryEl.appendChild(totalRow);
 }
 
 /* ---------- التسويق ---------- */
