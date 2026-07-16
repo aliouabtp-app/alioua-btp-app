@@ -2212,6 +2212,8 @@ function saveAllSettings(){
   setGttsKey(document.getElementById('gttsKeyInput').value.trim());
   setFirebaseDbUrl(document.getElementById('fbDbUrlInput').value.trim());
   setSyncCode(document.getElementById('syncCodeInput').value.trim());
+  // رفع فوري للمفاتيح للسحابة (بلا انتظار)، باش ما تضيعش حتى لو تسدت الصفحة مباشرة بعد الحفظ
+  if(typeof cloudPush === 'function') cloudPush();
   closeModal();
 }
 /* ---------- ذاكرة سحابية (Firebase Realtime Database عبر REST، بلا SDK، بلا بطاقة بنكية) ---------- */
@@ -3847,20 +3849,32 @@ function renderClients(){
         <button class="btn-primary" id="invSave_${client.id}">💾 ${editingInv ? 'حفظ التعديل' : 'حفظ الفاتورة'}</button>
       `;
       const rowsHost = formHost.querySelector('#invRows_'+client.id);
-      function addInvRow(desc, qty, price){
+      function addInvRow(desc, qty, unit, price){
         const row = document.createElement('div');
-        row.className = 'quote-row';
+        row.className = 'client-inv-item-row';
+        row.style.cssText = 'border:1px solid var(--line); border-radius:10px; padding:8px; margin-top:6px;';
         row.innerHTML = `
-          <input type="text" class="q-desc" dir="auto" placeholder="وصف البند" value="${desc?escapeHtml(desc):''}">
-          <input type="number" class="q-qty" dir="ltr" placeholder="الكمية" value="${qty||1}" inputmode="decimal">
-          <input type="number" class="q-price" dir="ltr" placeholder="السعر" value="${price||''}" inputmode="decimal">
-          <button class="q-del">✕</button>
+          <input type="text" class="q-desc" dir="ltr" placeholder="Désignation" value="${desc?escapeHtml(desc):''}" style="font-size:14px; padding:12px;">
+          <div style="display:flex; gap:5px; margin-top:5px;">
+            <input type="number" class="q-qty" dir="ltr" placeholder="Quantité" value="${qty||1}" inputmode="decimal" style="flex:1;">
+            <input type="text" class="q-unit" dir="ltr" placeholder="Unité" value="${unit?escapeHtml(unit):''}" style="flex:1;">
+            <input type="number" class="q-price" dir="ltr" placeholder="Prix unitaire" value="${price||''}" inputmode="decimal" style="flex:1;">
+            <button class="q-del" style="flex:0 0 36px;">✕</button>
+          </div>
+          <div class="q-total" style="margin-top:5px; font-size:11.5px; color:var(--ink-soft);">Prix total: ${((qty||1)*(price||0)).toLocaleString('ar')} درهم</div>
         `;
         rowsHost.appendChild(row);
         row.querySelector('.q-del').addEventListener('click', ()=> row.remove());
+        function updateTotal(){
+          const q = parseFloat(row.querySelector('.q-qty').value) || 0;
+          const p = parseFloat(row.querySelector('.q-price').value) || 0;
+          row.querySelector('.q-total').textContent = 'Prix total: ' + (q*p).toLocaleString('ar') + ' درهم';
+        }
+        row.querySelector('.q-qty').addEventListener('input', updateTotal);
+        row.querySelector('.q-price').addEventListener('input', updateTotal);
       }
       if(editingInv){
-        editingInv.items.forEach(it=> addInvRow(it.desc, it.qty, it.price));
+        editingInv.items.forEach(it=> addInvRow(it.desc, it.qty, it.unit, it.price));
         formHost.querySelector('#invDate_'+client.id).value = editingInv.date;
       }else{
         addInvRow();
@@ -3869,11 +3883,12 @@ function renderClients(){
       formHost.querySelector('#invAddRow_'+client.id).addEventListener('click', ()=>addInvRow());
       formHost.querySelector('#invSave_'+client.id).addEventListener('click', ()=>{
         const items = [];
-        rowsHost.querySelectorAll('.quote-row').forEach(row=>{
+        rowsHost.querySelectorAll('.client-inv-item-row').forEach(row=>{
           const desc = row.querySelector('.q-desc').value.trim();
           const qty = parseFloat(row.querySelector('.q-qty').value) || 0;
+          const unit = row.querySelector('.q-unit').value.trim();
           const price = parseFloat(row.querySelector('.q-price').value) || 0;
-          if(desc && qty && price) items.push({desc, qty, price});
+          if(desc && qty && price) items.push({desc, qty, unit, price});
         });
         if(items.length === 0) return;
         const date = formHost.querySelector('#invDate_'+client.id).value || new Date().toISOString().slice(0,10);
