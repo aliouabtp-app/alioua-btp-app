@@ -1076,6 +1076,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <button class="sub-nav-btn" data-sub="subCaisse">💵 سيولة</button>
       </div>
     </div>
+    <div id="overdueAlertsBanner"></div>
     <div class="tab-scroll">
 
       <div class="sub-view active" id="subExpenses">
@@ -2242,6 +2243,7 @@ async function cloudPush(onStatus){
     pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
     purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
     supplierPayments: localStorage.getItem(SUPPLIER_PAYMENTS_KEY) || '[]',
+    clientPayments: localStorage.getItem(CLIENT_PAYMENTS_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     gemini: getApiKey(),
     kimi: getOpenRouterKey(),
@@ -2311,6 +2313,7 @@ async function cloudPull(onStatus){
     if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
     if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
     if(data.supplierPayments) localStorage.setItem(SUPPLIER_PAYMENTS_KEY, data.supplierPayments);
+    if(data.clientPayments) localStorage.setItem(CLIENT_PAYMENTS_KEY, data.clientPayments);
     if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
     if(data.gemini) setApiKey(data.gemini);
     if(data.kimi) setOpenRouterKey(data.kimi);
@@ -2379,16 +2382,14 @@ settingsBtn.addEventListener('click', ()=>openModal(false));
 if(navigator.storage && navigator.storage.persist){
   navigator.storage.persist().catch(()=>{});
 }
-document.getElementById('exportSettingsBtn')?.addEventListener('click', ()=>{
-  const backup = {
-    // مفاتيح الاتصال
+function buildFullBackupObject(){
+  return {
     gemini: getApiKey(),
     kimi: getOpenRouterKey(),
     mistral: getMistralKey(),
     gcalClientId: getGcalClientId(),
     voicerss: getGttsKey(),
     voiceName: localStorage.getItem(VOICE_NAME_KEY) || '',
-    // بيانات التطبيق (فواتير، عملاء، موردين، مواد، مواعيد، محادثات)
     transactions: localStorage.getItem(TX_KEY) || '[]',
     clients: localStorage.getItem(CLIENTS_KEY) || '[]',
     suppliers: localStorage.getItem(SUPPLIERS_KEY) || '[]',
@@ -2399,18 +2400,39 @@ document.getElementById('exportSettingsBtn')?.addEventListener('click', ()=>{
     pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
     purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
     supplierPayments: localStorage.getItem(SUPPLIER_PAYMENTS_KEY) || '[]',
+    clientPayments: localStorage.getItem(CLIENT_PAYMENTS_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     exportedAt: new Date().toISOString()
   };
+}
+function downloadBackupFile(filenamePrefix){
+  const backup = buildFullBackupObject();
   const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'yunes-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.download = (filenamePrefix||'yunes-backup') + '-' + new Date().toISOString().slice(0,10) + '.json';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+function checkWeeklyAutoBackup(){
+  const last = localStorage.getItem('alioua_btp_last_auto_backup');
+  const weekMs = 7*24*60*60*1000;
+  if(!last || (Date.now() - new Date(last).getTime()) > weekMs){
+    try{
+      downloadBackupFile('yunes-auto-backup');
+      localStorage.setItem('alioua_btp_last_auto_backup', new Date().toISOString());
+      messages.push({role:'model', text:'📦 ديرت نسخة احتياطية أسبوعية تلقائية، تحققي من مجلد "التنزيلات/Downloads" ديال المتصفح. احتفظي بيها فمكان آمن (Google Drive مثلاً).', time:Date.now()});
+      renderMessages();
+      saveHistory();
+    }catch(e){}
+  }
+}
+
+document.getElementById('exportSettingsBtn')?.addEventListener('click', ()=>{
+  downloadBackupFile('yunes-backup');
 });
 document.getElementById('importSettingsBtn')?.addEventListener('click', ()=>{
   document.getElementById('importSettingsFile').click();
@@ -2439,6 +2461,7 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
     if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
     if(data.supplierPayments) localStorage.setItem(SUPPLIER_PAYMENTS_KEY, data.supplierPayments);
+    if(data.clientPayments) localStorage.setItem(CLIENT_PAYMENTS_KEY, data.clientPayments);
       if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
       apiKeyInput.value = getApiKey();
       openrouterKeyInput.value = getOpenRouterKey();
@@ -2960,7 +2983,7 @@ navBtns.forEach(btn=>{
     navBtns.forEach(b=>b.classList.toggle('active', b === btn));
     views.forEach(v=>v.classList.toggle('active', v.id === target));
     if(target === 'viewAppt') renderAppts();
-    if(target === 'viewAccounting') renderAccounting();
+    if(target === 'viewAccounting'){ renderAccounting(); if(typeof renderOverdueAlerts==='function') renderOverdueAlerts(); }
   });
 });
 function goToChatWithText(text){
@@ -3103,6 +3126,60 @@ document.getElementById('txAddBtn').addEventListener('click', ()=>{
   document.getElementById('txNote').value = '';
   renderAccounting();
 });
+
+function renderOverdueAlerts(){
+  const banner = document.getElementById('overdueAlertsBanner');
+  if(!banner) return;
+  const OVERDUE_DAYS = 30;
+  const now = Date.now();
+  const alerts = [];
+
+  // موردين: مستحق لهم منذ أكثر من 30 يوم
+  const suppliers = loadSuppliers();
+  const purchases = loadPurchases();
+  const supPayments = loadSupplierPayments();
+  suppliers.forEach(sup=>{
+    const supPurchases = purchases.filter(p=>p.supplierId === sup.id);
+    if(!supPurchases.length) return;
+    const spent = supPurchases.reduce((s,p)=>s+purchaseTotal(p),0);
+    const paid = supPayments.filter(p=>p.supplierId===sup.id).reduce((s,p)=>s+p.amount,0);
+    const remaining = spent - paid;
+    if(remaining <= 0) return;
+    const oldestDate = supPurchases.reduce((min,p)=> Math.min(min, new Date(p.date).getTime()), Infinity);
+    const daysAgo = Math.floor((now - oldestDate)/(1000*60*60*24));
+    if(daysAgo >= OVERDUE_DAYS){
+      alerts.push({kind:'supplier', name: sup.name, amount: remaining, days: daysAgo});
+    }
+  });
+
+  // عملاء: فواتير معلقة منذ أكثر من 30 يوم
+  const clients = loadClients();
+  const invoices = loadInvoices();
+  clients.forEach(client=>{
+    const pending = invoices.filter(i=>i.clientId===client.id && i.status==='pending');
+    if(!pending.length) return;
+    const due = pending.reduce((s,i)=>s+invoiceTotal(i),0);
+    const oldestDate = pending.reduce((min,i)=> Math.min(min, new Date(i.date).getTime()), Infinity);
+    const daysAgo = Math.floor((now - oldestDate)/(1000*60*60*24));
+    if(daysAgo >= OVERDUE_DAYS){
+      alerts.push({kind:'client', name: client.name, amount: due, days: daysAgo});
+    }
+  });
+
+  if(!alerts.length){ banner.innerHTML = ''; return; }
+  alerts.sort((a,b)=> b.days - a.days);
+  banner.innerHTML = `
+    <div style="background:#fff3f3; border:1px solid #f5c2c2; border-radius:14px; margin:0 16px 12px; padding:12px 14px;">
+      <div style="font-weight:800; color:#b91c1c; font-size:13px; margin-bottom:8px;">⚠️ مستحقات متأخرة (+${OVERDUE_DAYS} يوم)</div>
+      ${alerts.map(a=>`
+        <div style="font-size:12.5px; color:#7a1f1f; padding:3px 0; display:flex; justify-content:space-between;">
+          <span dir="ltr" style="text-align:right;">${a.kind==='supplier'?'🚚':'🧑‍💼'} ${escapeHtml(a.name)} — منذ ${a.days} يوم</span>
+          <strong>${a.amount.toLocaleString('ar')} درهم</strong>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
 
 function renderAccounting(){
   const list = loadTx().sort((a,b)=> new Date(b.date) - new Date(a.date));
@@ -3883,6 +3960,9 @@ let poSupplierId = null;
 let editPoId = null;
 let poHistorySupplierId = null;
 const SUPPLIER_PAYMENTS_KEY = 'alioua_btp_supplier_payments';
+const CLIENT_PAYMENTS_KEY = 'alioua_btp_client_payments';
+function loadClientPayments(){ try{ return JSON.parse(localStorage.getItem(CLIENT_PAYMENTS_KEY)||'[]'); }catch(e){ return []; } }
+function saveClientPayments(l){ localStorage.setItem(CLIENT_PAYMENTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function loadSupplierPayments(){ try{ return JSON.parse(localStorage.getItem(SUPPLIER_PAYMENTS_KEY)||'[]'); }catch(e){ return []; } }
 function saveSupplierPayments(l){ localStorage.setItem(SUPPLIER_PAYMENTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 let paySupplierId = null;
@@ -4943,9 +5023,11 @@ if(typeof cloudConfigured === 'function' && cloudConfigured()){
       if(note){ note.textContent = '✅ تم تحديث البيانات من السحابة عند الفتح.'; note.style.color = '#2e7d32'; }
     }
     decideOpenSetupModal();
+    setTimeout(()=>{ if(typeof checkWeeklyAutoBackup==='function') checkWeeklyAutoBackup(); }, 3000);
   });
 }else{
   decideOpenSetupModal();
+  setTimeout(()=>{ if(typeof checkWeeklyAutoBackup==='function') checkWeeklyAutoBackup(); }, 3000);
 }
 
 </script>
