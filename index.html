@@ -3383,17 +3383,21 @@ function renderInvItems(){
     const row = document.createElement('div');
     row.style.cssText = 'border:1px solid var(--line); border-radius:12px; padding:10px; margin-top:8px;';
     row.innerHTML = `
-      <input type="text" dir="ltr" placeholder="Description" value="${escapeHtml(item.desc)}" class="inv-item-desc" style="margin-bottom:6px; font-size:14px; padding:12px;">
+      <input type="text" dir="ltr" placeholder="Désignation" value="${escapeHtml(item.desc)}" class="inv-item-desc" style="margin-bottom:6px; font-size:15px; padding:14px;">
       <div style="display:flex; gap:6px;">
-        <input type="number" placeholder="Quantité" value="${item.qty}" class="inv-item-qty" style="flex:1;">
-        <input type="number" placeholder="Prix unitaire HT" value="${item.price}" class="inv-item-price" style="flex:1;">
+        <input type="number" dir="ltr" placeholder="Quantité" value="${item.qty}" class="inv-item-qty" style="flex:1;">
+        <input type="text" dir="ltr" placeholder="Unité" value="${escapeHtml(item.unit||'')}" class="inv-item-unit" style="flex:1;">
+      </div>
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <input type="number" dir="ltr" placeholder="Prix unitaire" value="${item.price}" class="inv-item-price" style="flex:1;">
         <button class="btn-ghost inv-item-del" style="flex:0 0 40px;">🗑</button>
       </div>
-      <div class="inv-item-total" style="margin-top:6px; font-size:12px; color:var(--ink-soft);">Total: ${fmtMAD(item.qty*item.price)} درهم</div>
+      <div class="inv-item-total" dir="ltr" style="margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:right;">Prix total: ${fmtMAD(item.qty*item.price)} درهم</div>
     `;
     row.querySelector('.inv-item-desc').addEventListener('input', (e)=>{ invItems[idx].desc = e.target.value; });
-    row.querySelector('.inv-item-qty').addEventListener('input', (e)=>{ invItems[idx].qty = parseFloat(e.target.value)||0; updateInvTotalsPreview(); row.querySelector('.inv-item-total').textContent = 'Total: ' + fmtMAD(invItems[idx].qty*invItems[idx].price) + ' درهم'; });
-    row.querySelector('.inv-item-price').addEventListener('input', (e)=>{ invItems[idx].price = parseFloat(e.target.value)||0; updateInvTotalsPreview(); row.querySelector('.inv-item-total').textContent = 'Total: ' + fmtMAD(invItems[idx].qty*invItems[idx].price) + ' درهم'; });
+    row.querySelector('.inv-item-unit').addEventListener('input', (e)=>{ invItems[idx].unit = e.target.value; });
+    row.querySelector('.inv-item-qty').addEventListener('input', (e)=>{ invItems[idx].qty = parseFloat(e.target.value)||0; updateInvTotalsPreview(); row.querySelector('.inv-item-total').textContent = 'Prix total: ' + fmtMAD(invItems[idx].qty*invItems[idx].price) + ' درهم'; });
+    row.querySelector('.inv-item-price').addEventListener('input', (e)=>{ invItems[idx].price = parseFloat(e.target.value)||0; updateInvTotalsPreview(); row.querySelector('.inv-item-total').textContent = 'Prix total: ' + fmtMAD(invItems[idx].qty*invItems[idx].price) + ' درهم'; });
     row.querySelector('.inv-item-del').addEventListener('click', ()=>{
       if(invItems.length <= 1) return;
       invItems.splice(idx,1);
@@ -3404,7 +3408,7 @@ function renderInvItems(){
   });
 }
 document.getElementById('invAddItemBtn')?.addEventListener('click', ()=>{
-  invItems.push({desc:'', qty:1, price:0});
+  invItems.push({desc:'', unit:'', qty:1, price:0});
   renderInvItems();
 });
 
@@ -3518,22 +3522,23 @@ function buildInvoicePdf(invData){
 
   y += 10;
   const tableBody = [];
-  if(sectionTitle) tableBody.push([{content: sectionTitle, colSpan:4, styles:{fontStyle:'bold', fillColor:[240,240,240]}}]);
+  if(sectionTitle) tableBody.push([{content: sectionTitle, colSpan:5, styles:{fontStyle:'bold', fillColor:[240,240,240]}}]);
   items.forEach(it=>{
-    tableBody.push([it.desc || '', String(it.qty), fmtMAD(it.price), fmtMAD(it.qty*it.price)]);
+    tableBody.push([it.desc || '', String(it.qty), it.unit || '', fmtMAD(it.price), fmtMAD(it.qty*it.price)]);
   });
   doc.autoTable({
     startY: y,
-    head: [['Description','Quantité','Prix unitaire HT','Prix total HT']],
+    head: [['Désignation','Quantité','Unité','Prix unitaire','Prix total']],
     body: tableBody,
     theme: 'grid',
     headStyles:{fillColor:[90,90,90], textColor:255, fontSize:9},
     bodyStyles:{fontSize:9},
     columnStyles:{
-      0:{cellWidth:80},
-      1:{cellWidth:22, halign:'center'},
-      2:{cellWidth:38, halign:'right'},
-      3:{cellWidth:38, halign:'right'}
+      0:{cellWidth:65},
+      1:{cellWidth:20, halign:'center'},
+      2:{cellWidth:20, halign:'center'},
+      3:{cellWidth:33, halign:'right'},
+      4:{cellWidth:33, halign:'right'}
     },
     margin:{left:15, right:15}
   });
@@ -3606,7 +3611,7 @@ function renderInvoicesList(){
     row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-top:8px;';
     row.innerHTML = `
       <div>
-        <div style="font-weight:600; font-size:13px;">${escapeHtml(inv.invNumber)} — ${escapeHtml(inv.clientName)}</div>
+        <div dir="ltr" style="font-weight:600; font-size:13px; text-align:right;">${escapeHtml(inv.invNumber)} — ${escapeHtml(inv.clientName)}</div>
         <div style="font-size:11px; color:var(--ink-soft);">${inv.invDate.split('-').reverse().join('/')} · ${fmtMAD(ttc)} Dh TTC</div>
       </div>
       <div style="display:flex; gap:4px;">
