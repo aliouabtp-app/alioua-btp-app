@@ -1074,6 +1074,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <button class="sub-nav-btn" data-sub="subClients">🧑‍💼 العملاء</button>
         <button class="sub-nav-btn" data-sub="subSuppliers">🚚 الموردين</button>
         <button class="sub-nav-btn" data-sub="subCaisse">💵 سيولة</button>
+        <button class="sub-nav-btn" data-sub="subWorkers">👷 الأجراء</button>
       </div>
     </div>
     <div id="overdueAlertsBanner"></div>
@@ -1228,6 +1229,21 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
           <p class="mini-title" style="margin-bottom:8px;">📊 ملخص المصاريف حسب الفئة</p>
           <div id="caisseCategorySummary"></div>
         </div>
+      </div>
+
+      <div class="sub-view" id="subWorkers">
+        <div class="card-form">
+          <p class="mini-title" style="margin-bottom:8px;">👷 إضافة أجير</p>
+          <input type="text" id="workerName" dir="ltr" placeholder="اسم الأجير">
+          <select id="workerType" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;">
+            <option value="daily">مياوم (أجرة يومية)</option>
+            <option value="monthly">شهري (راتب ثابت)</option>
+          </select>
+          <input type="text" id="workerWage" placeholder="الأجرة اليومية أو الراتب الشهري (درهم)" style="margin-top:8px;">
+          <input type="text" id="workerPhone" dir="ltr" placeholder="رقم الهاتف (اختياري)" style="margin-top:8px;">
+          <button class="btn-primary" id="workerAddBtn" style="margin-top:10px;">➕ إضافة أجير</button>
+        </div>
+        <div id="workersList" style="margin-top:12px;"></div>
       </div>
 
     </div>
@@ -2246,6 +2262,8 @@ async function cloudPush(onStatus){
     purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
     supplierPayments: localStorage.getItem(SUPPLIER_PAYMENTS_KEY) || '[]',
     clientPayments: localStorage.getItem(CLIENT_PAYMENTS_KEY) || '[]',
+    workers: localStorage.getItem(WORKERS_KEY) || '[]',
+    attendance: localStorage.getItem(ATTENDANCE_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     gemini: getApiKey(),
     kimi: getOpenRouterKey(),
@@ -2316,6 +2334,8 @@ async function cloudPull(onStatus){
     if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
     if(data.supplierPayments) localStorage.setItem(SUPPLIER_PAYMENTS_KEY, data.supplierPayments);
     if(data.clientPayments) localStorage.setItem(CLIENT_PAYMENTS_KEY, data.clientPayments);
+    if(data.workers) localStorage.setItem(WORKERS_KEY, data.workers);
+    if(data.attendance) localStorage.setItem(ATTENDANCE_KEY, data.attendance);
     if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
     if(data.gemini) setApiKey(data.gemini);
     if(data.kimi) setOpenRouterKey(data.kimi);
@@ -2403,6 +2423,8 @@ function buildFullBackupObject(){
     purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
     supplierPayments: localStorage.getItem(SUPPLIER_PAYMENTS_KEY) || '[]',
     clientPayments: localStorage.getItem(CLIENT_PAYMENTS_KEY) || '[]',
+    workers: localStorage.getItem(WORKERS_KEY) || '[]',
+    attendance: localStorage.getItem(ATTENDANCE_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     exportedAt: new Date().toISOString()
   };
@@ -2464,6 +2486,8 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
     if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
     if(data.supplierPayments) localStorage.setItem(SUPPLIER_PAYMENTS_KEY, data.supplierPayments);
     if(data.clientPayments) localStorage.setItem(CLIENT_PAYMENTS_KEY, data.clientPayments);
+    if(data.workers) localStorage.setItem(WORKERS_KEY, data.workers);
+    if(data.attendance) localStorage.setItem(ATTENDANCE_KEY, data.attendance);
       if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
       apiKeyInput.value = getApiKey();
       openrouterKeyInput.value = getOpenRouterKey();
@@ -3387,11 +3411,11 @@ function renderInvItems(){
     row.innerHTML = `
       <input type="text" dir="ltr" placeholder="Désignation" value="${escapeHtml(item.desc)}" class="inv-item-desc" style="margin-bottom:6px; font-size:15px; padding:14px;">
       <div style="display:flex; gap:6px;">
-        <input type="number" dir="ltr" placeholder="Quantité" value="${item.qty}" class="inv-item-qty" style="flex:1;">
+        <input type="text" dir="ltr" placeholder="Quantité" value="${item.qty}" class="inv-item-qty" style="flex:1;">
         <input type="text" dir="ltr" placeholder="Unité" value="${escapeHtml(item.unit||'')}" class="inv-item-unit" style="flex:1;">
       </div>
       <div style="display:flex; gap:6px; margin-top:6px;">
-        <input type="number" dir="ltr" placeholder="Prix unitaire" value="${item.price}" class="inv-item-price" style="flex:1;">
+        <input type="text" dir="ltr" placeholder="Prix unitaire" value="${item.price}" class="inv-item-price" style="flex:1;">
         <button class="btn-ghost inv-item-del" style="flex:0 0 40px;">🗑</button>
       </div>
       <div class="inv-item-total" dir="ltr" style="margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:right;">Prix total: ${fmtMAD(item.qty*item.price)} درهم</div>
@@ -3735,6 +3759,7 @@ document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
     if(btn.dataset.sub === 'subClients') renderClients();
     if(btn.dataset.sub === 'subSuppliers') renderSuppliers();
     if(btn.dataset.sub === 'subCaisse'){ document.getElementById('caisseDate').valueAsDate = new Date(); renderCaisse(); }
+    if(btn.dataset.sub === 'subWorkers'){ renderWorkers(); }
   });
 });
 
@@ -3856,9 +3881,9 @@ function renderClients(){
         row.innerHTML = `
           <input type="text" class="q-desc" dir="ltr" placeholder="Désignation" value="${desc?escapeHtml(desc):''}" style="font-size:14px; padding:12px;">
           <div style="display:flex; gap:5px; margin-top:5px;">
-            <input type="number" class="q-qty" dir="ltr" placeholder="Quantité" value="${qty||1}" inputmode="decimal" style="flex:1;">
+            <input type="text" class="q-qty" dir="ltr" placeholder="Quantité" value="${qty||1}" style="flex:1;">
             <input type="text" class="q-unit" dir="ltr" placeholder="Unité" value="${unit?escapeHtml(unit):''}" style="flex:1;">
-            <input type="number" class="q-price" dir="ltr" placeholder="Prix unitaire" value="${price||''}" inputmode="decimal" style="flex:1;">
+            <input type="text" class="q-price" dir="ltr" placeholder="Prix unitaire" value="${price||''}" style="flex:1;">
             <button class="q-del" style="flex:0 0 36px;">✕</button>
           </div>
           <div class="q-total" style="margin-top:5px; font-size:11.5px; color:var(--ink-soft);">Prix total: ${((qty||1)*(price||0)).toLocaleString('ar')} درهم</div>
@@ -4656,6 +4681,200 @@ function renderSuppliers(){
       renderSuppliers();
     });
   });
+}
+
+/* ---------- الأجراء ---------- */
+const WORKERS_KEY = 'alioua_btp_workers';
+const ATTENDANCE_KEY = 'alioua_btp_attendance';
+function loadWorkers(){ try{ return JSON.parse(localStorage.getItem(WORKERS_KEY)||'[]'); }catch(e){ return []; } }
+function saveWorkers(l){ localStorage.setItem(WORKERS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+function loadAttendance(){ try{ return JSON.parse(localStorage.getItem(ATTENDANCE_KEY)||'[]'); }catch(e){ return []; } }
+function saveAttendance(l){ localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+
+document.getElementById('workerAddBtn')?.addEventListener('click', ()=>{
+  const name = document.getElementById('workerName').value.trim();
+  const type = document.getElementById('workerType').value;
+  const wage = parseFloat(document.getElementById('workerWage').value) || 0;
+  const phone = document.getElementById('workerPhone').value.trim();
+  if(!name || !wage) return;
+  const list = loadWorkers();
+  list.push({id:'w'+Date.now(), name, type, wage, phone});
+  saveWorkers(list);
+  document.getElementById('workerName').value = '';
+  document.getElementById('workerWage').value = '';
+  document.getElementById('workerPhone').value = '';
+  renderWorkers();
+});
+
+let attHistoryWorkerId = null;
+let payslipWorkerId = null;
+
+function markAttendance(workerId, status){
+  const today = new Date().toISOString().slice(0,10);
+  const list = loadAttendance();
+  let rec = list.find(a=> a.workerId===workerId && a.date===today);
+  if(rec){ rec.status = status; }
+  else{ list.push({id:'a'+Date.now(), workerId, date: today, status}); }
+  saveAttendance(list);
+  renderWorkers();
+}
+
+function renderWorkers(){
+  const workers = loadWorkers();
+  const attendance = loadAttendance();
+  const el = document.getElementById('workersList');
+  if(!workers.length){ el.innerHTML = '<div class="empty-hint">ماكاينش أجراء مسجلين بعد. ضيفي أول أجير فوق ⬆️</div>'; return; }
+  const today = new Date().toISOString().slice(0,10);
+  el.innerHTML = '';
+  workers.forEach(w=>{
+    const wAtt = attendance.filter(a=>a.workerId===w.id).sort((a,b)=> new Date(b.date)-new Date(a.date));
+    const todayRec = wAtt.find(a=>a.date===today);
+    // آخر 15 يوم
+    const since = Date.now() - 15*24*60*60*1000;
+    const recent = wAtt.filter(a=> new Date(a.date).getTime() >= since);
+    const presentDays = recent.filter(a=>a.status==='present').length + recent.filter(a=>a.status==='half').length*0.5;
+    const dueAmount = w.type==='daily' ? presentDays * w.wage : w.wage;
+
+    const card = document.createElement('div');
+    card.className = 'list-card';
+    card.innerHTML = `
+      <div class="lc-row">
+        <div class="lc-body">
+          <div class="lc-title" dir="ltr" style="text-align:right;">${escapeHtml(w.name)}${w.type==='daily'?' (مياوم)':' (شهري)'}</div>
+          <div class="lc-meta" dir="auto">${w.type==='daily' ? 'الأجرة اليومية: '+w.wage.toLocaleString('ar')+' درهم' : 'الراتب الشهري: '+w.wage.toLocaleString('ar')+' درهم'}${w.phone ? ' · '+escapeHtml(w.phone) : ''}</div>
+        </div>
+        <button class="lc-del" data-del-worker="${w.id}">🗑</button>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:8px; font-size:11.5px;">
+        <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
+          <div style="color:var(--ink-soft);">أيام الحضور (آخر 15 يوم)</div>
+          <div style="font-weight:700;">${presentDays}</div>
+        </div>
+        <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
+          <div style="color:var(--ink-soft);">المستحق التقديري</div>
+          <div style="font-weight:700; color:#2e7d32;">${dueAmount.toLocaleString('ar')} درهم</div>
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <div style="font-size:11px; color:var(--ink-soft); margin-bottom:4px;">تسجيل حضور اليوم (${today.split('-').reverse().join('/')}):</div>
+        <div style="display:flex; gap:6px;">
+          <button class="lc-btn" data-att="present" data-worker="${w.id}" style="flex:1; ${todayRec?.status==='present'?'background:#d1fae5;':''}">✅ حاضر</button>
+          <button class="lc-btn" data-att="half" data-worker="${w.id}" style="flex:1; ${todayRec?.status==='half'?'background:#fef3c7;':''}">½ نصف يوم</button>
+          <button class="lc-btn" data-att="absent" data-worker="${w.id}" style="flex:1; ${todayRec?.status==='absent'?'background:#fee2e2;':''}">❌ غايب</button>
+        </div>
+      </div>
+      <div class="lc-actions">
+        <button class="lc-btn" data-hist-worker="${w.id}">📅 سجل الحضور (${wAtt.length})</button>
+        <button class="lc-btn" data-payslip="${w.id}">🧾 استخراج كشف الأجرة</button>
+      </div>
+      <div id="attHist_${w.id}"></div>
+      <div id="payslipForm_${w.id}"></div>
+    `;
+    el.appendChild(card);
+
+    if(attHistoryWorkerId === w.id){
+      const histHost = card.querySelector('#attHist_'+w.id);
+      if(!wAtt.length){
+        histHost.innerHTML = '<div class="empty-hint" style="padding:8px;">ماكاينش حضور مسجل بعد.</div>';
+      }else{
+        const statusLabel = {present:'✅ حاضر', half:'½ نصف يوم', absent:'❌ غايب'};
+        histHost.innerHTML = wAtt.slice(0,30).map(a=>`
+          <div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;">
+            <div class="lc-body"><span dir="ltr" style="text-align:right; display:block;">${a.date.split('-').reverse().join('/')} — ${statusLabel[a.status]||a.status}</span></div>
+            <button class="lc-del" data-del-att="${a.id}">🗑</button>
+          </div>
+        `).join('');
+        histHost.querySelectorAll('[data-del-att]').forEach(b=> b.addEventListener('click', ()=>{
+          saveAttendance(loadAttendance().filter(a=>a.id !== b.dataset.delAtt));
+          renderWorkers();
+        }));
+      }
+    }
+
+    if(payslipWorkerId === w.id){
+      const psHost = card.querySelector('#payslipForm_'+w.id);
+      psHost.className = 'lc-invoice-form';
+      const defaultFrom = new Date(Date.now()-15*24*60*60*1000).toISOString().slice(0,10);
+      psHost.innerHTML = `
+        <div style="display:flex; gap:6px;">
+          <input type="date" id="psFrom_${w.id}" value="${defaultFrom}" style="flex:1;">
+          <input type="date" id="psTo_${w.id}" value="${today}" style="flex:1;">
+        </div>
+        <button class="btn-primary" id="psGen_${w.id}" style="margin-top:10px;">⬇️ توليد كشف PDF</button>
+      `;
+      psHost.querySelector('#psGen_'+w.id).addEventListener('click', ()=>{
+        const from = psHost.querySelector('#psFrom_'+w.id).value;
+        const to = psHost.querySelector('#psTo_'+w.id).value;
+        generatePayslipPdf(w, from, to);
+      });
+    }
+  });
+
+  el.querySelectorAll('[data-att]').forEach(b=>{
+    b.addEventListener('click', ()=> markAttendance(b.dataset.worker, b.dataset.att));
+  });
+  el.querySelectorAll('[data-hist-worker]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      attHistoryWorkerId = (attHistoryWorkerId === b.dataset.histWorker) ? null : b.dataset.histWorker;
+      renderWorkers();
+    });
+  });
+  el.querySelectorAll('[data-payslip]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      payslipWorkerId = (payslipWorkerId === b.dataset.payslip) ? null : b.dataset.payslip;
+      renderWorkers();
+    });
+  });
+  el.querySelectorAll('[data-del-worker]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      if(!confirm('متأكدة بغيتي تمسحي هاد الأجير؟')) return;
+      saveWorkers(loadWorkers().filter(w=>w.id !== b.dataset.delWorker));
+      saveAttendance(loadAttendance().filter(a=>a.workerId !== b.dataset.delWorker));
+      renderWorkers();
+    });
+  });
+}
+
+function generatePayslipPdf(worker, from, to){
+  if(!window.jspdf){ alert('مكتبة توليد PDF ماتحملاتش بعد.'); return; }
+  const c = loadCompanyInfo();
+  const att = loadAttendance().filter(a=> a.workerId===worker.id && a.date>=from && a.date<=to).sort((a,b)=> new Date(a.date)-new Date(b.date));
+  const statusLabel = {present:'Présent', half:'Demi-journée', absent:'Absent'};
+  const presentDays = att.filter(a=>a.status==='present').length + att.filter(a=>a.status==='half').length*0.5;
+  const total = worker.type==='daily' ? presentDays*worker.wage : worker.wage;
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+  let y = 15;
+  if(c.logoDataUrl){ try{ doc.addImage(c.logoDataUrl, 'PNG', 15, 8, 58, 20); }catch(e){} y = 34; }
+  else{
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(180,30,30);
+    doc.text(c.name, 15, y+5); y += 18;
+  }
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(0,0,0);
+  doc.text('Fiche de Paie', 15, y); y += 8;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.text('Employé: ' + worker.name, 15, y); y += 6;
+  doc.text('Type: ' + (worker.type==='daily' ? 'Journalier' : 'Mensuel'), 15, y); y += 6;
+  doc.text('Période: ' + from.split('-').reverse().join('/') + ' - ' + to.split('-').reverse().join('/'), 15, y); y += 8;
+
+  const body = att.length ? att.map(a=>[a.date.split('-').reverse().join('/'), statusLabel[a.status]||a.status]) : [['—','لا حضور مسجل بهاد الفترة']];
+  doc.autoTable({
+    startY: y,
+    head: [['Date','Statut']],
+    body,
+    theme:'grid',
+    headStyles:{fillColor:[90,90,90], textColor:255, fontSize:9},
+    bodyStyles:{fontSize:9},
+    margin:{left:15, right:110}
+  });
+  y = doc.lastAutoTable.finalY + 10;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text('Jours travaillés: ' + presentDays, 15, y); y += 7;
+  doc.setTextColor(30,100,160);
+  doc.text('Total à payer: ' + fmtMAD(total) + ' Dh', 15, y);
+
+  doc.save('fiche-paie-' + worker.name.replace(/\s+/g,'-') + '-' + to + '.pdf');
 }
 
 /* ---------- سيولة / Caisse ---------- */
