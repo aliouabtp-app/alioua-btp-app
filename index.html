@@ -2264,6 +2264,7 @@ async function cloudPush(onStatus){
     clientPayments: localStorage.getItem(CLIENT_PAYMENTS_KEY) || '[]',
     workers: localStorage.getItem(WORKERS_KEY) || '[]',
     attendance: localStorage.getItem(ATTENDANCE_KEY) || '[]',
+    clientInvoices: localStorage.getItem(INVOICES_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     gemini: getApiKey(),
     kimi: getOpenRouterKey(),
@@ -2336,6 +2337,7 @@ async function cloudPull(onStatus){
     if(data.clientPayments) localStorage.setItem(CLIENT_PAYMENTS_KEY, data.clientPayments);
     if(data.workers) localStorage.setItem(WORKERS_KEY, data.workers);
     if(data.attendance) localStorage.setItem(ATTENDANCE_KEY, data.attendance);
+    if(data.clientInvoices) localStorage.setItem(INVOICES_KEY, data.clientInvoices);
     if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
     if(data.gemini) setApiKey(data.gemini);
     if(data.kimi) setOpenRouterKey(data.kimi);
@@ -2425,6 +2427,7 @@ function buildFullBackupObject(){
     clientPayments: localStorage.getItem(CLIENT_PAYMENTS_KEY) || '[]',
     workers: localStorage.getItem(WORKERS_KEY) || '[]',
     attendance: localStorage.getItem(ATTENDANCE_KEY) || '[]',
+    clientInvoices: localStorage.getItem(INVOICES_KEY) || '[]',
     companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     exportedAt: new Date().toISOString()
   };
@@ -2488,6 +2491,7 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
     if(data.clientPayments) localStorage.setItem(CLIENT_PAYMENTS_KEY, data.clientPayments);
     if(data.workers) localStorage.setItem(WORKERS_KEY, data.workers);
     if(data.attendance) localStorage.setItem(ATTENDANCE_KEY, data.attendance);
+    if(data.clientInvoices) localStorage.setItem(INVOICES_KEY, data.clientInvoices);
       if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
       apiKeyInput.value = getApiKey();
       openrouterKeyInput.value = getOpenRouterKey();
@@ -3773,7 +3777,7 @@ let editInvoiceId = null;
 function loadClients(){ try{ return JSON.parse(localStorage.getItem(CLIENTS_KEY)||'[]'); }catch(e){ return []; } }
 function saveClients(l){ localStorage.setItem(CLIENTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function loadInvoices(){ try{ return JSON.parse(localStorage.getItem(INVOICES_KEY)||'[]'); }catch(e){ return []; } }
-function saveInvoices(l){ localStorage.setItem(INVOICES_KEY, JSON.stringify(l)); }
+function saveInvoices(l){ localStorage.setItem(INVOICES_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function invoiceTotal(inv){ return inv.items.reduce((s,it)=> s + (it.qty*it.price), 0); }
 
 document.getElementById('clientAddBtn').addEventListener('click', ()=>{
