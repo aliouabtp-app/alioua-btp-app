@@ -768,6 +768,20 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   margin-bottom:6px;
   display:block;
 }
+.msg.user .msg-img-grid{
+  display:grid;
+  grid-template-columns:repeat(2, 1fr);
+  gap:4px;
+  margin-bottom:6px;
+  max-width:220px;
+}
+.msg.user .msg-img-grid .msg-img{
+  max-width:100%;
+  width:100%;
+  height:80px;
+  object-fit:cover;
+  margin-bottom:0;
+}
 
 #micBtn.recording{
   background:linear-gradient(135deg, var(--maroon), var(--maroon-deep));
@@ -984,6 +998,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -1034,7 +1049,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
     <div id="chat"></div>
     <div id="attachPreview"></div>
     <div id="inputbar">
-      <input type="file" id="fileInput" accept="image/*" style="display:none;">
+      <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
       <button id="attachBtn" title="إرفاق صورة">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
       </button>
@@ -1060,6 +1075,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <textarea id="apptNotes" rows="2" dir="auto" placeholder="ملاحظات (اختياري)"></textarea>
         <button class="btn-primary" id="apptAddBtn">➕ إضافة الموعد</button>
       </div>
+      <button class="btn-ghost" id="apptDedupeBtn" style="width:100%; margin-bottom:10px;">🧹 حذف المواعيد المكررة</button>
       <div id="apptList"></div>
     </div>
   </div>
@@ -1418,6 +1434,14 @@ const SYSTEM_PROMPT = `اسمك "يونس"، وأنت المساعد الذكي 
 
 إذا المستخدم بعث جدول أو لائحة فيها عدة تواريخ (مثلاً جدول Excel، صورة جدول، أو نص فيه أكثر من موعد) وطلب منك تحولهم لمواعيد أو تذكيرات، ولّد كتلة \`add_appointment\` منفصلة لكل موعد فنفس الرد، وحدة تلو الأخرى، بلا ما تسأل تأكيد لكل وحدة على حدة. بعد كل الكتل، لخّص للمستخدم بجملة وحدة عدد المواعيد لي تزادو (مثلاً "ضفت 5 مواعيد من الجدول").
 
+لما المستخدم يطلب منك "تقرير"، "استخرج ليا ملف"، "صيفط ليا فExcel/Word/PDF"، "لخص ليا فملف"، أو أي طلب فيه بيانات جدولية محتاجة تتصدر كملف قابل للتحميل، استعمل بالضبط هاد الشكل بسطر لحاله، وJSON صحيح جوّاه:
+\`\`\`report
+{"title":"عنوان التقرير", "columns":["عمود1","عمود2"], "rows":[["قيمة1","قيمة2"],["قيمة3","قيمة4"]], "summary":"ملخص أو مجموع اختياري", "formats":["excel","pdf","word"]}
+\`\`\`
+- "formats" اختياري، افتراضيًا ["excel","pdf"]. زيد "word" إذا طلب المستخدم Word بالتحديد.
+- استعمل بيانات حقيقية من المحادثة أو من الصورة/الملف لي بعثها المستخدم، لا تخترع أرقام.
+- بعد الكتلة، أكّد بجملة قصيرة إن التقرير جاهز للتحميل.
+
 مهم جدًا بخصوص تحليل الصور (خصوصًا حساب الكميات، عد المواد أو الأشياء، القياسات): لا تعطي الرقم النهائي مباشرة من غير ما تفكر بصوت عالي. اتبع هاد الخطوات بالضبط:
 1. وصف الصورة بإيجاز: شنو كاين فيها، الجودة (واضحة، بعيدة، ضوء ضعيف...)، وأي عوائق كتصعب الحساب (تراكب، جزء مخفي، زاوية...).
 2. قسّم المنطقة أو المواد لمجموعات صغيرة وسهلة العد (صفوف، طبقات، أكوام)، واحسب كل مجموعة لحالها، وبيّن حسابك رقم برقم.
@@ -1446,7 +1470,7 @@ function loadHistory(){
 function saveHistory(){
   try{
     const trimmed = messages.slice(-60).map(m=>{
-      if(m.image){ const {image, ...rest} = m; return rest; }
+      if(m.image || m.images){ const {image, images, ...rest} = m; return rest; }
       return m;
     });
     localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
@@ -1507,7 +1531,12 @@ function renderMessages(){
     div.className = 'msg ' + (m.role === 'user' ? 'user' : 'bot');
     div.setAttribute('dir', 'auto');
     if(m.role === 'user'){
-      const imgHtml = m.image ? `<img class="msg-img" src="data:${m.image.mime};base64,${m.image.data}">` : '';
+      let imgHtml = '';
+      if(m.images && m.images.length){
+        imgHtml = '<div class="msg-img-grid">' + m.images.map(img=>`<img class="msg-img" src="data:${img.mime};base64,${img.data}">`).join('') + '</div>';
+      }else if(m.image){
+        imgHtml = `<img class="msg-img" src="data:${m.image.mime};base64,${m.image.data}">`;
+      }
       div.innerHTML = imgHtml + escapeHtml(m.text).replace(/\n/g,'<br>') + `<time>${fmtTime(m.time)}</time>`;
     }else{
       renderRichBotContent(div, m.text);
@@ -1529,7 +1558,7 @@ function escapeHtml(str){
 /* ---------- عرض غني: نص + جداول + رسوم بيانية + صور + مواعيد ---------- */
 function renderRichBotContent(container, rawText){
   // نقسم النص لأجزاء: كتل chart، كتل image، كتل add_appointment، وبقية النص
-  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)/g;
+  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```report\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)/g;
   let lastIndex = 0;
   let match;
   const parts = [];
@@ -1537,7 +1566,8 @@ function renderRichBotContent(container, rawText){
     if(match.index > lastIndex){ parts.push({type:'text', content: rawText.slice(lastIndex, match.index)}); }
     if(match[1] !== undefined){ parts.push({type:'chart', content: match[1].trim()}); }
     else if(match[2] !== undefined){ parts.push({type:'add_appointment', content: match[2].trim()}); }
-    else{ parts.push({type:'image', content: (match[3] !== undefined ? match[3] : match[4]).trim()}); }
+    else if(match[3] !== undefined){ parts.push({type:'report', content: match[3].trim()}); }
+    else{ parts.push({type:'image', content: (match[4] !== undefined ? match[4] : match[5]).trim()}); }
     lastIndex = blockRegex.lastIndex;
   }
   if(lastIndex < rawText.length){ parts.push({type:'text', content: rawText.slice(lastIndex)}); }
@@ -1550,6 +1580,8 @@ function renderRichBotContent(container, rawText){
       appendChart(container, part.content);
     }else if(part.type === 'add_appointment'){
       appendAppointmentAction(container, part.content);
+    }else if(part.type === 'report'){
+      appendReportAction(container, part.content);
     }else if(part.type === 'image'){
       appendImage(container, part.content);
     }
@@ -1745,22 +1777,36 @@ document.getElementById('gcalConnectBtn')?.addEventListener('click', ()=>{
 
 async function ensureGcalToken(){
   if(gcalAccessToken && gcalTokenExpiry > Date.now()) return gcalAccessToken;
+  // إذا فشلت آخر محاولة، نتفاداو نعاودو نحاولو قبل ما يعدي ساعة، باش ما نقاطعوش المستخدم بصفحة خطأ Google بزاف
+  const lastFail = parseInt(localStorage.getItem('alioua_btp_gcal_last_fail') || '0', 10);
+  if(Date.now() - lastFail < 60*60*1000) return null;
   const clientId = getGcalClientId();
   if(!clientId || !window.google || !google.accounts || !google.accounts.oauth2) return null;
   if(!gcalTokenClient) gcalTokenClient = initGcalTokenClient(clientId);
   if(!gcalTokenClient) return null;
   return new Promise((resolve)=>{
+    let settled = false;
     gcalTokenClient.callback = (resp)=>{
+      settled = true;
       if(resp && resp.access_token){
         saveGcalToken(resp.access_token, resp.expires_in);
         updateGcalStatusUI();
+        localStorage.removeItem('alioua_btp_gcal_last_fail');
         resolve(resp.access_token);
       }else{
+        localStorage.setItem('alioua_btp_gcal_last_fail', String(Date.now()));
         resolve(null);
       }
     };
+    gcalTokenClient.error_callback = ()=>{
+      settled = true;
+      localStorage.setItem('alioua_btp_gcal_last_fail', String(Date.now()));
+      resolve(null);
+    };
     try{ gcalTokenClient.requestAccessToken({prompt: ''}); }
-    catch(e){ resolve(null); }
+    catch(e){ localStorage.setItem('alioua_btp_gcal_last_fail', String(Date.now())); resolve(null); }
+    // شبكة أمان: إذا ماوصلاش رد فـ8 ثواني، ما نبقاوش معلقين
+    setTimeout(()=>{ if(!settled) resolve(null); }, 8000);
   });
 }
 
@@ -1792,6 +1838,97 @@ async function syncApptToGoogleCalendar(appt){
   return null;
 }
 
+/* ---------- توليد تقارير (Excel / PDF / Word) من رد يونس ---------- */
+function appendReportAction(container, jsonText){
+  const wrap = document.createElement('div');
+  wrap.className = 'appt-action-card';
+  try{
+    const data = JSON.parse(jsonText);
+    if(!data.title || !Array.isArray(data.columns) || !Array.isArray(data.rows)) throw new Error('بيانات ناقصة');
+    const formats = Array.isArray(data.formats) && data.formats.length ? data.formats : ['excel','pdf'];
+    wrap.innerHTML = `<span class="appt-action-icon">📊</span> جهزت تقرير "<strong>${escapeHtml(data.title)}</strong>" — اختاري الصيغة:`;
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;';
+    const labels = {excel:'⬇️ Excel', pdf:'⬇️ PDF', word:'⬇️ Word'};
+    formats.forEach(fmt=>{
+      if(!labels[fmt]) return;
+      const btn = document.createElement('button');
+      btn.className = 'btn-ghost';
+      btn.style.cssText = 'padding:8px 14px; font-size:12.5px;';
+      btn.textContent = labels[fmt];
+      btn.addEventListener('click', ()=>{
+        if(fmt === 'excel') generateExcelReport(data);
+        else if(fmt === 'pdf') generatePdfReport(data);
+        else if(fmt === 'word') generateWordReport(data);
+      });
+      btnRow.appendChild(btn);
+    });
+    wrap.appendChild(btnRow);
+  }catch(e){
+    wrap.innerHTML = `<span class="appt-action-icon">⚠️</span> ما قدرتش نجهز التقرير، صار خطأ بالبيانات.`;
+  }
+  container.appendChild(wrap);
+}
+
+function generateExcelReport(data){
+  if(!window.XLSX){ alert('مكتبة Excel ماتحملاتش بعد، تأكدي من الإنترنت.'); return; }
+  const aoa = [data.columns, ...data.rows];
+  if(data.summary) aoa.push([], [data.summary]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'تقرير');
+  XLSX.writeFile(wb, (data.title||'تقرير').replace(/[\\/:*?"<>|]/g,'-') + '.xlsx');
+}
+
+function generatePdfReport(data){
+  if(!window.jspdf){ alert('مكتبة PDF ماتحملاتش بعد.'); return; }
+  const c = typeof loadCompanyInfo === 'function' ? loadCompanyInfo() : {};
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+  let y = 15;
+  if(c.logoDataUrl){ try{ doc.addImage(c.logoDataUrl, 'PNG', 15, 8, 50, 17); y = 32; }catch(e){} }
+  docTextSmart(doc, data.title, 15, y, {fontSize:14, bold:true});
+  y += 8;
+  doc.autoTable({
+    startY: y,
+    head: [data.columns],
+    body: data.rows,
+    theme:'grid',
+    headStyles:{fillColor:[90,90,90], textColor:255, fontSize:9},
+    bodyStyles:{fontSize:8.5},
+    margin:{left:15, right:15},
+    didParseCell: function(hookData){
+      // ندعمو النص العربي فالجدول عبر رسمو كصورة إذا احتوى على عربية
+    }
+  });
+  let finalY = doc.lastAutoTable.finalY + 8;
+  if(data.summary){
+    docTextSmart(doc, data.summary, 15, finalY, {fontSize:10});
+  }
+  doc.save((data.title||'تقرير').replace(/[\\/:*?"<>|]/g,'-') + '.pdf');
+}
+
+function generateWordReport(data){
+  // حيلة بسيطة وموثوقة: HTML بامتداد .doc كيفتحها Word مباشرة بتنسيق صحيح
+  let html = `<html dir="rtl"><head><meta charset="UTF-8"></head><body style="font-family:Arial;">
+    <h2>${escapeHtml(data.title)}</h2>
+    <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%;">
+      <tr>${data.columns.map(c=>`<th style="background:#eee;">${escapeHtml(String(c))}</th>`).join('')}</tr>
+      ${data.rows.map(r=>`<tr>${r.map(cell=>`<td>${escapeHtml(String(cell))}</td>`).join('')}</tr>`).join('')}
+    </table>
+    ${data.summary ? '<p>'+escapeHtml(data.summary)+'</p>' : ''}
+  </body></html>`;
+  const blob = new Blob(['\ufeff', html], {type:'application/msword'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (data.title||'تقرير').replace(/[\\/:*?"<>|]/g,'-') + '.doc';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function appendAppointmentAction(container, jsonText){
   const wrap = document.createElement('div');
   wrap.className = 'appt-action-card';
@@ -1800,11 +1937,20 @@ function appendAppointmentAction(container, jsonText){
     if(!data.title || !data.date || !data.time) throw new Error('ناقص بيانات');
     const dt = `${data.date}T${data.time}`;
     const list = loadAppts();
+    const normTitle = (data.title||'').trim().replace(/\s+/g,' ');
+    // نتحقق أولاً: واش هاد الموعد بالضبط (نفس العنوان ونفس التاريخ/الوقت) مزاد من قبل
+    // هادشي ضروري لأن renderMessages() كيتعاود يقرا كل تاريخ الشات، وبلا هاد التحقق كل موعد كيتكرر فكل مرة
+    let existing = list.find(a => (a.title||'').trim().replace(/\s+/g,' ') === normTitle && a.dt === dt);
+    const dObj = new Date(dt);
+    const whenStr = dObj.toLocaleString('ar', {weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'});
+    if(existing){
+      wrap.innerHTML = `<span class="appt-action-icon">✅</span> الموعد <strong>"${escapeHtml(data.title)}"</strong> بتاريخ ${whenStr} مسجّل بلائحة المواعيد.`;
+      container.appendChild(wrap);
+      return;
+    }
     const newAppt = {id:'a'+Date.now(), title:data.title, dt, notes:data.notes||'', done:false, notified:false};
     list.push(newAppt);
     saveAppts(list);
-    const dObj = new Date(dt);
-    const whenStr = dObj.toLocaleString('ar', {weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'});
     wrap.innerHTML = `<span class="appt-action-icon">✅</span> تمت إضافة الموعد <strong>"${escapeHtml(data.title)}"</strong> بتاريخ ${whenStr} لقائمة المواعيد.`;
     if(typeof renderAppts === 'function' && document.getElementById('viewAppt')?.classList.contains('active')){
       renderAppts();
@@ -1873,32 +2019,44 @@ function hideTyping(){
 }
 
 /* ---------- إرفاق الصور ---------- */
-let pendingImage = null; // {data(base64), mime}
+let pendingImages = []; // [{data(base64), mime}]
 const attachBtn = document.getElementById('attachBtn');
 const fileInput = document.getElementById('fileInput');
 const attachPreview = document.getElementById('attachPreview');
+const MAX_IMAGES = 6;
 
 attachBtn.addEventListener('click', ()=> fileInput.click());
 
 fileInput.addEventListener('change', ()=>{
-  const file = fileInput.files[0];
-  if(!file) return;
-  if(file.size > 8 * 1024 * 1024){
-    alert('الصورة كبيرة زيادة (أكبر من 8 ميجا). جرب صورة أصغر.');
-    fileInput.value = '';
-    return;
+  const files = Array.from(fileInput.files || []);
+  if(!files.length) return;
+  if(pendingImages.length + files.length > MAX_IMAGES){
+    alert(`ماقدرش تزيد أكثر من ${MAX_IMAGES} صور فمرة وحدة.`);
   }
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    const base64 = reader.result.split(',')[1];
-    pendingImage = { data: base64, mime: file.type || 'image/jpeg' };
-    renderAttachPreview();
-  };
-  reader.readAsDataURL(file);
+  const filesToAdd = files.slice(0, Math.max(0, MAX_IMAGES - pendingImages.length));
+  let remaining = filesToAdd.length;
+  if(!remaining){ fileInput.value = ''; return; }
+  filesToAdd.forEach(file=>{
+    if(file.size > 8 * 1024 * 1024){
+      alert(`الصورة "${file.name}" كبيرة زيادة (أكبر من 8 ميجا)، تجاوزناها.`);
+      remaining--;
+      if(remaining === 0) renderAttachPreview();
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const base64 = reader.result.split(',')[1];
+      pendingImages.push({ data: base64, mime: file.type || 'image/jpeg' });
+      remaining--;
+      renderAttachPreview();
+    };
+    reader.readAsDataURL(file);
+  });
+  fileInput.value = '';
 });
 
 function renderAttachPreview(){
-  if(!pendingImage){
+  if(!pendingImages.length){
     attachPreview.classList.remove('show');
     attachPreview.innerHTML = '';
     attachBtn.classList.remove('has-image');
@@ -1906,16 +2064,17 @@ function renderAttachPreview(){
   }
   attachBtn.classList.add('has-image');
   attachPreview.classList.add('show');
-  attachPreview.innerHTML = `
+  attachPreview.innerHTML = pendingImages.map((img, idx) => `
     <div class="attach-thumb">
-      <img src="data:${pendingImage.mime};base64,${pendingImage.data}">
-      <button class="attach-remove" id="attachRemoveBtn">✕</button>
+      <img src="data:${img.mime};base64,${img.data}">
+      <button class="attach-remove" data-idx="${idx}">✕</button>
     </div>
-  `;
-  document.getElementById('attachRemoveBtn').addEventListener('click', ()=>{
-    pendingImage = null;
-    fileInput.value = '';
-    renderAttachPreview();
+  `).join('');
+  attachPreview.querySelectorAll('.attach-remove').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      pendingImages.splice(parseInt(btn.dataset.idx,10), 1);
+      renderAttachPreview();
+    });
   });
 }
 
@@ -1941,10 +2100,10 @@ function buildProviderChain(hasImage){
 /* ---------- إرسال الرسائل ---------- */
 async function sendMessage(){
   const text = inputEl.value.trim();
-  if(!text && !pendingImage) return;
+  if(!text && !pendingImages.length) return;
 
   const key = getApiKey();
-  const hasImage = !!pendingImage;
+  const hasImage = pendingImages.length > 0;
   if(!key && !getOpenRouterKey()){
     openModal();
     return;
@@ -1957,10 +2116,11 @@ async function sendMessage(){
   }
 
   const msgObj = {role:'user', text, time:Date.now()};
-  if(pendingImage) msgObj.image = pendingImage;
+  if(pendingImages.length === 1) msgObj.image = pendingImages[0];
+  else if(pendingImages.length > 1) msgObj.images = pendingImages.slice();
   messages.push(msgObj);
   inputEl.value = '';
-  pendingImage = null;
+  pendingImages = [];
   renderAttachPreview();
   autoGrow();
   renderMessages();
@@ -2021,7 +2181,11 @@ async function callGemini(key, msgs){
   const contents = msgs.slice(-14).map(m=>{
     const parts = [];
     if(m.text) parts.push({text: m.text});
-    if(m.image) parts.push({inlineData:{mimeType: m.image.mime, data: m.image.data}});
+    if(m.images && m.images.length){
+      m.images.forEach(img=> parts.push({inlineData:{mimeType: img.mime, data: img.data}}));
+    }else if(m.image){
+      parts.push({inlineData:{mimeType: m.image.mime, data: m.image.data}});
+    }
     if(parts.length === 0) parts.push({text:''});
     return { role: m.role === 'user' ? 'user' : 'model', parts };
   });
@@ -2140,10 +2304,14 @@ async function callMistral(mKey, msgs){
   recent.forEach((m, idx)=>{
     const isLast = idx === recent.length - 1;
     if(m.role === 'user'){
-      if(isLast && m.image){
+      if(isLast && (m.image || (m.images && m.images.length))){
         const content = [];
         if(m.text) content.push({type:'text', text: m.text});
-        content.push({type:'image_url', image_url: `data:${m.image.mime};base64,${m.image.data}`});
+        if(m.images && m.images.length){
+          m.images.forEach(img=> content.push({type:'image_url', image_url: `data:${img.mime};base64,${img.data}`}));
+        }else{
+          content.push({type:'image_url', image_url: `data:${m.image.mime};base64,${m.image.data}`});
+        }
         mistralMessages.push({role:'user', content});
       }else{
         mistralMessages.push({role:'user', content: m.text || ''});
@@ -2246,34 +2414,35 @@ function cloudConfigured(){
   return !!(getFirebaseDbUrl() && getSyncCode());
 }
 
+// المفاتيح المستثناة عمدًا من المزامنة (لأسباب أمان/منطقية بحتة، ماشي نسيان)
+const CLOUD_SYNC_EXCLUDE = ['alioua_btp_fb_dburl', 'alioua_btp_sync_code', 'alioua_btp_gcal_token', 'alioua_btp_pin_hash', 'alioua_btp_last_sync', 'alioua_btp_last_auto_backup'];
+
+function collectAllAppData(){
+  // كنجمعو تلقائيًا كل مفتاح alioua_btp_* من التخزين المحلي، بلا الحاجة نتذكرو واحد واحد
+  const data = {};
+  for(let i=0; i<localStorage.length; i++){
+    const key = localStorage.key(i);
+    if(key && key.startsWith('alioua_btp_') && !CLOUD_SYNC_EXCLUDE.includes(key)){
+      data[key] = localStorage.getItem(key);
+    }
+  }
+  return data;
+}
+function applyAllAppData(data){
+  if(!data || typeof data !== 'object') return;
+  Object.keys(data).forEach(key=>{
+    if(key.startsWith('alioua_btp_') && !CLOUD_SYNC_EXCLUDE.includes(key) && data[key] !== null && data[key] !== undefined){
+      localStorage.setItem(key, data[key]);
+    }
+  });
+}
+
 async function cloudPush(onStatus){
   if(!cloudConfigured()){ if(onStatus) onStatus('fail', 'خصك تعمري: رابط Database URL ورمز المزامنة أولاً.'); return; }
   const dbUrl = getFirebaseDbUrl();
   const syncCode = getSyncCode();
-  const payload = {
-    transactions: localStorage.getItem(TX_KEY) || '[]',
-    clients: localStorage.getItem(CLIENTS_KEY) || '[]',
-    suppliers: localStorage.getItem(SUPPLIERS_KEY) || '[]',
-    purchases: localStorage.getItem(PURCHASES_KEY) || '[]',
-    caisse: localStorage.getItem(CAISSE_KEY) || '[]',
-    appointments: localStorage.getItem(APPT_KEY) || '[]',
-    chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
-    pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
-    purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
-    supplierPayments: localStorage.getItem(SUPPLIER_PAYMENTS_KEY) || '[]',
-    clientPayments: localStorage.getItem(CLIENT_PAYMENTS_KEY) || '[]',
-    workers: localStorage.getItem(WORKERS_KEY) || '[]',
-    attendance: localStorage.getItem(ATTENDANCE_KEY) || '[]',
-    clientInvoices: localStorage.getItem(INVOICES_KEY) || '[]',
-    companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
-    gemini: getApiKey(),
-    kimi: getOpenRouterKey(),
-    mistral: getMistralKey(),
-    gcalClientId: getGcalClientId(),
-    voicerss: getGttsKey(),
-    voiceName: localStorage.getItem(VOICE_NAME_KEY) || '',
-    updatedAt: new Date().toISOString()
-  };
+  const payload = collectAllAppData();
+  payload.updatedAt = new Date().toISOString();
   const url = `${dbUrl}/yunes_sync/${encodeURIComponent(syncCode)}.json`;
   try{
     const res = await fetch(url, {
@@ -2324,27 +2493,27 @@ async function cloudPull(onStatus){
     }
     const data = await res.json();
     if(!data){ if(onStatus) onStatus('fail', 'ما لقيتش بيانات بهاد الرمز — يمكن أول مرة كتربطي، ديري "مزامنة الآن" أولاً.'); return; }
-    if(data.transactions) localStorage.setItem(TX_KEY, data.transactions);
-    if(data.clients) localStorage.setItem(CLIENTS_KEY, data.clients);
-    if(data.suppliers) localStorage.setItem(SUPPLIERS_KEY, data.suppliers);
-    if(data.purchases) localStorage.setItem(PURCHASES_KEY, data.purchases);
-    if(data.caisse) localStorage.setItem(CAISSE_KEY, data.caisse);
-    if(data.appointments) localStorage.setItem(APPT_KEY, data.appointments);
-    if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
-    if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
-    if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
-    if(data.supplierPayments) localStorage.setItem(SUPPLIER_PAYMENTS_KEY, data.supplierPayments);
-    if(data.clientPayments) localStorage.setItem(CLIENT_PAYMENTS_KEY, data.clientPayments);
-    if(data.workers) localStorage.setItem(WORKERS_KEY, data.workers);
-    if(data.attendance) localStorage.setItem(ATTENDANCE_KEY, data.attendance);
-    if(data.clientInvoices) localStorage.setItem(INVOICES_KEY, data.clientInvoices);
-    if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
-    if(data.gemini) setApiKey(data.gemini);
-    if(data.kimi) setOpenRouterKey(data.kimi);
-    if(data.mistral) setMistralKey(data.mistral);
-    if(data.gcalClientId) setGcalClientId(data.gcalClientId);
-    if(data.voicerss) setGttsKey(data.voicerss);
-    if(data.voiceName) localStorage.setItem(VOICE_NAME_KEY, data.voiceName);
+
+    // الصيغة الجديدة: كل مفاتيح alioua_btp_* مباشرة
+    applyAllAppData(data);
+
+    // توافق مع بيانات قديمة كانت مرفوعة بصيغة أسماء يدوية قبل هاد التحديث (باش ما تضيعش)
+    const legacyMap = {
+      transactions: TX_KEY, clients: CLIENTS_KEY, suppliers: SUPPLIERS_KEY, purchases: PURCHASES_KEY,
+      caisse: CAISSE_KEY, appointments: APPT_KEY, chatHistory: HISTORY_KEY, pdfInvoices: PDF_INVOICES_KEY,
+      purchaseOrders: PURCHASE_ORDERS_KEY, supplierPayments: SUPPLIER_PAYMENTS_KEY, clientPayments: CLIENT_PAYMENTS_KEY,
+      workers: WORKERS_KEY, attendance: ATTENDANCE_KEY, clientInvoices: INVOICES_KEY, companyInfo: COMPANY_INFO_KEY,
+      voiceName: VOICE_NAME_KEY
+    };
+    Object.keys(legacyMap).forEach(field=>{
+      if(data[field] && !localStorage.getItem(legacyMap[field])){ localStorage.setItem(legacyMap[field], data[field]); }
+    });
+    if(data.gemini && !getApiKey()) setApiKey(data.gemini);
+    if(data.kimi && !getOpenRouterKey()) setOpenRouterKey(data.kimi);
+    if(data.mistral && !getMistralKey()) setMistralKey(data.mistral);
+    if(data.gcalClientId && !getGcalClientId()) setGcalClientId(data.gcalClientId);
+    if(data.voicerss && !getGttsKey()) setGttsKey(data.voicerss);
+
     if(apiKeyInput){
       apiKeyInput.value = getApiKey();
       openrouterKeyInput.value = getOpenRouterKey();
@@ -3029,6 +3198,21 @@ const APPT_KEY = 'alioua_btp_appointments';
 function loadAppts(){ try{ return JSON.parse(localStorage.getItem(APPT_KEY) || '[]'); }catch(e){ return []; } }
 function saveAppts(list){ localStorage.setItem(APPT_KEY, JSON.stringify(list)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 
+document.getElementById('apptDedupeBtn')?.addEventListener('click', ()=>{
+  const list = loadAppts();
+  const seen = new Set();
+  const clean = [];
+  let removed = 0;
+  list.forEach(a=>{
+    const key = (a.title||'').trim().replace(/\s+/g,' ') + '|' + a.dt;
+    if(seen.has(key)){ removed++; }
+    else{ seen.add(key); clean.push(a); }
+  });
+  saveAppts(clean);
+  renderAppts();
+  alert(removed > 0 ? `تم حذف ${removed} موعد مكرر ✅` : 'ماكاينش تكرارات، اللائحة نظيفة بالفعل ✅');
+});
+
 function renderAppts(){
   const list = loadAppts().sort((a,b)=> new Date(a.dt) - new Date(b.dt));
   const el = document.getElementById('apptList');
@@ -3490,6 +3674,57 @@ function updateInvTotalsPreview(){
 }
 document.getElementById('invTvaRate')?.addEventListener('input', updateInvTotalsPreview);
 
+function containsArabic(text){
+  return /[\u0600-\u06FF]/.test(text||'');
+}
+// jsPDF ما كيدعمش تشكيل الحروف العربية (اتصال الحروف) بشكل صحيح مباشرة.
+// الحل: نرسمو النص فـ canvas (المتصفح كيدير التشكيل صحيح تلقائيًا)، ونحولوه لصورة وندمجوها فالـPDF.
+function drawArabicText(doc, text, xMM, yMM, opts={}){
+  const fontSizeMM = opts.fontSizeMM || 4;
+  const bold = opts.bold || false;
+  const color = opts.color || '#000000';
+  const align = opts.align || 'right';
+  const scale = 8;
+  const pxPerMM = 8;
+  const fontPx = Math.round(fontSizeMM * pxPerMM * scale);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = `${bold?'bold ':''}${fontPx}px 'IBM Plex Sans Arabic', Arial, sans-serif`;
+  const textWidth = ctx.measureText(text).width;
+  canvas.width = Math.ceil(textWidth) + Math.round(fontPx*0.3);
+  canvas.height = Math.ceil(fontPx * 1.5);
+  ctx.font = `${bold?'bold ':''}${fontPx}px 'IBM Plex Sans Arabic', Arial, sans-serif`;
+  ctx.direction = 'rtl';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = color;
+  ctx.fillText(text, canvas.width - Math.round(fontPx*0.15), canvas.height/2);
+  const imgData = canvas.toDataURL('image/png');
+  const heightMM = fontSizeMM * 1.5;
+  const widthMM = heightMM * (canvas.width/canvas.height);
+  let drawX;
+  if(align === 'right') drawX = xMM - widthMM;
+  else if(align === 'center') drawX = xMM - widthMM/2;
+  else drawX = xMM;
+  doc.addImage(imgData, 'PNG', drawX, yMM - heightMM/2, widthMM, heightMM);
+  return widthMM;
+}
+// دالة ذكية: كتستعمل doc.text العادية للنص اللاتيني، وترسم صورة للنص لي فيه عربية
+function docTextSmart(doc, text, xMM, yMM, opts={}){
+  if(containsArabic(text)){
+    drawArabicText(doc, text, xMM, yMM, {
+      fontSizeMM: opts.fontSizeMM || (opts.fontSize ? opts.fontSize*0.352778 : 4),
+      bold: opts.bold, color: opts.color, align: opts.align || (opts.jsAlign==='center'?'center':'right')
+    });
+  }else{
+    const fontStyle = opts.bold ? 'bold' : 'normal';
+    doc.setFont('helvetica', fontStyle);
+    if(opts.fontSize) doc.setFontSize(opts.fontSize);
+    if(opts.color){ const rgb = opts.colorRgb || [0,0,0]; doc.setTextColor(...rgb); }
+    doc.text(text, xMM, yMM, opts.jsAlign ? {align: opts.jsAlign} : undefined);
+  }
+}
+
 function fmtMAD(n){
   // بلا فاصل آلاف (المشكل كان فـ toLocaleString)، غير فاصلة عشرية إذا كاين كسر
   const rounded = Math.round(n*100)/100;
@@ -3547,7 +3782,7 @@ function buildInvoicePdf(invData){
   doc.text('Facturer à :', 17, y+4.3);
   y += 11;
   doc.setTextColor(20,20,20); doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  doc.text('Société: ' + clientName, 15, y);
+  docTextSmart(doc, 'Société: ' + clientName, 15, y, {fontSize:10});
   if(clientIce){ y += 5; doc.text('ICE: ' + clientIce, 15, y); }
 
   y += 10;
@@ -4080,7 +4315,7 @@ function buildPurchaseOrderPdf(po){
   doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(30,100,160);
   doc.text('FOURNISSEUR', 155, y+4, {align:'center'});
   doc.setFontSize(12); doc.setTextColor(0,0,0);
-  doc.text(po.supplierName || '—', 155, y+13, {align:'center'});
+  docTextSmart(doc, po.supplierName || '—', 155, y+13, {fontSize:12, jsAlign:'center', align:'center'});
 
   y += 24;
   // مربعات تاريخ وعنوان التسليم (ارتفاع كافي باش النص ما يتراكبش مع القيمة)
@@ -4711,6 +4946,7 @@ document.getElementById('workerAddBtn')?.addEventListener('click', ()=>{
 });
 
 let attHistoryWorkerId = null;
+let editAttId = null;
 let payslipWorkerId = null;
 
 function markAttendance(workerId, status){
@@ -4782,12 +5018,42 @@ function renderWorkers(){
         histHost.innerHTML = '<div class="empty-hint" style="padding:8px;">ماكاينش حضور مسجل بعد.</div>';
       }else{
         const statusLabel = {present:'✅ حاضر', half:'½ نصف يوم', absent:'❌ غايب'};
-        histHost.innerHTML = wAtt.slice(0,30).map(a=>`
+        histHost.innerHTML = wAtt.slice(0,30).map(a=>{
+          if(editAttId === a.id){
+            return `
+              <div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px; flex-direction:column; align-items:stretch;">
+                <input type="date" class="edit-att-date" value="${a.date}" style="margin-bottom:6px;">
+                <select class="edit-att-status" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:6px;">
+                  <option value="present" ${a.status==='present'?'selected':''}>✅ حاضر</option>
+                  <option value="half" ${a.status==='half'?'selected':''}>½ نصف يوم</option>
+                  <option value="absent" ${a.status==='absent'?'selected':''}>❌ غايب</option>
+                </select>
+                <button class="lc-btn" data-save-att="${a.id}">💾 حفظ</button>
+              </div>
+            `;
+          }
+          return `
           <div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;">
             <div class="lc-body"><span dir="ltr" style="text-align:right; display:block;">${a.date.split('-').reverse().join('/')} — ${statusLabel[a.status]||a.status}</span></div>
+            <button class="lc-btn" data-edit-att="${a.id}">✏️</button>
             <button class="lc-del" data-del-att="${a.id}">🗑</button>
           </div>
-        `).join('');
+        `;
+        }).join('');
+        histHost.querySelectorAll('[data-edit-att]').forEach(b=> b.addEventListener('click', ()=>{
+          editAttId = b.dataset.editAtt;
+          renderWorkers();
+        }));
+        histHost.querySelectorAll('[data-save-att]').forEach(b=> b.addEventListener('click', ()=>{
+          const row = b.closest('.lc-row');
+          const newDate = row.querySelector('.edit-att-date').value;
+          const newStatus = row.querySelector('.edit-att-status').value;
+          const all = loadAttendance();
+          const rec = all.find(x=>x.id === b.dataset.saveAtt);
+          if(rec){ rec.date = newDate; rec.status = newStatus; saveAttendance(all); }
+          editAttId = null;
+          renderWorkers();
+        }));
         histHost.querySelectorAll('[data-del-att]').forEach(b=> b.addEventListener('click', ()=>{
           saveAttendance(loadAttendance().filter(a=>a.id !== b.dataset.delAtt));
           renderWorkers();
@@ -4858,7 +5124,7 @@ function generatePayslipPdf(worker, from, to){
   doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(0,0,0);
   doc.text('Fiche de Paie', 15, y); y += 8;
   doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  doc.text('Employé: ' + worker.name, 15, y); y += 6;
+  docTextSmart(doc, 'Employé: ' + worker.name, 15, y, {fontSize:10}); y += 6;
   doc.text('Type: ' + (worker.type==='daily' ? 'Journalier' : 'Mensuel'), 15, y); y += 6;
   doc.text('Période: ' + from.split('-').reverse().join('/') + ' - ' + to.split('-').reverse().join('/'), 15, y); y += 8;
 
