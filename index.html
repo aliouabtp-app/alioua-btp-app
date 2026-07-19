@@ -1091,6 +1091,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <button class="sub-nav-btn" data-sub="subSuppliers">🚚 الموردين</button>
         <button class="sub-nav-btn" data-sub="subCaisse">💵 سيولة</button>
         <button class="sub-nav-btn" data-sub="subWorkers">👷 الأجراء</button>
+        <button class="sub-nav-btn" data-sub="subProjects">📁 المشاريع</button>
       </div>
     </div>
     <div id="overdueAlertsBanner"></div>
@@ -1155,6 +1156,9 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
           <input type="text" id="invClientName" dir="ltr" placeholder="اسم العميل / الشركة" style="margin-top:8px;">
           <input type="text" id="invClientIce" placeholder="ICE ديال العميل (اختياري)" style="margin-top:8px;">
           <input type="text" id="invSectionTitle" dir="auto" placeholder="عنوان القسم (مثلاً: ACOMPTE N°1)" style="margin-top:8px;">
+          <select id="invProject" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;">
+            <option value="">بلا مشروع محدد</option>
+          </select>
 
           <div id="invItemsList" style="margin-top:10px;"></div>
           <button class="btn-ghost" id="invAddItemBtn" style="width:100%; margin-top:6px;">➕ إضافة بند</button>
@@ -1228,6 +1232,9 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
             <option value="تقديم الخدمات">تقديم الخدمات (Prestation de service)</option>
             <option value="خدمات متنوعة">خدمات متنوعة (Divers)</option>
           </select>
+          <select id="bonProject" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;">
+            <option value="">بلا مشروع محدد</option>
+          </select>
 
           <div id="bonItemsList" style="margin-top:10px;"></div>
           <button class="btn-ghost" id="bonAddItemBtn" style="width:100%; margin-top:6px;">➕ إضافة سلعة</button>
@@ -1257,9 +1264,21 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
           </select>
           <input type="text" id="workerWage" placeholder="الأجرة اليومية أو الراتب الشهري (درهم)" style="margin-top:8px;">
           <input type="text" id="workerPhone" dir="ltr" placeholder="رقم الهاتف (اختياري)" style="margin-top:8px;">
+          <select id="workerProject" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;">
+            <option value="">بلا مشروع محدد</option>
+          </select>
           <button class="btn-primary" id="workerAddBtn" style="margin-top:10px;">➕ إضافة أجير</button>
         </div>
         <div id="workersList" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="sub-view" id="subProjects">
+        <div class="card-form">
+          <p class="mini-title" style="margin-bottom:8px;">📁 إضافة مشروع</p>
+          <input type="text" id="projectName" dir="auto" placeholder="اسم المشروع (مثلاً: فيلا أيت أورير)">
+          <button class="btn-primary" id="projectAddBtn" style="margin-top:10px;">➕ إضافة مشروع</button>
+        </div>
+        <div id="projectsList" style="margin-top:12px;"></div>
       </div>
 
     </div>
@@ -2577,27 +2596,12 @@ if(navigator.storage && navigator.storage.persist){
 }
 function buildFullBackupObject(){
   return {
+    ...collectAllAppData(),
     gemini: getApiKey(),
     kimi: getOpenRouterKey(),
     mistral: getMistralKey(),
     gcalClientId: getGcalClientId(),
     voicerss: getGttsKey(),
-    voiceName: localStorage.getItem(VOICE_NAME_KEY) || '',
-    transactions: localStorage.getItem(TX_KEY) || '[]',
-    clients: localStorage.getItem(CLIENTS_KEY) || '[]',
-    suppliers: localStorage.getItem(SUPPLIERS_KEY) || '[]',
-    purchases: localStorage.getItem(PURCHASES_KEY) || '[]',
-    caisse: localStorage.getItem(CAISSE_KEY) || '[]',
-    appointments: localStorage.getItem(APPT_KEY) || '[]',
-    chatHistory: localStorage.getItem(HISTORY_KEY) || '[]',
-    pdfInvoices: localStorage.getItem(PDF_INVOICES_KEY) || '[]',
-    purchaseOrders: localStorage.getItem(PURCHASE_ORDERS_KEY) || '[]',
-    supplierPayments: localStorage.getItem(SUPPLIER_PAYMENTS_KEY) || '[]',
-    clientPayments: localStorage.getItem(CLIENT_PAYMENTS_KEY) || '[]',
-    workers: localStorage.getItem(WORKERS_KEY) || '[]',
-    attendance: localStorage.getItem(ATTENDANCE_KEY) || '[]',
-    clientInvoices: localStorage.getItem(INVOICES_KEY) || '[]',
-    companyInfo: localStorage.getItem(COMPANY_INFO_KEY) || '{}',
     exportedAt: new Date().toISOString()
   };
 }
@@ -2646,22 +2650,8 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(data.mistral) setMistralKey(data.mistral);
       if(data.gcalClientId) setGcalClientId(data.gcalClientId);
       if(data.voicerss) setGttsKey(data.voicerss);
-      if(data.voiceName) localStorage.setItem(VOICE_NAME_KEY, data.voiceName);
-      if(data.transactions) localStorage.setItem(TX_KEY, data.transactions);
-      if(data.clients) localStorage.setItem(CLIENTS_KEY, data.clients);
-      if(data.suppliers) localStorage.setItem(SUPPLIERS_KEY, data.suppliers);
-      if(data.purchases) localStorage.setItem(PURCHASES_KEY, data.purchases);
-      if(data.caisse) localStorage.setItem(CAISSE_KEY, data.caisse);
-      if(data.appointments) localStorage.setItem(APPT_KEY, data.appointments);
-      if(data.chatHistory) localStorage.setItem(HISTORY_KEY, data.chatHistory);
-      if(data.pdfInvoices) localStorage.setItem(PDF_INVOICES_KEY, data.pdfInvoices);
-    if(data.purchaseOrders) localStorage.setItem(PURCHASE_ORDERS_KEY, data.purchaseOrders);
-    if(data.supplierPayments) localStorage.setItem(SUPPLIER_PAYMENTS_KEY, data.supplierPayments);
-    if(data.clientPayments) localStorage.setItem(CLIENT_PAYMENTS_KEY, data.clientPayments);
-    if(data.workers) localStorage.setItem(WORKERS_KEY, data.workers);
-    if(data.attendance) localStorage.setItem(ATTENDANCE_KEY, data.attendance);
-    if(data.clientInvoices) localStorage.setItem(INVOICES_KEY, data.clientInvoices);
-      if(data.companyInfo) localStorage.setItem(COMPANY_INFO_KEY, data.companyInfo);
+      // كنطبقو كل مفتاح alioua_btp_* تلقائيًا (نفس آلية المزامنة السحابية) بلا الحاجة نتذكرو كل نوع بيانات يدويًا
+      applyAllAppData(data);
       apiKeyInput.value = getApiKey();
       openrouterKeyInput.value = getOpenRouterKey();
       mistralKeyInput.value = getMistralKey();
@@ -2674,7 +2664,9 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(typeof renderAccounting === 'function') renderAccounting();
       if(typeof renderInvoicesList === 'function') renderInvoicesList();
       if(typeof renderCaisse === 'function') renderCaisse();
-      resultEl.textContent = '✅ تم استرجاع كل الإعدادات والبيانات (فواتير، عملاء، موردين، مواعيد)! دوسي "حفظ" للتأكيد.';
+      if(typeof renderWorkers === 'function') renderWorkers();
+      if(typeof renderProjects === 'function') renderProjects();
+      resultEl.textContent = '✅ تم استرجاع كل الإعدادات والبيانات (فواتير، عملاء، موردين، مواعيد، مشاريع، أجراء)! دوسي "حفظ" للتأكيد.';
       resultEl.style.color = '#2e7d32';
     }catch(err){
       resultEl.textContent = '❌ الملف غير صالح، تأكدي إنه نفس الملف لي صدرتيه من يونس.';
@@ -3928,6 +3920,7 @@ function loadInvoiceIntoForm(id){
   document.getElementById('invClientIce').value = inv.clientIce || '';
   document.getElementById('invSectionTitle').value = inv.sectionTitle || '';
   document.getElementById('invTvaRate').value = inv.tvaRate;
+  fillProjectSelect(document.getElementById('invProject'), inv.projectId);
   invItems = inv.items.map(it=>({...it}));
   renderInvItems();
   updateInvTotalsPreview();
@@ -3952,13 +3945,14 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
   const invNumber = document.getElementById('invNumber').value.trim() || ('ABTP-' + Date.now().toString().slice(-6));
   const invDate = document.getElementById('invDate').value || new Date().toISOString().slice(0,10);
   const sectionTitle = document.getElementById('invSectionTitle').value.trim();
+  const projectId = document.getElementById('invProject').value;
   const tvaRate = parseFloat(document.getElementById('invTvaRate').value) || 0;
   const items = invItems.map(it=>({...it}));
 
   const invData = {
     id: editingInvoiceId || ('inv'+Date.now()),
     createdAt: editingInvoiceId ? (loadPdfInvoices().find(i=>i.id===editingInvoiceId)?.createdAt || Date.now()) : Date.now(),
-    clientName, clientIce, invNumber, invDate, sectionTitle, items, tvaRate
+    clientName, clientIce, invNumber, invDate, sectionTitle, items, tvaRate, projectId
   };
 
   const doc = buildInvoicePdf(invData);
@@ -3979,6 +3973,7 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
 
 document.querySelector('.sub-nav-btn[data-sub="subInvoices"]')?.addEventListener('click', ()=>{
   fillCompanyForm();
+  fillProjectSelect(document.getElementById('invProject'));
   if(!document.getElementById('invNumber').value){
     document.getElementById('invNumber').value = 'ABTP-' + new Date().getFullYear().toString().slice(-2) + '-' + String(Date.now()).slice(-4);
   }
@@ -3998,7 +3993,8 @@ document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
     if(btn.dataset.sub === 'subClients') renderClients();
     if(btn.dataset.sub === 'subSuppliers') renderSuppliers();
     if(btn.dataset.sub === 'subCaisse'){ document.getElementById('caisseDate').valueAsDate = new Date(); renderCaisse(); }
-    if(btn.dataset.sub === 'subWorkers'){ renderWorkers(); }
+    if(btn.dataset.sub === 'subWorkers'){ fillProjectSelect(document.getElementById('workerProject')); renderWorkers(); }
+    if(btn.dataset.sub === 'subProjects'){ renderProjects(); }
   });
 });
 
@@ -4548,8 +4544,12 @@ function renderSuppliers(){
       pHost.innerHTML = `
         <div id="pRows_${sup.id}"></div>
         <button class="lc-btn" id="pAddRow_${sup.id}" style="margin-bottom:8px;">➕ بند جديد</button>
+        <select id="pProject_${sup.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:8px;">
+          <option value="">بلا مشروع محدد</option>
+        </select>
         <button class="btn-primary" id="pSave_${sup.id}">💾 ${editingPurchase ? 'حفظ التعديل' : 'حفظ الشراء'}</button>
       `;
+      fillProjectSelect(pHost.querySelector('#pProject_'+sup.id), editingPurchase ? editingPurchase.projectId : '');
       const rowsHost = pHost.querySelector('#pRows_'+sup.id);
       function addPRow(it){
         it = it || {};
@@ -4593,14 +4593,15 @@ function renderSuppliers(){
         });
         if(items.length === 0) return;
         const date = items[items.length-1].date;
+        const projectId = pHost.querySelector('#pProject_'+sup.id).value;
         const all = loadPurchases();
         let purchase;
         if(editingPurchase){
           purchase = all.find(p=>p.id === editingPurchase.id);
-          purchase.items = items; purchase.date = date;
+          purchase.items = items; purchase.date = date; purchase.projectId = projectId;
           editPurchaseId = null;
         }else{
-          purchase = {id:'p'+Date.now(), supplierId: sup.id, date, items};
+          purchase = {id:'p'+Date.now(), supplierId: sup.id, date, items, projectId};
           all.push(purchase);
         }
         savePurchases(all);
@@ -4923,6 +4924,96 @@ function renderSuppliers(){
 }
 
 /* ---------- الأجراء ---------- */
+/* ---------- المشاريع ---------- */
+const PROJECTS_KEY = 'alioua_btp_projects';
+function loadProjects(){ try{ return JSON.parse(localStorage.getItem(PROJECTS_KEY)||'[]'); }catch(e){ return []; } }
+function saveProjects(l){ localStorage.setItem(PROJECTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+
+function fillProjectSelect(selectEl, selectedId){
+  if(!selectEl) return;
+  const projects = loadProjects();
+  selectEl.innerHTML = '<option value="">بلا مشروع محدد</option>' +
+    projects.map(p=>`<option value="${p.id}" ${p.id===selectedId?'selected':''}>${escapeHtml(p.name)}</option>`).join('');
+}
+function projectNameById(id){
+  if(!id) return '';
+  const p = loadProjects().find(x=>x.id===id);
+  return p ? p.name : '';
+}
+
+document.getElementById('projectAddBtn')?.addEventListener('click', ()=>{
+  const name = document.getElementById('projectName').value.trim();
+  if(!name) return;
+  const list = loadProjects();
+  list.push({id:'proj'+Date.now(), name, createdAt: Date.now()});
+  saveProjects(list);
+  document.getElementById('projectName').value = '';
+  renderProjects();
+});
+
+function renderProjects(){
+  const projects = loadProjects();
+  const el = document.getElementById('projectsList');
+  if(!projects.length){ el.innerHTML = '<div class="empty-hint">ماكاينش مشاريع مسجلة بعد. ضيفي أول مشروع فوق ⬆️</div>'; return; }
+
+  const invoices = loadPdfInvoices();
+  const caisseData = loadCaisseData();
+  const purchases = loadPurchases();
+  const workers = loadWorkers();
+  const attendance = loadAttendance();
+
+  el.innerHTML = '';
+  projects.forEach(proj=>{
+    const projInvoices = invoices.filter(i=>i.projectId===proj.id);
+    const income = projInvoices.reduce((s,i)=> s + i.items.reduce((ss,it)=>ss+(it.qty*it.price),0)*(1+i.tvaRate/100), 0);
+
+    const projBons = caisseData.bons.filter(b=>b.projectId===proj.id);
+    const caisseExpense = projBons.reduce((s,b)=> s+bonTotal(b), 0);
+    const projPurchases = purchases.filter(p=>p.projectId===proj.id);
+    const purchaseExpense = projPurchases.reduce((s,p)=> s+purchaseTotal(p), 0);
+    const totalExpense = caisseExpense + purchaseExpense;
+
+    const net = income - totalExpense;
+    const projWorkers = workers.filter(w=>w.projectId===proj.id);
+    const workerDays = attendance.filter(a=> projWorkers.some(w=>w.id===a.workerId) && a.status!=='absent').length;
+
+    const card = document.createElement('div');
+    card.className = 'list-card';
+    card.innerHTML = `
+      <div class="lc-row">
+        <div class="lc-body">
+          <div class="lc-title" dir="auto">${escapeHtml(proj.name)}</div>
+          <div class="lc-meta">${projInvoices.length} فاتورة · ${projBons.length+projPurchases.length} مصروف · ${projWorkers.length} أجير</div>
+        </div>
+        <button class="lc-del" data-del-project="${proj.id}">🗑</button>
+      </div>
+      <div style="display:flex; gap:6px; margin-top:8px; font-size:11px;">
+        <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
+          <div style="color:var(--ink-soft);">المداخيل</div>
+          <div style="font-weight:700; color:#2e7d32;">${income.toLocaleString('ar')} درهم</div>
+        </div>
+        <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
+          <div style="color:var(--ink-soft);">المصاريف</div>
+          <div style="font-weight:700; color:#b91c1c;">${totalExpense.toLocaleString('ar')} درهم</div>
+        </div>
+        <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
+          <div style="color:var(--ink-soft);">الصافي</div>
+          <div style="font-weight:700; color:${net>=0?'#2e7d32':'#b91c1c'};">${net.toLocaleString('ar')} درهم</div>
+        </div>
+      </div>
+      <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">أيام عمل الأجراء المسجلة: ${workerDays}</div>
+    `;
+    el.appendChild(card);
+  });
+  el.querySelectorAll('[data-del-project]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      if(!confirm('متأكدة؟ الفواتير والمصاريف المرتبطة بهاد المشروع غادي تبقى موجودة لكن بلا تصنيف.')) return;
+      saveProjects(loadProjects().filter(p=>p.id !== b.dataset.delProject));
+      renderProjects();
+    });
+  });
+}
+
 const WORKERS_KEY = 'alioua_btp_workers';
 const ATTENDANCE_KEY = 'alioua_btp_attendance';
 function loadWorkers(){ try{ return JSON.parse(localStorage.getItem(WORKERS_KEY)||'[]'); }catch(e){ return []; } }
@@ -4935,9 +5026,10 @@ document.getElementById('workerAddBtn')?.addEventListener('click', ()=>{
   const type = document.getElementById('workerType').value;
   const wage = parseFloat(document.getElementById('workerWage').value) || 0;
   const phone = document.getElementById('workerPhone').value.trim();
+  const projectId = document.getElementById('workerProject').value;
   if(!name || !wage) return;
   const list = loadWorkers();
-  list.push({id:'w'+Date.now(), name, type, wage, phone});
+  list.push({id:'w'+Date.now(), name, type, wage, phone, projectId});
   saveWorkers(list);
   document.getElementById('workerName').value = '';
   document.getElementById('workerWage').value = '';
@@ -5230,6 +5322,7 @@ document.getElementById('caisseShowBonBtn').addEventListener('click', ()=>{
     const data = loadCaisseData();
     document.getElementById('bonNumber').value = 'B' + (data.bons.length + 1);
     document.getElementById('bonCategory').value = CAISSE_CATEGORIES[0];
+    fillProjectSelect(document.getElementById('bonProject'));
     bonItems = [{desc:'', qty:1, price:0}];
     renderBonItems();
     updateBonTotalPreview();
@@ -5257,14 +5350,15 @@ document.getElementById('bonSaveBtn').addEventListener('click', ()=>{
   const bonNumber = document.getElementById('bonNumber').value.trim() || ('B'+Date.now());
   const date = document.getElementById('bonDate').value || new Date().toISOString().slice(0,10);
   const category = document.getElementById('bonCategory').value;
+  const projectId = document.getElementById('bonProject').value;
   const items = bonItems.filter(it=> it.desc.trim() || it.qty || it.price).map(it=>({...it}));
   if(!items.length) return;
   const data = loadCaisseData();
   if(editingBonId){
     const b = data.bons.find(x=>x.id === editingBonId);
-    if(b){ b.bonNumber = bonNumber; b.date = date; b.category = category; b.items = items; }
+    if(b){ b.bonNumber = bonNumber; b.date = date; b.category = category; b.items = items; b.projectId = projectId; }
   }else{
-    data.bons.push({id:'b'+Date.now(), bonNumber, date, category, items});
+    data.bons.push({id:'b'+Date.now(), bonNumber, date, category, items, projectId});
   }
   saveCaisseData(data);
   resetCaisseForms();
@@ -5294,6 +5388,7 @@ function editBon(id){
   document.getElementById('bonNumber').value = b.bonNumber;
   document.getElementById('bonDate').value = b.date;
   document.getElementById('bonCategory').value = b.category;
+  fillProjectSelect(document.getElementById('bonProject'), b.projectId);
   bonItems = b.items.map(it=>({...it}));
   renderBonItems();
   updateBonTotalPreview();
