@@ -4067,15 +4067,20 @@ function renderClients(){
       editHost.innerHTML = `
         <input type="text" id="editName_${client.id}" dir="auto" value="${escapeHtml(client.name)}" placeholder="اسم العميل" style="margin-bottom:8px;">
         <input type="text" id="editPhone_${client.id}" dir="auto" value="${escapeHtml(client.phone||'')}" placeholder="رقم الهاتف" style="margin-bottom:8px;">
+        <select id="editProject_${client.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:8px;">
+          <option value="">بلا مشروع محدد</option>
+        </select>
         <button class="btn-primary" id="editSave_${client.id}">💾 حفظ التعديل</button>
       `;
+      fillProjectSelect(editHost.querySelector('#editProject_'+client.id), client.projectId);
       editHost.querySelector('#editSave_'+client.id).addEventListener('click', ()=>{
         const newName = document.getElementById('editName_'+client.id).value.trim();
         const newPhone = document.getElementById('editPhone_'+client.id).value.trim();
+        const newProjectId = document.getElementById('editProject_'+client.id).value;
         if(!newName) return;
         const list = loadClients();
         const c = list.find(x=>x.id === client.id);
-        if(c){ c.name = newName; c.phone = newPhone; saveClients(list); }
+        if(c){ c.name = newName; c.phone = newPhone; c.projectId = newProjectId; saveClients(list); }
         editClientId = null;
         renderClients();
       });
@@ -5045,12 +5050,12 @@ let attHistoryWorkerId = null;
 let editAttId = null;
 let payslipWorkerId = null;
 
-function markAttendance(workerId, status){
-  const today = new Date().toISOString().slice(0,10);
+function markAttendance(workerId, status, dateOverride){
+  const date = dateOverride || new Date().toISOString().slice(0,10);
   const list = loadAttendance();
-  let rec = list.find(a=> a.workerId===workerId && a.date===today);
+  let rec = list.find(a=> a.workerId===workerId && a.date===date);
   if(rec){ rec.status = status; }
-  else{ list.push({id:'a'+Date.now(), workerId, date: today, status}); }
+  else{ list.push({id:'a'+Date.now(), workerId, date, status}); }
   saveAttendance(list);
   renderWorkers();
 }
@@ -5092,7 +5097,8 @@ function renderWorkers(){
         </div>
       </div>
       <div style="margin-top:8px;">
-        <div style="font-size:11px; color:var(--ink-soft); margin-bottom:4px;">تسجيل حضور اليوم (${today.split('-').reverse().join('/')}):</div>
+        <div style="font-size:11px; color:var(--ink-soft); margin-bottom:4px;">اختاري اليوم لتسجيل الحضور:</div>
+        <input type="date" class="att-date-picker" data-worker-date="${w.id}" value="${today}" max="${today}" style="margin-bottom:6px;">
         <div style="display:flex; gap:6px;">
           <button class="lc-btn" data-att="present" data-worker="${w.id}" style="flex:1; ${todayRec?.status==='present'?'background:#d1fae5;':''}">✅ حاضر</button>
           <button class="lc-btn" data-att="half" data-worker="${w.id}" style="flex:1; ${todayRec?.status==='half'?'background:#fef3c7;':''}">½ نصف يوم</button>
@@ -5177,7 +5183,11 @@ function renderWorkers(){
   });
 
   el.querySelectorAll('[data-att]').forEach(b=>{
-    b.addEventListener('click', ()=> markAttendance(b.dataset.worker, b.dataset.att));
+    b.addEventListener('click', ()=>{
+      const picker = el.querySelector('.att-date-picker[data-worker-date="'+b.dataset.worker+'"]');
+      const chosenDate = picker ? picker.value : null;
+      markAttendance(b.dataset.worker, b.dataset.att, chosenDate);
+    });
   });
   el.querySelectorAll('[data-hist-worker]').forEach(b=>{
     b.addEventListener('click', ()=>{
