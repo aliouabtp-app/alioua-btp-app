@@ -55,7 +55,7 @@ body{
 }
 
 /* ---------- تصميم متجاوب للحاسوب / الشاشات العريضة ---------- */
-@media (min-width: 900px){
+@media (min-width: 1300px){
   body{
     overflow:auto;
     background:linear-gradient(160deg, #0f2a3d, #1a4a63);
@@ -77,7 +77,7 @@ body{
   .modal{ max-width:640px; }
   .summary-cards{ grid-template-columns:repeat(3, 1fr); }
 }
-@media (min-width: 1200px){
+@media (min-width: 1500px){
   #app{ max-width:760px; }
 }
 
@@ -1182,8 +1182,11 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       <div class="sub-view" id="subClients">
         <div class="card-form">
           <input type="text" id="clientName" dir="ltr" placeholder="اسم العميل">
-          <input type="text" id="clientPhone" dir="ltr" placeholder="رقم الهاتف (اختياري)">
-          <button class="btn-primary" id="clientAddBtn">➕ إضافة عميل</button>
+          <input type="text" id="clientPhone" dir="ltr" placeholder="رقم الهاتف (اختياري)" style="margin-top:8px;">
+          <select id="clientProject" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;">
+            <option value="">بلا مشروع محدد</option>
+          </select>
+          <button class="btn-primary" id="clientAddBtn" style="margin-top:10px;">➕ إضافة عميل</button>
         </div>
         <div id="clientList"></div>
       </div>
@@ -3990,7 +3993,7 @@ document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.sub-nav-btn').forEach(b=>b.classList.toggle('active', b===btn));
     document.querySelectorAll('.sub-view').forEach(v=>v.classList.toggle('active', v.id === btn.dataset.sub));
-    if(btn.dataset.sub === 'subClients') renderClients();
+    if(btn.dataset.sub === 'subClients'){ fillProjectSelect(document.getElementById('clientProject')); renderClients(); }
     if(btn.dataset.sub === 'subSuppliers') renderSuppliers();
     if(btn.dataset.sub === 'subCaisse'){ document.getElementById('caisseDate').valueAsDate = new Date(); renderCaisse(); }
     if(btn.dataset.sub === 'subWorkers'){ fillProjectSelect(document.getElementById('workerProject')); renderWorkers(); }
@@ -4014,9 +4017,10 @@ function invoiceTotal(inv){ return inv.items.reduce((s,it)=> s + (it.qty*it.pric
 document.getElementById('clientAddBtn').addEventListener('click', ()=>{
   const name = document.getElementById('clientName').value.trim();
   const phone = document.getElementById('clientPhone').value.trim();
+  const projectId = document.getElementById('clientProject').value;
   if(!name) return;
   const list = loadClients();
-  list.push({id:'c'+Date.now(), name, phone});
+  list.push({id:'c'+Date.now(), name, phone, projectId});
   saveClients(list);
   document.getElementById('clientName').value = '';
   document.getElementById('clientPhone').value = '';
@@ -4041,7 +4045,7 @@ function renderClients(){
       <div class="lc-row">
         <div class="lc-body">
           <div class="lc-title" dir="ltr" style="text-align:right;">${escapeHtml(client.name)}</div>
-          <div class="lc-meta" dir="auto">${client.phone ? escapeHtml(client.phone) : 'بدون رقم هاتف'}</div>
+          <div class="lc-meta" dir="auto">${client.phone ? escapeHtml(client.phone) : 'بدون رقم هاتف'}${client.projectId ? ' · 📁 '+escapeHtml(projectNameById(client.projectId)) : ''}</div>
         </div>
         <div class="lc-balance ${due>0?'due':'clear'}">${due>0? due.toLocaleString('ar')+' درهم مستحق' : 'مسدد ✓'}</div>
         <button class="lc-del" data-id="${client.id}">🗑</button>
