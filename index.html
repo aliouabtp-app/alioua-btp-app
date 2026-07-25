@@ -3394,7 +3394,13 @@ let currentTxType = 'income';
 let accountingChartInstance = null;
 
 function loadTx(){ try{ return JSON.parse(localStorage.getItem(TX_KEY) || '[]'); }catch(e){ return []; } }
-function saveTx(list){ safeSetItem(TX_KEY, JSON.stringify(list)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+function saveTx(list){
+  safeSetItem(TX_KEY, JSON.stringify(list));
+  if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+  // تحديث تلقائي لقسم المحاسبة (المجاميع + القائمة) بعد أي تعديل على المعاملات،
+  // بغض النظر عن مصدره (موردين، عملاء، أو إدخال يدوي) — بلا حاجة لاستدعاء منفصل فكل مكان
+  try{ if(typeof renderAccounting === 'function') renderAccounting(); }catch(e){ console.error('تعذّر تحديث المحاسبة بعد الحفظ:', e); }
+}
 
 document.getElementById('typeIncomeBtn').addEventListener('click', ()=>{
   currentTxType = 'income';
@@ -3507,7 +3513,7 @@ function renderAccounting(){
   list.forEach(tx=>{
     if(tx.purchaseId){
       supplierTotals[tx.category] = (supplierTotals[tx.category]||0) + tx.amount;
-    }else if(tx.invoiceId){
+    }else if(tx.invoiceId || tx.clientInvoiceId){
       clientTotals[tx.category] = (clientTotals[tx.category]||0) + tx.amount;
     }else{
       manualList.push(tx);
@@ -4102,6 +4108,7 @@ document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.sub-nav-btn').forEach(b=>b.classList.toggle('active', b===btn));
     document.querySelectorAll('.sub-view').forEach(v=>v.classList.toggle('active', v.id === btn.dataset.sub));
+    if(btn.dataset.sub === 'subExpenses'){ if(typeof renderAccounting === 'function') renderAccounting(); if(typeof renderOverdueAlerts === 'function') renderOverdueAlerts(); }
     if(btn.dataset.sub === 'subClients'){ fillProjectSelect(document.getElementById('clientProject')); renderClients(); }
     if(btn.dataset.sub === 'subSuppliers') renderSuppliers();
     if(btn.dataset.sub === 'subCaisse'){ renderCaisse(); }
@@ -4120,8 +4127,30 @@ let editInvoiceId = null;
 function loadClients(){ try{ return JSON.parse(localStorage.getItem(CLIENTS_KEY)||'[]'); }catch(e){ return []; } }
 function saveClients(l){ safeSetItem(CLIENTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function loadInvoices(){ try{ return JSON.parse(localStorage.getItem(INVOICES_KEY)||'[]'); }catch(e){ return []; } }
-function saveInvoices(l){ safeSetItem(INVOICES_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function invoiceTotal(inv){ return inv.items.reduce((s,it)=> s + (it.qty*it.price), 0); }
+function saveInvoices(l){
+  safeSetItem(INVOICES_KEY, JSON.stringify(l));
+  if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+  // نربط فواتير العملاء (نظام "العملاء" البسيط) بجدول المحاسبة المركزي كدخل،
+  // باش تبان فمجموع الدخل وفقائمة "المصاريف/المحاسبة" — بلا هاد الربط كانت خارج الحساب كليًا
+  try{
+    const clients = loadClients();
+    const otherTxs = loadTx().filter(t => !t.clientInvoiceId); // نبقاو غير المعاملات لي ماشي مرتبطة بهاد النظام
+    l.forEach(inv=>{
+      const client = clients.find(c=>c.id === inv.clientId);
+      otherTxs.push({
+        id: 't_ci_' + inv.id,
+        type: 'income',
+        amount: invoiceTotal(inv),
+        category: client ? client.name : 'عميل',
+        date: inv.date,
+        note: inv.status === 'paid' ? 'فاتورة عميل (مدفوعة)' : 'فاتورة عميل (معلّقة)',
+        clientInvoiceId: inv.id
+      });
+    });
+    saveTx(otherTxs);
+  }catch(e){ console.error('تعذّر مزامنة فواتير العملاء مع المحاسبة:', e); }
+}
 
 document.getElementById('clientAddBtn').addEventListener('click', ()=>{
   const name = document.getElementById('clientName').value.trim();
@@ -5376,6 +5405,7 @@ function loadCaisseData(){
 function saveCaisseData(data){
   safeSetItem(CAISSE_KEY, JSON.stringify(data));
   if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+  try{ if(typeof renderAccounting === 'function') renderAccounting(); }catch(e){ console.error('تعذّر تحديث المحاسبة بعد حفظ السيولة:', e); }
 }
 function bonTotal(bon){ return bon.items.reduce((s,it)=> s + (it.qty*it.price), 0); }
 
