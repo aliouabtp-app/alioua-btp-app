@@ -1039,7 +1039,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       <button class="icon-btn" id="voiceToggleBtn" title="القراءة الصوتية">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg>
       </button>
-      <button class="icon-btn" id="settingsBtn" title="الإعدادات">
+      <button class="icon-btn" id="settingsBtn" title="الإعدادات" style="position:relative;">
+        <span id="cloudSyncStatusDot" title="حالة المزامنة" style="position:absolute; top:2px; left:2px; width:9px; height:9px; border-radius:50%; background:#8a9aa5; border:1.5px solid var(--navy-deep); z-index:1;"></span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
       </button>
     </div>
@@ -2570,8 +2571,63 @@ let cloudSyncTimer = null;
 let cloudSyncFirstPendingAt = null; // أول لحظة صار فيها تعديل معلق، باش نضمنو سقف زمني أقصى للرفع
 const CLOUD_SYNC_DEBOUNCE_MS = 2500;
 const CLOUD_SYNC_MAX_WAIT_MS = 8000;
+
+// ---- حماية جذرية من فقدان البيانات: تتبع صريح لأي تعديل محلي لم يُؤكَّد رفعه بنجاح بعد.
+// هاد العلم كيبقى true حتى ينجح الرفع فعليًا (ماشي مجرد ما تتم "محاولة" الرفع) —
+// وطالما هو true، ممنوع نطبقو أي سحب (cloudPull) يقدر يمحي التعديلات هاد بلا رفعها أولاً.
+let cloudHasUnsyncedChanges = false;
+let cloudPushRetryTimer = null;
+let cloudPushFailStreak = 0;
+let cloudSyncWarningShown = false;
+
+function updateSyncStatusBadge(status){
+  const dot = document.getElementById('cloudSyncStatusDot');
+  if(!dot) return;
+  if(status === 'ok'){ dot.style.background = '#2e7d32'; dot.title = 'المزامنة السحابية: تمام ✅'; }
+  else if(status === 'syncing'){ dot.style.background = '#b45309'; dot.title = 'جارٍ رفع التعديلات للسحابة...'; }
+  else{ dot.style.background = '#b91c1c'; dot.title = 'فشلت آخر مزامنة سحابية — بياناتك محفوظة محليًا لكن ماوصلاتش للجهاز الآخر بعد'; }
+}
+
+function notifyCloudSyncFailure(detail){
+  if(cloudSyncWarningShown) return;
+  if(cloudPushFailStreak < 3) return; // نعطيو فرصة لعدة محاولات قبل ما نزعجو المستخدم (يمكن يكون انقطاع عابر)
+  cloudSyncWarningShown = true;
+  const msg = `⚠️ تعذّرت مزامنة بياناتك مع السحابة منذ عدة محاولات${detail ? ' ('+detail+')' : ''}. لا تقلقي: بياناتك محفوظة بأمان محليًا فهاد الجهاز ولن تختفي، لكنها ماوصلاتش بعد للجهاز الآخر (الهاتف/الحاسوب). تأكدي من: 1) الاتصال بالإنترنت 2) قواعد Firebase (Rules) ماشي منتهية الصلاحية (test mode كيقفل بعد 30 يوم).`;
+  try{
+    if(Array.isArray(messages)){
+      messages.push({role:'model', text: msg, time:Date.now()});
+      if(typeof renderMessages === 'function') renderMessages();
+      if(typeof saveHistory === 'function') saveHistory();
+    }
+  }catch(e){}
+}
+
+// رفع مع إعادة محاولة تلقائية متصاعدة عند الفشل (10 ثواني، 30 ثانية، دقيقة، ثم كل 3 دقائق)
+function attemptCloudPush(){
+  updateSyncStatusBadge('syncing');
+  cloudPush((status, detail)=>{
+    if(status === 'ok'){
+      cloudHasUnsyncedChanges = false;
+      cloudPushFailStreak = 0;
+      cloudSyncWarningShown = false;
+      clearTimeout(cloudPushRetryTimer);
+      cloudPushRetryTimer = null;
+      updateSyncStatusBadge('ok');
+    }else{
+      cloudPushFailStreak++;
+      updateSyncStatusBadge('fail');
+      notifyCloudSyncFailure(detail);
+      const retryDelays = [10000, 30000, 60000, 180000];
+      const delay = retryDelays[Math.min(cloudPushFailStreak-1, retryDelays.length-1)];
+      clearTimeout(cloudPushRetryTimer);
+      cloudPushRetryTimer = setTimeout(()=>{ if(cloudHasUnsyncedChanges) attemptCloudPush(); }, delay);
+    }
+  });
+}
+
 function scheduleCloudSync(){
   if(!cloudConfigured()) return;
+  cloudHasUnsyncedChanges = true;
   const now = Date.now();
   if(!cloudSyncFirstPendingAt) cloudSyncFirstPendingAt = now;
   clearTimeout(cloudSyncTimer);
@@ -2580,7 +2636,7 @@ function scheduleCloudSync(){
   cloudSyncTimer = setTimeout(()=>{
     cloudSyncTimer = null;
     cloudSyncFirstPendingAt = null;
-    cloudPush();
+    attemptCloudPush();
   }, delay);
 }
 // نزامن فورًا (بلا انتظار) قبل ما التطبيق يتخبى أو يتسد — مهم بزاف باش التعديلات الأخيرة
@@ -2591,12 +2647,26 @@ function flushPendingCloudSync(){
     clearTimeout(cloudSyncTimer);
     cloudSyncTimer = null;
     cloudSyncFirstPendingAt = null;
-    cloudPush();
+    attemptCloudPush();
   }
 }
 
 async function cloudPull(onStatus){
   if(!cloudConfigured()){ if(onStatus) onStatus('fail', 'خصك تعمري: رابط Database URL ورمز المزامنة أولاً.'); return; }
+
+  // حماية جوهرية: إذا كاين تعديلات محلية معلقة لسه ماتأكدش رفعها بنجاح، نحاولو نرفعوها أولاً.
+  // إذا فشل الرفع، نرفضو السحب كليًا — بلا هاد الفحص، السحب غادي يمحي التعديلات المحلية
+  // بلا ما توصل للسحابة أصلاً (هذا كان سبب اختفاء البيانات).
+  if(cloudHasUnsyncedChanges){
+    const pushSucceeded = await new Promise(resolve=>{
+      cloudPush((status)=>{ if(status === 'ok') cloudHasUnsyncedChanges = false; resolve(status === 'ok'); });
+    });
+    if(!pushSucceeded){
+      if(onStatus) onStatus('fail', 'كاين تعديلات محلية معلقة ماقدرناش نرفعوها للسحابة، تجاوزنا السحب حماية لبياناتك');
+      return;
+    }
+  }
+
   const dbUrl = getFirebaseDbUrl();
   const syncCode = getSyncCode();
   const url = `${dbUrl}/yunes_sync/${encodeURIComponent(syncCode)}.json`;
@@ -2718,19 +2788,6 @@ function downloadBackupFile(filenamePrefix){
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-function checkWeeklyAutoBackup(){
-  const last = localStorage.getItem('alioua_btp_last_auto_backup');
-  const weekMs = 7*24*60*60*1000;
-  if(!last || (Date.now() - new Date(last).getTime()) > weekMs){
-    try{
-      downloadBackupFile('yunes-auto-backup');
-      safeSetItem('alioua_btp_last_auto_backup', new Date().toISOString());
-      messages.push({role:'model', text:'📦 ديرت نسخة احتياطية أسبوعية تلقائية، تحققي من مجلد "التنزيلات/Downloads" ديال المتصفح. احتفظي بيها فمكان آمن (Google Drive مثلاً).', time:Date.now()});
-      renderMessages();
-      saveHistory();
-    }catch(e){}
-  }
 }
 
 document.getElementById('exportSettingsBtn')?.addEventListener('click', ()=>{
@@ -5821,11 +5878,9 @@ try{
       refreshCloudSyncResultNote(status);
       decideOpenSetupModal();
       startAutoCloudSyncLoop();
-      setTimeout(()=>{ if(typeof checkWeeklyAutoBackup==='function') checkWeeklyAutoBackup(); }, 10000);
     });
   }else{
     decideOpenSetupModal();
-    setTimeout(()=>{ if(typeof checkWeeklyAutoBackup==='function') checkWeeklyAutoBackup(); }, 10000);
   }
 }catch(e){
   console.error('تعذّر تشغيل تسلسل المزامنة عند الإقلاع:', e);
