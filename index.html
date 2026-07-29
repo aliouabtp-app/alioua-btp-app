@@ -3554,39 +3554,76 @@ function renderOverdueAlerts(){
 }
 
 function renderAccounting(){
-  const list = loadTx().sort((a,b)=> new Date(b.date) - new Date(a.date));
-  const income = list.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-  const caisseTotalForSummary = loadCaisseData().bons.reduce((s,b)=> s+bonTotal(b), 0);
-  const expense = list.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0) + caisseTotalForSummary;
+  // ===== نحسبو كل قسم مباشرة من مصدره الأصلي (بلا نسخ وسيطة) — هكذا كل البيانات
+  // (القديمة والجديدة) كتبان دايمًا بلا أي احتمال تأخر أو نسيان =====
+
+  // ----- 1) دخل العملاء: نظام "العملاء" البسيط + فواتير PDF مجتمعين -----
+  const clientTotals = {}; // اسم العميل -> المبلغ
+  const clientsList = loadClients();
+  loadInvoices().forEach(inv=>{
+    const client = clientsList.find(c=>c.id === inv.clientId);
+    const name = client ? client.name : 'عميل';
+    clientTotals[name] = (clientTotals[name]||0) + invoiceTotal(inv);
+  });
+  loadPdfInvoices().forEach(inv=>{
+    const name = inv.clientName || 'عميل';
+    const total = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
+    clientTotals[name] = (clientTotals[name]||0) + total;
+  });
+
+  // ----- 2) مصروف الموردين: مباشرة من كل المشتريات المسجلة -----
+  const supplierTotals = {};
+  const suppliersList = loadSuppliers();
+  loadPurchases().forEach(p=>{
+    const sup = suppliersList.find(s=>s.id === p.supplierId);
+    const name = sup ? sup.name : 'مورد';
+    supplierTotals[name] = (supplierTotals[name]||0) + purchaseTotal(p);
+  });
+
+  // ----- 3) مصروف الأجراء: مباشرة من كل سجلات الحضور المسجلة (بلا حد زمني) -----
+  const workerTotals = {};
+  const allAttendance = loadAttendance();
+  const allWorkers = loadWorkers();
+  allWorkers.forEach(w=>{
+    const wAtt = allAttendance.filter(a=>a.workerId===w.id);
+    if(!wAtt.length) return;
+    const presentDays = wAtt.filter(a=>a.status==='present').length + wAtt.filter(a=>a.status==='half').length*0.5;
+    const due = w.type==='daily' ? presentDays * w.wage : w.wage;
+    if(due > 0) workerTotals[w.name] = (workerTotals[w.name]||0) + due;
+  });
+
+  // ----- 4) السيولة (بونات الشراء النقدية) -----
+  const caisseTotal = loadCaisseData().bons.reduce((s,b)=> s+bonTotal(b), 0);
+
+  // ----- 5) المعاملات اليدوية (المُدخلة مباشرة من نموذج "إضافة عملية") -----
+  const manualList = loadTx().sort((a,b)=> new Date(b.date) - new Date(a.date));
+
+  const clientIncomeTotal = Object.values(clientTotals).reduce((s,v)=>s+v, 0);
+  const supplierExpenseTotal = Object.values(supplierTotals).reduce((s,v)=>s+v, 0);
+  const workerExpenseTotal = Object.values(workerTotals).reduce((s,v)=>s+v, 0);
+  const manualIncome = manualList.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const manualExpense = manualList.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+
+  const income = clientIncomeTotal + manualIncome;
+  const expense = supplierExpenseTotal + workerExpenseTotal + caisseTotal + manualExpense;
+
   document.getElementById('sumIncome').textContent = income.toLocaleString('ar');
   document.getElementById('sumExpense').textContent = expense.toLocaleString('ar');
   document.getElementById('sumNet').textContent = (income-expense).toLocaleString('ar');
 
   const el = document.getElementById('txList');
-  // نجمّعو الحركات: مشتريات مرتبطة بمورد (purchaseId)، فواتير مرتبطة بعميل (invoiceId)، وحركات يدوية عامة (بلا ربط)
-  const supplierTotals = {}; // supplierName -> amount
-  const clientTotals = {};   // clientName -> amount
-  let manualList = [];
-  list.forEach(tx=>{
-    if(tx.purchaseId){
-      supplierTotals[tx.category] = (supplierTotals[tx.category]||0) + tx.amount;
-    }else if(tx.invoiceId || tx.clientInvoiceId){
-      clientTotals[tx.category] = (clientTotals[tx.category]||0) + tx.amount;
-    }else{
-      manualList.push(tx);
-    }
-  });
-  const caisseTotal = caisseTotalForSummary;
-
   const rows = [];
   Object.keys(supplierTotals).forEach(name=>{
-    rows.push({kind:'supplier', label: '🚚 ' + name, amount: supplierTotals[name], type:'expense'});
+    rows.push({label: '🚚 ' + name, amount: supplierTotals[name], type:'expense'});
   });
   Object.keys(clientTotals).forEach(name=>{
-    rows.push({kind:'client', label: '🧑‍💼 ' + name, amount: clientTotals[name], type:'income'});
+    rows.push({label: '🧑‍💼 ' + name, amount: clientTotals[name], type:'income'});
+  });
+  Object.keys(workerTotals).forEach(name=>{
+    rows.push({label: '👷 ' + name, amount: workerTotals[name], type:'expense'});
   });
   if(caisseTotal > 0){
-    rows.push({kind:'caisse', label: '💵 سيولة (مصاريف نقدية)', amount: caisseTotal, type:'expense'});
+    rows.push({label: '💵 سيولة (مصاريف نقدية)', amount: caisseTotal, type:'expense'});
   }
 
   if(rows.length === 0 && manualList.length === 0){
@@ -3596,7 +3633,7 @@ function renderAccounting(){
     if(rows.length){
       const hint = document.createElement('div');
       hint.style.cssText = 'font-size:11px; color:var(--ink-soft); padding:4px 2px 8px;';
-      hint.textContent = 'مجاميع إجمالية — للتفاصيل ادخلي لقسم الموردين/العملاء/سيولة.';
+      hint.textContent = 'مجاميع إجمالية (كل البيانات، القديمة والجديدة) — للتفاصيل ادخلي لقسم الموردين/العملاء/الأجراء/سيولة.';
       el.appendChild(hint);
     }
     rows.sort((a,b)=> b.amount - a.amount).forEach(r=>{
@@ -3610,7 +3647,7 @@ function renderAccounting(){
       `;
       el.appendChild(div);
     });
-    // الحركات اليدوية (بلا ربط بمورد/عميل) تبقى تتبين فرديًا بحال ما كانت
+    // الحركات اليدوية (بلا ربط بمورد/عميل/أجير) تبقى تتبين فرديًا بحال ما كانت
     manualList.forEach(tx=>{
       const div = document.createElement('div');
       div.className = 'tx-item ' + tx.type;
@@ -3632,7 +3669,8 @@ function renderAccounting(){
     });
   }
 
-  // رسم بياني لآخر 6 أشهر
+  // رسم بياني لآخر 6 أشهر — نجمعو من كل المصادر (فواتير، مشتريات، سيولة، حضور يومي، معاملات يدوية)
+  // مع مراعاة تاريخ كل عملية على حدة
   const months = [];
   const now = new Date();
   for(let i=5;i>=0;i--){
@@ -3640,8 +3678,26 @@ function renderAccounting(){
     months.push({key: d.getFullYear()+'-'+(d.getMonth()+1), label: d.toLocaleDateString('ar',{month:'short'})});
   }
   const monthKeyOf = (dateStr)=>{ const d=new Date(dateStr); return d.getFullYear()+'-'+(d.getMonth()+1); };
-  const incData = months.map(m => list.filter(t=>t.type==='income' && monthKeyOf(t.date)===m.key).reduce((s,t)=>s+t.amount,0));
-  const expData = months.map(m => list.filter(t=>t.type==='expense' && monthKeyOf(t.date)===m.key).reduce((s,t)=>s+t.amount,0));
+
+  const datedEntries = [];
+  loadInvoices().forEach(inv=> datedEntries.push({date: inv.date, amount: invoiceTotal(inv), type:'income'}));
+  loadPdfInvoices().forEach(inv=>{
+    const total = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
+    datedEntries.push({date: inv.invDate, amount: total, type:'income'});
+  });
+  loadPurchases().forEach(p=> datedEntries.push({date: p.date, amount: purchaseTotal(p), type:'expense'}));
+  loadCaisseData().bons.forEach(b=> datedEntries.push({date: b.date, amount: bonTotal(b), type:'expense'}));
+  const dailyWorkersMap = {}; allWorkers.filter(w=>w.type==='daily').forEach(w=> dailyWorkersMap[w.id]=w);
+  allAttendance.forEach(a=>{
+    const w = dailyWorkersMap[a.workerId];
+    if(!w || a.status==='absent') return;
+    const dayAmount = a.status==='half' ? w.wage/2 : w.wage;
+    datedEntries.push({date: a.date, amount: dayAmount, type:'expense'});
+  });
+  manualList.forEach(tx=> datedEntries.push({date: tx.date, amount: tx.amount, type: tx.type}));
+
+  const incData = months.map(m => datedEntries.filter(e=>e.type==='income' && monthKeyOf(e.date)===m.key).reduce((s,e)=>s+e.amount,0));
+  const expData = months.map(m => datedEntries.filter(e=>e.type==='expense' && monthKeyOf(e.date)===m.key).reduce((s,e)=>s+e.amount,0));
 
   const canvas = document.getElementById('accountingChart');
   try{
@@ -4026,6 +4082,7 @@ function loadPdfInvoices(){ try{ return JSON.parse(localStorage.getItem(PDF_INVO
 function savePdfInvoices(list){
   safeSetItem(PDF_INVOICES_KEY, JSON.stringify(list));
   if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+  try{ if(typeof renderAccounting === 'function') renderAccounting(); }catch(e){ console.error('تعذّر تحديث المحاسبة بعد حفظ فاتورة PDF:', e); }
 }
 
 let editingInvoiceId = null;
@@ -4079,8 +4136,6 @@ document.getElementById('invoicesListWrap')?.addEventListener('click', (e)=>{
     if(!confirm('متأكدة بغيتي تمسحي هاد الفاتورة؟ ما تقدريش ترجعيها بعد.')) return;
     const list = loadPdfInvoices().filter(i=>i.id !== id);
     savePdfInvoices(list);
-    deleteInvoiceTx(id);
-    if(typeof renderAccounting === 'function') renderAccounting();
     renderInvoicesList();
   }
 });
@@ -4102,17 +4157,6 @@ function loadInvoiceIntoForm(id){
   document.getElementById('invFormTitle').textContent = '✏️ تعديل الفاتورة ' + inv.invNumber;
   document.getElementById('invGeneratePdfBtn').scrollIntoView({behavior:'smooth', block:'center'});
 }
-
-function syncInvoiceTx(inv){
-  const txs = loadTx();
-  const total = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + inv.tvaRate/100);
-  const note = 'فاتورة ' + inv.invNumber + (inv.clientName ? ' — ' + inv.clientName : '');
-  let t = txs.find(x=>x.invoiceId === inv.id);
-  if(t){ t.amount = total; t.date = inv.invDate; t.category = inv.clientName || 'عميل'; t.note = note; }
-  else{ txs.push({id:'t'+Date.now(), type:'income', amount: total, category: inv.clientName || 'عميل', date: inv.invDate, note, invoiceId: inv.id}); }
-  saveTx(txs);
-}
-function deleteInvoiceTx(invoiceId){ saveTx(loadTx().filter(t=>t.invoiceId !== invoiceId)); }
 
 document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
   const clientName = document.getElementById('invClientName').value.trim() || '—';
@@ -4137,9 +4181,7 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
   const idx = list.findIndex(i=>i.id === invData.id);
   if(idx >= 0) list[idx] = invData; else list.push(invData);
   savePdfInvoices(list);
-  syncInvoiceTx(invData);
   renderInvoicesList();
-  if(typeof renderAccounting === 'function') renderAccounting();
   editingInvoiceId = null;
   document.getElementById('invFormTitle').textContent = '🧾 فاتورة جديدة';
 
@@ -4188,25 +4230,7 @@ function invoiceTotal(inv){ return inv.items.reduce((s,it)=> s + (it.qty*it.pric
 function saveInvoices(l){
   safeSetItem(INVOICES_KEY, JSON.stringify(l));
   if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
-  // نربط فواتير العملاء (نظام "العملاء" البسيط) بجدول المحاسبة المركزي كدخل،
-  // باش تبان فمجموع الدخل وفقائمة "المصاريف/المحاسبة" — بلا هاد الربط كانت خارج الحساب كليًا
-  try{
-    const clients = loadClients();
-    const otherTxs = loadTx().filter(t => !t.clientInvoiceId); // نبقاو غير المعاملات لي ماشي مرتبطة بهاد النظام
-    l.forEach(inv=>{
-      const client = clients.find(c=>c.id === inv.clientId);
-      otherTxs.push({
-        id: 't_ci_' + inv.id,
-        type: 'income',
-        amount: invoiceTotal(inv),
-        category: client ? client.name : 'عميل',
-        date: inv.date,
-        note: inv.status === 'paid' ? 'فاتورة عميل (مدفوعة)' : 'فاتورة عميل (معلّقة)',
-        clientInvoiceId: inv.id
-      });
-    });
-    saveTx(otherTxs);
-  }catch(e){ console.error('تعذّر مزامنة فواتير العملاء مع المحاسبة:', e); }
+  try{ if(typeof renderAccounting === 'function') renderAccounting(); }catch(e){ console.error('تعذّر تحديث المحاسبة بعد حفظ فواتير العملاء:', e); }
 }
 
 document.getElementById('clientAddBtn').addEventListener('click', ()=>{
@@ -4455,7 +4479,11 @@ let payHistorySupplierId = null;
 function loadSuppliers(){ try{ return JSON.parse(localStorage.getItem(SUPPLIERS_KEY)||'[]'); }catch(e){ return []; } }
 function saveSuppliers(l){ safeSetItem(SUPPLIERS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function loadPurchases(){ try{ return JSON.parse(localStorage.getItem(PURCHASES_KEY)||'[]'); }catch(e){ return []; } }
-function savePurchases(l){ safeSetItem(PURCHASES_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+function savePurchases(l){
+  safeSetItem(PURCHASES_KEY, JSON.stringify(l));
+  if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+  try{ if(typeof renderAccounting === 'function') renderAccounting(); }catch(e){ console.error('تعذّر تحديث المحاسبة بعد حفظ المشتريات:', e); }
+}
 function purchaseTotal(p){ return p.items.reduce((s,it)=> s + (it.amount||0), 0); }
 /* ---------- طلبات الشراء (Bon de Commande) ---------- */
 const PURCHASE_ORDERS_KEY = 'alioua_btp_purchase_orders';
@@ -4588,17 +4616,6 @@ function buildPurchaseOrderPdf(po){
 
   return doc;
 }
-
-function syncPurchaseTx(purchase, supplierName){
-  const txs = loadTx();
-  let t = txs.find(x=>x.purchaseId === purchase.id);
-  const total = purchaseTotal(purchase);
-  const note = purchase.items.map(it=>it.desc).filter(Boolean).join('، ') || 'شراء من مورد';
-  if(t){ t.amount = total; t.date = purchase.date; t.category = supplierName; t.note = note; }
-  else{ txs.push({id:'t'+Date.now(), type:'expense', amount: total, category: supplierName, date: purchase.date, note, supplierId: purchase.supplierId, purchaseId: purchase.id}); }
-  saveTx(txs);
-}
-function deletePurchaseTx(purchaseId){ saveTx(loadTx().filter(t=>t.purchaseId !== purchaseId)); }
 
 document.getElementById('supplierAddBtn').addEventListener('click', ()=>{
   const name = document.getElementById('supplierName').value.trim();
@@ -4809,7 +4826,6 @@ function renderSuppliers(){
           all.push(purchase);
         }
         savePurchases(all);
-        syncPurchaseTx(purchase, sup.name);
 
         // إنشاء/تحديث طلب شراء (Bon de Commande) تلقائيًا بنفس بيانات هاد الشراء
         const poList = loadPurchaseOrders();
@@ -5052,7 +5068,6 @@ function renderSuppliers(){
   el.querySelectorAll('[data-del-purchase]').forEach(b=>{
     b.addEventListener('click', ()=>{
       savePurchases(loadPurchases().filter(p=>p.id !== b.dataset.delPurchase));
-      deletePurchaseTx(b.dataset.delPurchase);
       savePurchaseOrders(loadPurchaseOrders().filter(p=>p.linkedPurchaseId !== b.dataset.delPurchase));
       renderSuppliers();
     });
@@ -5160,7 +5175,9 @@ function renderProjects(){
   const el = document.getElementById('projectsList');
   if(!projects.length){ el.innerHTML = '<div class="empty-hint">ماكاينش مشاريع مسجلة بعد. ضيفي أول مشروع فوق ⬆️</div>'; return; }
 
-  const invoices = loadPdfInvoices();
+  const pdfInvoices = loadPdfInvoices();
+  const simpleInvoices = loadInvoices();
+  const clientsList = loadClients();
   const caisseData = loadCaisseData();
   const purchases = loadPurchases();
   const workers = loadWorkers();
@@ -5168,18 +5185,34 @@ function renderProjects(){
 
   el.innerHTML = '';
   projects.forEach(proj=>{
-    const projInvoices = invoices.filter(i=>i.projectId===proj.id);
-    const income = projInvoices.reduce((s,i)=> s + i.items.reduce((ss,it)=>ss+(it.qty*it.price),0)*(1+i.tvaRate/100), 0);
+    const projPdfInvoices = pdfInvoices.filter(i=>i.projectId===proj.id);
+    const pdfIncome = projPdfInvoices.reduce((s,i)=> s + i.items.reduce((ss,it)=>ss+(it.qty*it.price),0)*(1+(i.tvaRate||0)/100), 0);
+
+    const projSimpleInvoices = simpleInvoices.filter(inv=>{
+      const client = clientsList.find(c=>c.id === inv.clientId);
+      return client && client.projectId === proj.id;
+    });
+    const simpleIncome = projSimpleInvoices.reduce((s,inv)=> s + invoiceTotal(inv), 0);
+    const income = pdfIncome + simpleIncome;
+    const invoiceCount = projPdfInvoices.length + projSimpleInvoices.length;
 
     const projBons = caisseData.bons.filter(b=>b.projectId===proj.id);
     const caisseExpense = projBons.reduce((s,b)=> s+bonTotal(b), 0);
     const projPurchases = purchases.filter(p=>p.projectId===proj.id);
     const purchaseExpense = projPurchases.reduce((s,p)=> s+purchaseTotal(p), 0);
-    const totalExpense = caisseExpense + purchaseExpense;
 
-    const net = income - totalExpense;
     const projWorkers = workers.filter(w=>w.projectId===proj.id);
-    const workerDays = attendance.filter(a=> projWorkers.some(w=>w.id===a.workerId) && a.status!=='absent').length;
+    const projWorkerAttendance = attendance.filter(a=> projWorkers.some(w=>w.id===a.workerId));
+    const workerDays = projWorkerAttendance.filter(a=>a.status!=='absent').length;
+    const workerExpense = projWorkers.reduce((sum, w)=>{
+      const wAtt = attendance.filter(a=>a.workerId===w.id);
+      if(!wAtt.length) return sum;
+      const presentDays = wAtt.filter(a=>a.status==='present').length + wAtt.filter(a=>a.status==='half').length*0.5;
+      return sum + (w.type==='daily' ? presentDays * w.wage : w.wage);
+    }, 0);
+
+    const totalExpense = caisseExpense + purchaseExpense + workerExpense;
+    const net = income - totalExpense;
 
     const card = document.createElement('div');
     card.className = 'list-card';
@@ -5187,7 +5220,7 @@ function renderProjects(){
       <div class="lc-row">
         <div class="lc-body">
           <div class="lc-title" dir="auto">${escapeHtml(proj.name)}</div>
-          <div class="lc-meta">${projInvoices.length} فاتورة · ${projBons.length+projPurchases.length} مصروف · ${projWorkers.length} أجير</div>
+          <div class="lc-meta">${invoiceCount} فاتورة · ${projBons.length+projPurchases.length} مصروف · ${projWorkers.length} أجير</div>
         </div>
         <button class="lc-del" data-del-project="${proj.id}">🗑</button>
       </div>
@@ -5205,7 +5238,7 @@ function renderProjects(){
           <div style="font-weight:700; color:${net>=0?'#2e7d32':'#b91c1c'};">${net.toLocaleString('ar')} درهم</div>
         </div>
       </div>
-      <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">أيام عمل الأجراء المسجلة: ${workerDays}</div>
+      <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">أجور الأجراء: ${workerExpense.toLocaleString('ar')} درهم (${workerDays} يوم عمل مسجّل)</div>
     `;
     el.appendChild(card);
   });
@@ -5221,9 +5254,17 @@ function renderProjects(){
 const WORKERS_KEY = 'alioua_btp_workers';
 const ATTENDANCE_KEY = 'alioua_btp_attendance';
 function loadWorkers(){ try{ return JSON.parse(localStorage.getItem(WORKERS_KEY)||'[]'); }catch(e){ return []; } }
-function saveWorkers(l){ safeSetItem(WORKERS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+function saveWorkers(l){
+  safeSetItem(WORKERS_KEY, JSON.stringify(l));
+  if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+  try{ if(typeof renderAccounting === 'function') renderAccounting(); }catch(e){ console.error('تعذّر تحديث المحاسبة بعد حفظ الأجراء:', e); }
+}
 function loadAttendance(){ try{ return JSON.parse(localStorage.getItem(ATTENDANCE_KEY)||'[]'); }catch(e){ return []; } }
-function saveAttendance(l){ safeSetItem(ATTENDANCE_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+function saveAttendance(l){
+  safeSetItem(ATTENDANCE_KEY, JSON.stringify(l));
+  if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
+  try{ if(typeof renderAccounting === 'function') renderAccounting(); }catch(e){ console.error('تعذّر تحديث المحاسبة بعد حفظ الحضور:', e); }
+}
 
 document.getElementById('workerAddBtn')?.addEventListener('click', ()=>{
   const name = document.getElementById('workerName').value.trim();
