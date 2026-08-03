@@ -2,7 +2,7 @@
    يفعّل التخزين المؤقت (Cache) للتطبيق والمكتبات الخارجية باش يخدم بدون إنترنت
    بعد أول فتح ناجح. */
 
-const CACHE_VERSION = 'alioua-btp-v1';
+const CACHE_VERSION = 'alioua-btp-v2';
 const APP_SHELL_CACHE = CACHE_VERSION + '-shell';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -82,15 +82,22 @@ self.addEventListener('fetch', (event) => {
 
   const isNavigation = req.mode === 'navigate';
   const isSameOrigin = url.origin === self.location.origin;
+  const isAppShellFile = isSameOrigin && ['index.html', 'manifest.json'].some((f) => url.pathname.endsWith(f));
 
-  if (isNavigation || (isSameOrigin && APP_SHELL_URLS.some((u) => req.url.endsWith(u.replace('./', ''))))) {
+  if (isNavigation || isAppShellFile) {
     // Network-first لصفحة التطبيق الأساسية: يجيب آخر نسخة إذا كان أونلاين، ويرجع للنسخة المخزنة إذا خط الإنترنت مقطوع
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req);
-        const cache = await caches.open(APP_SHELL_CACHE);
-        cache.put(req, fresh.clone());
-        return fresh;
+        // نتحققو الاستجابة ناجحة فعلاً (200) قبل ما نخزنوها أو نعرضوها — باش ما نعرضوش
+        // صفحة خطأ (404 مثلاً) وكأنها التطبيق نفسه
+        if (fresh && fresh.ok) {
+          const cache = await caches.open(APP_SHELL_CACHE);
+          cache.put(req, fresh.clone());
+          return fresh;
+        }
+        const cached = await caches.match(req, { ignoreSearch: true });
+        return cached || fresh;
       } catch (err) {
         const cached = await caches.match(req, { ignoreSearch: true });
         return cached || caches.match('./index.html');
