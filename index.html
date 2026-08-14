@@ -3606,29 +3606,42 @@ function renderAccounting(){
   // ===== نحسبو كل قسم مباشرة من مصدره الأصلي (بلا نسخ وسيطة) — هكذا كل البيانات
   // (القديمة والجديدة) كتبان دايمًا بلا أي احتمال تأخر أو نسيان =====
 
-  // ----- 1) العملاء (نظام "العملاء" البسيط): فواتيرهم كتُحسب كـ"مصروف" حسب طبيعة عمل الشركة -----
-  let clientsExpenseTotal = 0;
-  loadInvoices().forEach(inv=>{ clientsExpenseTotal += invoiceTotal(inv); });
-
-  // ----- 1ب) قسم "الفواتير" (PDF): دخل حقيقي — كل فاتورة كتولّدها هنا كتُحسب كمدخول -----
-  let pdfInvoiceIncomeTotal = 0;
-  loadPdfInvoices().forEach(inv=>{
-    pdfInvoiceIncomeTotal += inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
+  // ----- 1) العملاء (نظام "العملاء" البسيط): فواتيرهم = مصروف، مجمّعة حسب اسم العميل -----
+  const clientTotals = {};
+  const clientsList = loadClients();
+  loadInvoices().forEach(inv=>{
+    const client = clientsList.find(c=>c.id === inv.clientId);
+    const name = client ? client.name : 'عميل';
+    clientTotals[name] = (clientTotals[name]||0) + invoiceTotal(inv);
   });
 
-  // ----- 2) مصروف الموردين: مباشرة من كل المشتريات المسجلة -----
-  let supplierExpenseTotal = 0;
-  loadPurchases().forEach(p=>{ supplierExpenseTotal += purchaseTotal(p); });
+  // ----- 1ب) قسم "الفواتير" (PDF): دخل حقيقي، مجمّع حسب اسم العميل فالفاتورة -----
+  const pdfInvoiceTotals = {};
+  loadPdfInvoices().forEach(inv=>{
+    const name = inv.clientName || 'عميل';
+    const total = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
+    pdfInvoiceTotals[name] = (pdfInvoiceTotals[name]||0) + total;
+  });
 
-  // ----- 3) مصروف الأجراء: مباشرة من كل سجلات الحضور المسجلة (بلا حد زمني) -----
-  let workerExpenseTotal = 0;
+  // ----- 2) مصروف الموردين: مجمّع حسب اسم المورد -----
+  const supplierTotals = {};
+  const suppliersList = loadSuppliers();
+  loadPurchases().forEach(p=>{
+    const sup = suppliersList.find(s=>s.id === p.supplierId);
+    const name = sup ? sup.name : 'مورد';
+    supplierTotals[name] = (supplierTotals[name]||0) + purchaseTotal(p);
+  });
+
+  // ----- 3) مصروف الأجراء: مجمّع حسب اسم الأجير (كل سجلات الحضور المسجلة، بلا حد زمني) -----
+  const workerTotals = {};
   const allAttendance = loadAttendance();
   const allWorkers = loadWorkers();
   allWorkers.forEach(w=>{
     const wAtt = allAttendance.filter(a=>a.workerId===w.id);
     if(!wAtt.length) return;
     const presentDays = wAtt.filter(a=>a.status==='present').length + wAtt.filter(a=>a.status==='half').length*0.5;
-    workerExpenseTotal += (w.type==='daily' ? presentDays * w.wage : w.wage);
+    const due = w.type==='daily' ? presentDays * w.wage : w.wage;
+    if(due > 0) workerTotals[w.name] = (workerTotals[w.name]||0) + due;
   });
 
   // ----- 4) السيولة (بونات الشراء النقدية) -----
@@ -3639,20 +3652,53 @@ function renderAccounting(){
   const manualIncome = manualList.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const manualExpense = manualList.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
 
-  const income = pdfInvoiceIncomeTotal + manualIncome;
+  const clientsExpenseTotal = Object.values(clientTotals).reduce((s,v)=>s+v, 0);
+  const pdfIncomeTotal = Object.values(pdfInvoiceTotals).reduce((s,v)=>s+v, 0);
+  const supplierExpenseTotal = Object.values(supplierTotals).reduce((s,v)=>s+v, 0);
+  const workerExpenseTotal = Object.values(workerTotals).reduce((s,v)=>s+v, 0);
+
+  const income = pdfIncomeTotal + manualIncome;
   const expense = clientsExpenseTotal + supplierExpenseTotal + workerExpenseTotal + caisseTotal + manualExpense;
 
   document.getElementById('sumIncome').textContent = income.toLocaleString('ar');
   document.getElementById('sumExpense').textContent = expense.toLocaleString('ar');
   document.getElementById('sumNet').textContent = (income-expense).toLocaleString('ar');
 
-  // قسم "المصاريف" كيبين غير المجاميع + الحركات اليدوية — التفاصيل الكاملة
-  // (موردين، عملاء، أجراء، سيولة) كاينة بكل قسم على حدة
+  // ----- عرض قسم "المصاريف": مجموع كل عنصر بالاسم (بلا تفاصيل خام) + الحركات اليدوية -----
   const el = document.getElementById('txList');
-  if(manualList.length === 0){
-    el.innerHTML = '<div class="empty-hint">ما فيه عمليات يدوية بعد. التفاصيل الكاملة (موردين، عملاء، أجراء، سيولة) كاينة بكل قسم على حدة.</div>';
+  const rows = [];
+  Object.keys(supplierTotals).forEach(name=>{
+    rows.push({label: '🚚 ' + name, amount: supplierTotals[name], type:'expense'});
+  });
+  Object.keys(clientTotals).forEach(name=>{
+    rows.push({label: '🧑‍💼 ' + name, amount: clientTotals[name], type:'expense'});
+  });
+  Object.keys(pdfInvoiceTotals).forEach(name=>{
+    rows.push({label: '🧾 ' + name, amount: pdfInvoiceTotals[name], type:'income'});
+  });
+  Object.keys(workerTotals).forEach(name=>{
+    rows.push({label: '👷 ' + name, amount: workerTotals[name], type:'expense'});
+  });
+  if(caisseTotal > 0){
+    rows.push({label: '💵 سيولة (مصاريف نقدية)', amount: caisseTotal, type:'expense'});
+  }
+
+  if(rows.length === 0 && manualList.length === 0){
+    el.innerHTML = '<div class="empty-hint">ما فيه عمليات بعد. ضيف أول عملية فوق ⬆️</div>';
   }else{
     el.innerHTML = '';
+    rows.sort((a,b)=> b.amount - a.amount).forEach(r=>{
+      const div = document.createElement('div');
+      div.className = 'tx-item ' + r.type;
+      div.innerHTML = `
+        <div class="tx-body">
+          <div class="tx-cat" dir="ltr" style="text-align:right;">${escapeHtml(r.label)}</div>
+        </div>
+        <div class="tx-amt">${r.type==='income'?'+':'-'}${r.amount.toLocaleString('ar')}</div>
+      `;
+      el.appendChild(div);
+    });
+    // الحركات اليدوية (بلا ربط بمورد/عميل/أجير) تبقى تتبين فرديًا بحال ما كانت
     manualList.forEach(tx=>{
       const div = document.createElement('div');
       div.className = 'tx-item ' + tx.type;
@@ -3674,7 +3720,7 @@ function renderAccounting(){
     });
   }
 
-  // رسم بياني لآخر 6 أشهر — نجمعو من كل المصادر (موردين، عملاء، سيولة، حضور يومي، معاملات يدوية)
+  // رسم بياني لآخر 6 أشهر — نجمعو من كل المصادر مع مراعاة تاريخ كل عملية
   const months = [];
   const now = new Date();
   for(let i=5;i>=0;i--){
@@ -3726,7 +3772,6 @@ function renderAccounting(){
         }
       });
     }else if(canvas){
-      // مكتبة الرسوم البيانية ماتحملاتش (انقطاع إنترنت أو استخدام Offline) — نخبيو الكانفاس بهدوء بلا ما نوقفو باقي التطبيق
       const ctx = canvas.getContext('2d');
       if(ctx) ctx.clearRect(0,0,canvas.width,canvas.height);
     }
@@ -5289,6 +5334,7 @@ document.getElementById('workerAddBtn')?.addEventListener('click', ()=>{
 let attHistoryWorkerId = null;
 let editAttId = null;
 let payslipWorkerId = null;
+let editWorkerId = null;
 
 function markAttendance(workerId, status, dateOverride){
   const date = dateOverride || new Date().toISOString().slice(0,10);
@@ -5348,7 +5394,9 @@ function renderWorkers(){
       <div class="lc-actions">
         <button class="lc-btn" data-hist-worker="${w.id}">📅 سجل الحضور (${wAtt.length})</button>
         <button class="lc-btn" data-payslip="${w.id}">🧾 استخراج كشف الأجرة</button>
+        <button class="lc-btn" data-edit-worker="${w.id}">✏️ تعديل / ربط بمشروع</button>
       </div>
+      <div id="editWorkerForm_${w.id}"></div>
       <div id="attHist_${w.id}"></div>
       <div id="payslipForm_${w.id}"></div>
     `;
@@ -5420,6 +5468,50 @@ function renderWorkers(){
         generatePayslipPdf(w, from, to);
       });
     }
+
+    if(editWorkerId === w.id){
+      const editHost = card.querySelector('#editWorkerForm_'+w.id);
+      editHost.className = 'lc-invoice-form';
+      editHost.innerHTML = `
+        <input type="text" id="editWName_${w.id}" dir="ltr" value="${escapeHtml(w.name)}" placeholder="اسم الأجير" style="margin-bottom:8px;">
+        <select id="editWType_${w.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:8px;">
+          <option value="daily" ${w.type==='daily'?'selected':''}>مياوم (أجرة يومية)</option>
+          <option value="monthly" ${w.type==='monthly'?'selected':''}>شهري (راتب ثابت)</option>
+        </select>
+        <input type="text" id="editWWage_${w.id}" value="${w.wage}" placeholder="الأجرة اليومية أو الراتب الشهري" style="margin-bottom:8px;">
+        <input type="text" id="editWPhone_${w.id}" dir="ltr" value="${escapeHtml(w.phone||'')}" placeholder="رقم الهاتف (اختياري)" style="margin-bottom:8px;">
+        <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">ربط الأجير بمشروع (باش تحتسب أجرته فمصاريف هاد المشروع)</label>
+        <select id="editWProject_${w.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:8px;">
+          <option value="">بلا مشروع محدد</option>
+        </select>
+        <button class="btn-primary" id="editWSave_${w.id}">💾 حفظ التعديل</button>
+      `;
+      fillProjectSelect(editHost.querySelector('#editWProject_'+w.id), w.projectId);
+      editHost.querySelector('#editWSave_'+w.id).addEventListener('click', ()=>{
+        const newName = document.getElementById('editWName_'+w.id).value.trim();
+        if(!newName) return;
+        const newWage = parseFloat(document.getElementById('editWWage_'+w.id).value) || 0;
+        const list = loadWorkers();
+        const target = list.find(x=>x.id === w.id);
+        if(target){
+          target.name = newName;
+          target.type = document.getElementById('editWType_'+w.id).value;
+          target.wage = newWage;
+          target.phone = document.getElementById('editWPhone_'+w.id).value.trim();
+          target.projectId = document.getElementById('editWProject_'+w.id).value;
+          saveWorkers(list);
+        }
+        editWorkerId = null;
+        renderWorkers();
+      });
+    }
+  });
+
+  el.querySelectorAll('[data-edit-worker]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      editWorkerId = (editWorkerId === b.dataset.editWorker) ? null : b.dataset.editWorker;
+      renderWorkers();
+    });
   });
 
   el.querySelectorAll('[data-att]').forEach(b=>{
