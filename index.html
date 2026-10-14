@@ -1470,7 +1470,8 @@ const SYSTEM_PROMPT = `اسمك "يونس"، وأنت المساعد الذكي 
 {"title":"عنوان التقرير", "columns":["عمود1","عمود2"], "rows":[["قيمة1","قيمة2"],["قيمة3","قيمة4"]], "summary":"ملخص أو مجموع اختياري", "formats":["excel","pdf","word"]}
 \`\`\`
 - "formats" اختياري، افتراضيًا ["excel","pdf"]. زيد "word" إذا طلب المستخدم Word بالتحديد.
-- استعمل بيانات حقيقية من المحادثة أو من الصورة/الملف لي بعثها المستخدم، لا تخترع أرقام.
+- استعمل بيانات حقيقية من المحادثة، أو من الصورة/الملف لي بعثها المستخدم، أو من "بيانات الشركة الحالية" لي غادي تتوفر ليك تلقائيًا تحت رسالة المستخدم كل ما السؤال كان عن الموردين/العملاء/المصاريف/السيولة/المشاريع/الأجراء — لا تخترع أرقام إطلاقًا.
+- إذا توفرات ليك "بيانات الشركة الحالية"، اعتبرها المصدر الرسمي والدقيق، واستعملها مباشرة لبناء الجداول والتقارير والأجوبة (مجموع مورد معين، قائمة العملاء، رصيد الصندوق، أداء مشروع، إلخ) بلا ما تسأل المستخدم يعطيك الأرقام يدويًا.
 - بعد الكتلة، أكّد بجملة قصيرة إن التقرير جاهز للتحميل.
 
 مهم جدًا بخصوص تحليل الصور (خصوصًا حساب الكميات، عد المواد أو الأشياء، القياسات): لا تعطي الرقم النهائي مباشرة من غير ما تفكر بصوت عالي. اتبع هاد الخطوات بالضبط:
@@ -2271,6 +2272,102 @@ async function sendMessage(){
   }
 }
 
+/* ---------- إعطاء يونس وصول مباشر لبيانات المحاسبة الحقيقية ---------- */
+function accountingSnapshotNeeded(text){
+  if(!text) return false;
+  const keywords = ['مورد','موردين','عميل','عملاء','مصروف','مصاريف','مصريف','سيولة','صندوق','مشروع','مشاريع','أجير','أجراء','اجير','اجراء','محاسبة','دخل','فاتور','تقرير','رصيد','مستحق','حساب','كشف'];
+  return keywords.some(k => text.includes(k));
+}
+
+function buildAccountingSnapshotText(){
+  try{
+    const lines = [];
+    const suppliers = loadSuppliers();
+    const purchases = loadPurchases();
+    const supPayments = loadSupplierPayments();
+    const clients = loadClients();
+    const simpleInvoices = loadInvoices();
+    const pdfInvoices = loadPdfInvoices();
+    const caisse = loadCaisseData();
+    const projects = loadProjects();
+    const workers = loadWorkers();
+    const attendance = loadAttendance();
+
+    // الموردين
+    if(suppliers.length){
+      lines.push('## الموردين');
+      suppliers.forEach(sup=>{
+        const supPurchases = purchases.filter(p=>p.supplierId===sup.id);
+        const spent = supPurchases.reduce((s,p)=>s+purchaseTotal(p),0);
+        const paid = supPayments.filter(p=>p.supplierId===sup.id).reduce((s,p)=>s+p.amount,0);
+        const due = spent - paid;
+        lines.push(`- ${sup.name}${sup.category?' ('+sup.category+')':''}: إجمالي المشتريات ${spent.toLocaleString('en-US')} درهم، المدفوع ${paid.toLocaleString('en-US')} درهم، المستحق ${due.toLocaleString('en-US')} درهم (${supPurchases.length} عملية شراء)`);
+      });
+    }
+
+    // العملاء (النظام البسيط — مصروف حسب طبيعة عمل الشركة)
+    if(clients.length){
+      lines.push('\n## العملاء (فواتيرهم تُحتسب كمصروف)');
+      clients.forEach(c=>{
+        const cInvoices = simpleInvoices.filter(inv=>inv.clientId===c.id);
+        const total = cInvoices.reduce((s,inv)=>s+invoiceTotal(inv),0);
+        lines.push(`- ${c.name}: إجمالي الفواتير ${total.toLocaleString('en-US')} درهم (${cInvoices.length} فاتورة)`);
+      });
+    }
+
+    // فواتير PDF (دخل حقيقي)
+    if(pdfInvoices.length){
+      lines.push('\n## فواتير "الفواتير" PDF (دخل حقيقي)');
+      pdfInvoices.forEach(inv=>{
+        const total = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
+        lines.push(`- فاتورة ${inv.invNumber} — ${inv.clientName||'عميل'} — ${inv.invDate}: ${total.toLocaleString('en-US')} درهم`);
+      });
+    }
+
+    // السيولة
+    const fundingTotal = caisse.fundings.reduce((s,f)=>s+f.amount,0);
+    const bonsTotal = caisse.bons.reduce((s,b)=>s+bonTotal(b),0);
+    lines.push(`\n## السيولة (الصندوق)\n- إجمالي التغذية: ${fundingTotal.toLocaleString('en-US')} درهم\n- إجمالي المصاريف النقدية: ${bonsTotal.toLocaleString('en-US')} درهم\n- الرصيد الحالي: ${(fundingTotal-bonsTotal).toLocaleString('en-US')} درهم`);
+
+    // المشاريع
+    if(projects.length){
+      lines.push('\n## المشاريع');
+      projects.forEach(proj=>{
+        const projPdfInc = pdfInvoices.filter(i=>i.projectId===proj.id).reduce((s,i)=> s + i.items.reduce((ss,it)=>ss+(it.qty*it.price),0)*(1+(i.tvaRate||0)/100), 0);
+        const projClientExp = simpleInvoices.filter(inv=>{ const c = clients.find(x=>x.id===inv.clientId); return c && c.projectId===proj.id; }).reduce((s,inv)=>s+invoiceTotal(inv),0);
+        const projCaisseExp = caisse.bons.filter(b=>b.projectId===proj.id).reduce((s,b)=>s+bonTotal(b),0);
+        const projPurchExp = purchases.filter(p=>p.projectId===proj.id).reduce((s,p)=>s+purchaseTotal(p),0);
+        const projWorkers = workers.filter(w=>w.projectId===proj.id);
+        const projWorkerExp = projWorkers.reduce((sum,w)=>{
+          const wAtt = attendance.filter(a=>a.workerId===w.id);
+          if(!wAtt.length) return sum;
+          const presentDays = wAtt.filter(a=>a.status==='present').length + wAtt.filter(a=>a.status==='half').length*0.5;
+          return sum + (w.type==='daily' ? presentDays*w.wage : w.wage);
+        }, 0);
+        const totalExp = projClientExp + projCaisseExp + projPurchExp + projWorkerExp;
+        lines.push(`- ${proj.name}: الدخل ${projPdfInc.toLocaleString('en-US')} درهم، المصاريف ${totalExp.toLocaleString('en-US')} درهم، الصافي ${(projPdfInc-totalExp).toLocaleString('en-US')} درهم`);
+      });
+    }
+
+    // الأجراء
+    if(workers.length){
+      lines.push('\n## الأجراء');
+      workers.forEach(w=>{
+        const wAtt = attendance.filter(a=>a.workerId===w.id);
+        const presentDays = wAtt.filter(a=>a.status==='present').length + wAtt.filter(a=>a.status==='half').length*0.5;
+        const due = w.type==='daily' ? presentDays*w.wage : w.wage;
+        lines.push(`- ${w.name} (${w.type==='daily'?'مياوم':'شهري'}): الأجرة ${w.wage.toLocaleString('en-US')} درهم${w.type==='daily'?'/يوم':'/شهر'}، أيام الحضور المسجلة ${presentDays}، المستحق ${due.toLocaleString('en-US')} درهم`);
+      });
+    }
+
+    if(lines.length === 0) return '';
+    return '\n\n--- بيانات الشركة الحالية (مصدر رسمي ودقيق، استعملها مباشرة بلا ما تسأل المستخدم) ---\n' + lines.join('\n');
+  }catch(e){
+    console.error('تعذّر تجهيز لقطة بيانات المحاسبة ليونس:', e);
+    return '';
+  }
+}
+
 async function callGemini(key, msgs){
   const contents = msgs.slice(-14).map(m=>{
     const parts = [];
@@ -2288,7 +2385,9 @@ async function callGemini(key, msgs){
   const todayStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
   const dayName = now.toLocaleDateString('ar', {weekday:'long'});
   const timeStr = now.toTimeString().slice(0,5);
-  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.`;
+  const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
+  const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
+  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
 
   async function tryModel(modelId){
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`;
@@ -2342,7 +2441,9 @@ async function callKimi(orKey, msgs){
   const todayStr = now.toLocaleDateString('en-CA');
   const dayName = now.toLocaleDateString('ar', {weekday:'long'});
   const timeStr = now.toTimeString().slice(0,5);
-  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.`;
+  const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
+  const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
+  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
 
   const orMessages = [{role:'system', content: fullSystemPrompt}];
   msgs.slice(-14).forEach(m=>{
@@ -2391,7 +2492,9 @@ async function callMistral(mKey, msgs){
   const todayStr = now.toLocaleDateString('en-CA');
   const dayName = now.toLocaleDateString('ar', {weekday:'long'});
   const timeStr = now.toTimeString().slice(0,5);
-  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.`;
+  const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
+  const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
+  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
 
   const recent = msgs.slice(-14);
   const mistralMessages = [{role:'system', content: fullSystemPrompt}];
@@ -4680,6 +4783,79 @@ document.getElementById('supplierAddBtn').addEventListener('click', ()=>{
   renderSuppliers();
 });
 
+function generateSupplierStatementPdf(sup){
+  if(!window.jspdf){ alert('مكتبة توليد PDF ماتحملاتش بعد.'); return; }
+  const c = loadCompanyInfo();
+  const supPurchases = loadPurchases().filter(p=>p.supplierId===sup.id);
+  const supPayments = loadSupplierPayments().filter(p=>p.supplierId===sup.id);
+
+  const rows = [];
+  supPurchases.forEach(p=>{
+    const desc = p.items.map(it=>it.desc).filter(Boolean).join('، ') || 'شراء';
+    rows.push({date: p.date, type:'شراء', desc, debit: purchaseTotal(p), credit: 0});
+  });
+  supPayments.forEach(pay=>{
+    rows.push({date: pay.date, type:'دفعة', desc: pay.note || 'دفعة للمورد', debit: 0, credit: pay.amount});
+  });
+  rows.sort((a,b)=> new Date(a.date) - new Date(b.date));
+
+  let balance = 0;
+  const bodyRows = rows.map(r=>{
+    balance += r.debit - r.credit;
+    return [
+      r.date.split('-').reverse().join('/'),
+      r.type,
+      r.desc,
+      r.debit ? fmtMAD(r.debit) : '',
+      r.credit ? fmtMAD(r.credit) : '',
+      fmtMAD(balance)
+    ];
+  });
+
+  const totalPurchased = supPurchases.reduce((s,p)=>s+purchaseTotal(p),0);
+  const totalPaid = supPayments.reduce((s,p)=>s+p.amount,0);
+  const due = totalPurchased - totalPaid;
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+  let y = 15;
+  if(c.logoDataUrl){ try{ doc.addImage(c.logoDataUrl, 'PNG', 15, 8, 58, 20); }catch(e){} y = 34; }
+  else{
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(180,30,30);
+    doc.text(c.name, 15, y+5); y += 18;
+  }
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(0,0,0);
+  doc.text('Relevé de Compte Fournisseur', 15, y); y += 8;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  docTextSmart(doc, 'Fournisseur: ' + sup.name, 15, y, {fontSize:10}); y += 6;
+  if(sup.phone){ doc.text('Téléphone: ' + sup.phone, 15, y); y += 6; }
+  doc.text('Date: ' + new Date().toLocaleDateString('fr-FR'), 15, y); y += 8;
+
+  if(bodyRows.length === 0){
+    doc.setFontSize(10);
+    docTextSmart(doc, 'ماكاينش عمليات مسجّلة بعد لهاد المورد', 15, y, {fontSize:10});
+  }else{
+    doc.autoTable({
+      startY: y,
+      head: [['Date','النوع','البيان','مدين (شراء)','دائن (دفعة)','الرصيد']],
+      body: bodyRows,
+      theme:'grid',
+      headStyles:{fillColor:[90,90,90], textColor:255, fontSize:8},
+      bodyStyles:{fontSize:8},
+      margin:{left:15, right:15}
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(0,0,0);
+  doc.text('إجمالي المشتريات: ' + fmtMAD(totalPurchased) + ' Dh', 15, y); y += 7;
+  doc.text('إجمالي المدفوع: ' + fmtMAD(totalPaid) + ' Dh', 15, y); y += 7;
+  doc.setTextColor(due>0 ? 180 : 30, due>0 ? 30 : 100, due>0 ? 30 : 160);
+  doc.text('الرصيد المستحق: ' + fmtMAD(due) + ' Dh', 15, y);
+
+  doc.save('كشف-حساب-' + sup.name.replace(/\s+/g,'-') + '-' + new Date().toISOString().slice(0,10) + '.pdf');
+}
+
 function renderSuppliers(){
   const list = loadSuppliers();
   const purchases = loadPurchases();
@@ -4726,6 +4902,7 @@ function renderSuppliers(){
         <button class="lc-btn" data-history="${sup.id}">📜 سجل المشتريات (${supPurchases.length})</button>
         <button class="lc-btn" data-po="${sup.id}">🧾 طلب شراء (${supPOs.length})</button>
         <button class="lc-btn" data-pay-history="${sup.id}">📋 سجل الدفعات (${supPayments.length})</button>
+        <button class="lc-btn" data-print-supplier="${sup.id}">🖨️ طباعة كشف الحساب</button>
       </div>
       <div id="supEditForm_${sup.id}"></div>
       <div id="supPurchaseForm_${sup.id}"></div>
@@ -5154,6 +5331,12 @@ function renderSuppliers(){
     b.addEventListener('click', ()=>{
       payHistorySupplierId = (payHistorySupplierId === b.dataset.payHistory) ? null : b.dataset.payHistory;
       renderSuppliers();
+    });
+  });
+  el.querySelectorAll('[data-print-supplier]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const sup = loadSuppliers().find(s=>s.id === b.dataset.printSupplier);
+      if(sup) generateSupplierStatementPdf(sup);
     });
   });
   el.querySelectorAll('[data-po]').forEach(b=>{
