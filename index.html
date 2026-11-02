@@ -1984,7 +1984,7 @@ function generatePdfReport(data){
   if(c.logoDataUrl){ try{ doc.addImage(c.logoDataUrl, 'PNG', 15, 8, 50, 17); y = 32; }catch(e){} }
   docTextSmart(doc, data.title, 15, y, {fontSize:14, bold:true});
   y += 8;
-  doc.autoTable({
+  arabicAwareAutoTable(doc, {
     startY: y,
     head: [data.columns],
     body: data.rows,
@@ -4100,6 +4100,48 @@ function docTextSmart(doc, text, xMM, yMM, opts={}){
   }
 }
 
+// نص PDF ذكي لحقول يدخلها المستخدم بحرية (عناوين، أسماء...): إذا فيه عربية كيترسم كصورة
+// (آمن)، وإلا كيستعمل doc.text العادي بكل خياراته (maxWidth، align...) بلا أي تغيير فالسلوك.
+function docTextAuto(doc, text, x, y, textOpts, fontSizePt){
+  const t = String(text === null || text === undefined ? '' : text);
+  if(containsArabic(t)){
+    const a = (textOpts && textOpts.align) || 'left';
+    docTextSmart(doc, t, x, y, {fontSize: fontSizePt || 9, align: a, jsAlign: a});
+  }else{
+    doc.text(t, x, y, textOpts);
+  }
+}
+
+// غلاف حول doc.autoTable يصلح تلقائيًا مشكلة النص العربي المشوّه: jsPDF-autoTable
+// كيستعمل خطوط jsPDF العادية (ماعندهاش دعم للعربية)، فأي خلية فيها عربية كتبان
+// رموز مشوّهة. هاد الدالة كتكتشف أي خلية (هيدر أو جسم) فيها عربية وترسمها كصورة
+// فوق الخلية (بنفس طريقة docTextSmart)، بلا ما تأثر على الخلايا اللاتينية/الأرقام.
+// استعمليها بدل doc.autoTable(...) فأي جدول PDF جديد باش تبقى العربية سليمة دايمًا.
+function arabicAwareAutoTable(doc, options){
+  const userDidDrawCell = options.didDrawCell;
+  const patchedOptions = Object.assign({}, options, {
+    didDrawCell: function(hookData){
+      try{
+        const raw = hookData.cell.raw;
+        const text = Array.isArray(raw) ? raw.join(' ') : (raw === null || raw === undefined ? '' : String(raw));
+        if(text && containsArabic(text)){
+          const isHeader = hookData.section === 'head';
+          const styles = hookData.cell.styles || {};
+          const bg = Array.isArray(styles.fillColor) ? styles.fillColor : (isHeader ? [90,90,90] : [255,255,255]);
+          doc.setFillColor(bg[0], bg[1], bg[2]);
+          doc.rect(hookData.cell.x, hookData.cell.y, hookData.cell.width, hookData.cell.height, 'F');
+          const fontSize = styles.fontSize || (isHeader ? 9 : 8);
+          docTextSmart(doc, text, hookData.cell.x + hookData.cell.width/2, hookData.cell.y + hookData.cell.height/2 + fontSize*0.12 + 1, {
+            fontSize, bold: isHeader, color: isHeader ? '#ffffff' : '#000000', align:'center', jsAlign:'center'
+          });
+        }
+      }catch(e){ console.error('تعذّر إصلاح نص عربي فجدول PDF:', e); }
+      if(typeof userDidDrawCell === 'function') userDidDrawCell(hookData);
+    }
+  });
+  doc.autoTable(patchedOptions);
+}
+
 function fmtMAD(n){
   // بلا فاصل آلاف (المشكل كان فـ toLocaleString)، غير فاصلة عشرية إذا كاين كسر
   const rounded = Math.round(n*100)/100;
@@ -4136,7 +4178,11 @@ function buildInvoicePdf(invData){
 
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(20,20,20);
   const addrLines = doc.splitTextToSize('Adresse: ' + c.addr, 110);
-  doc.text(addrLines, 15, y);
+  if(containsArabic(c.addr)){
+    docTextAuto(doc, 'Adresse: ' + c.addr, 15, y, undefined, 8);
+  }else{
+    doc.text(addrLines, 15, y);
+  }
   y += addrLines.length * 4.2 + 1;
   doc.setFontSize(9);
   doc.text('Email: ' + c.email, 15, y); y += 5;
@@ -4166,7 +4212,7 @@ function buildInvoicePdf(invData){
   items.forEach(it=>{
     tableBody.push([it.desc || '', String(it.qty), it.unit || '', fmtMAD(it.price), fmtMAD(it.qty*it.price)]);
   });
-  doc.autoTable({
+  arabicAwareAutoTable(doc, {
     startY: y,
     head: [['Désignation','Quantité','Unité','Prix unitaire','Prix total']],
     body: tableBody,
@@ -4189,7 +4235,7 @@ function buildInvoicePdf(invData){
   doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('Numéro de compte bancaire :', 17, y+4.3);
   y += 10;
-  doc.autoTable({
+  arabicAwareAutoTable(doc, {
     startY: y,
     head: [['Banque','Ville','N° de compte','Clé RIB']],
     body: [[c.ribBanque, c.ribVille, c.ribCompte, c.ribCle]],
@@ -4223,7 +4269,7 @@ function buildInvoicePdf(invData){
 
   const footerY = 285;
   doc.setFontSize(7); doc.setTextColor(90,90,90); doc.setFont('helvetica','normal');
-  doc.text(`le siège social ${c.addr} - CNSS n° ${c.cnss}, Patente n° ${c.patente}, RC n° ${c.rc}, ICE n° ${c.ice}, Identification fiscale n° ${c.ifisc}`, 105, footerY, {align:'center', maxWidth:180});
+  docTextAuto(doc, `le siège social ${c.addr} - CNSS n° ${c.cnss}, Patente n° ${c.patente}, RC n° ${c.rc}, ICE n° ${c.ice}, Identification fiscale n° ${c.ifisc}`, 105, footerY, {align:'center', maxWidth:180}, 7);
 
   return doc;
 }
@@ -4706,21 +4752,21 @@ function buildPurchaseOrderPdf(po){
   doc.text('Adresse de livraison', 110, y+5, {align:'center'});
   doc.setFont('helvetica','normal'); doc.setFontSize(9);
   if(po.deliveryDate) doc.text(po.deliveryDate.split('-').reverse().join('/'), 45, y+11, {align:'center'});
-  if(po.deliveryAddr) doc.text(po.deliveryAddr, 110, y+11, {align:'center', maxWidth:55});
+  if(po.deliveryAddr) docTextAuto(doc, po.deliveryAddr, 110, y+11, {align:'center', maxWidth:55}, 9);
   y += 20;
 
   doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(0,0,0);
   doc.text('Bon de Commande', 15, y);
   y += 7;
   doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  doc.text('créé par : ' + (po.creator || ''), 15, y);
+  docTextAuto(doc, 'créé par : ' + (po.creator || ''), 15, y, undefined, 9);
   y += 8;
 
   const tableBody = po.items.map(it=>[
     it.ref || '', it.desc || '', String(it.qty), it.unit || '',
     fmtMAD(it.price), it.remise ? fmtMAD(it.remise) : '', fmtMAD(it.qty*it.price - (it.remise||0))
   ]);
-  doc.autoTable({
+  arabicAwareAutoTable(doc, {
     startY: y,
     head: [['Référence','Désignation','Qté','unité','Px unitaire ttc','Remise','Montant ttc']],
     body: tableBody,
@@ -4735,7 +4781,7 @@ function buildPurchaseOrderPdf(po){
   });
   y = doc.lastAutoTable.finalY + 10;
 
-  doc.autoTable({
+  arabicAwareAutoTable(doc, {
     startY: y,
     head: [['Montant de base','Taux TVA','Montant']],
     body: [[fmtMAD(totals.totalHT), po.tvaRate + '%', fmtMAD(totals.tvaAmount)]],
@@ -4746,7 +4792,7 @@ function buildPurchaseOrderPdf(po){
   });
   y = doc.lastAutoTable.finalY + 8;
 
-  doc.autoTable({
+  arabicAwareAutoTable(doc, {
     startY: y,
     head: [['Total HT','Escompte','Total TTc','Acompte','Net a payer']],
     body: [[fmtMAD(totals.totalHT), totals.escompte?fmtMAD(totals.escompte):'', fmtMAD(totals.totalTTC), totals.acompte?fmtMAD(totals.acompte):'', fmtMAD(totals.netAPayer)]],
@@ -4818,40 +4864,77 @@ function generateSupplierStatementPdf(sup){
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'mm', format:'a4'});
+  const pageH = 297, marginL = 15, marginR = 195;
   let y = 15;
   if(c.logoDataUrl){ try{ doc.addImage(c.logoDataUrl, 'PNG', 15, 8, 58, 20); }catch(e){} y = 34; }
   else{
     doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(180,30,30);
     doc.text(c.name, 15, y+5); y += 18;
   }
-  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(0,0,0);
-  doc.text('Relevé de Compte Fournisseur', 15, y); y += 8;
-  doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  docTextSmart(doc, 'Fournisseur: ' + sup.name, 15, y, {fontSize:10}); y += 6;
-  if(sup.phone){ doc.text('Téléphone: ' + sup.phone, 15, y); y += 6; }
-  doc.text('Date: ' + new Date().toLocaleDateString('fr-FR'), 15, y); y += 8;
+  docTextSmart(doc, 'كشف حساب مورد', marginR, y, {fontSize:15, bold:true, align:'right', jsAlign:'right'}); y += 8;
+  docTextSmart(doc, 'المورد: ' + sup.name, marginR, y, {fontSize:10, align:'right', jsAlign:'right'}); y += 6;
+  if(sup.phone){ docTextSmart(doc, 'الهاتف: ' + sup.phone, marginR, y, {fontSize:10, align:'right', jsAlign:'right'}); y += 6; }
+  docTextSmart(doc, 'تاريخ الطباعة: ' + new Date().toLocaleDateString('fr-FR'), marginR, y, {fontSize:10, align:'right', jsAlign:'right'}); y += 10;
 
-  if(bodyRows.length === 0){
-    doc.setFontSize(10);
-    docTextSmart(doc, 'ماكاينش عمليات مسجّلة بعد لهاد المورد', 15, y, {fontSize:10});
-  }else{
-    doc.autoTable({
-      startY: y,
-      head: [['Date','النوع','البيان','مدين (شراء)','دائن (دفعة)','الرصيد']],
-      body: bodyRows,
-      theme:'grid',
-      headStyles:{fillColor:[90,90,90], textColor:255, fontSize:8},
-      bodyStyles:{fontSize:8},
-      margin:{left:15, right:15}
+  // تخطيط الجدول: أعمدة من اليمين لليسار (بترتيب القراءة العربية) — مرسوم يدويًا
+  // لأن jsPDF-autoTable لا يدعم العربية (كان السبب فظهور النص مشوّهًا)
+  const cols = [
+    {key:'date',   label:'التاريخ',       x2:195},
+    {key:'type',   label:'النوع',         x2:170},
+    {key:'desc',   label:'البيان',        x2:150},
+    {key:'debit',  label:'مدين (شراء)',   x2:95},
+    {key:'credit', label:'دائن (دفعة)',   x2:70},
+    {key:'balance',label:'الرصيد',        x2:45}
+  ];
+  const rowH = 8;
+
+  function drawTableHeader(){
+    doc.setFillColor(90,90,90);
+    doc.rect(marginL, y, marginR-marginL, rowH, 'F');
+    cols.forEach(col=>{
+      docTextSmart(doc, col.label, col.x2 - 2, y + rowH/2 + 1.3, {fontSize:8.5, bold:true, color:'#ffffff', align:'right', jsAlign:'right'});
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y += rowH;
   }
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(0,0,0);
-  doc.text('إجمالي المشتريات: ' + fmtMAD(totalPurchased) + ' Dh', 15, y); y += 7;
-  doc.text('إجمالي المدفوع: ' + fmtMAD(totalPaid) + ' Dh', 15, y); y += 7;
-  doc.setTextColor(due>0 ? 180 : 30, due>0 ? 30 : 100, due>0 ? 30 : 160);
-  doc.text('الرصيد المستحق: ' + fmtMAD(due) + ' Dh', 15, y);
+  function ensureSpace(needed){
+    if(y + needed > pageH - 25){
+      doc.addPage();
+      y = 15;
+      drawTableHeader();
+    }
+  }
+
+  if(bodyRows.length === 0){
+    docTextSmart(doc, 'ماكاينش عمليات مسجّلة بعد لهاد المورد', marginR, y, {fontSize:10, align:'right', jsAlign:'right'});
+    y += 10;
+  }else{
+    drawTableHeader();
+    bodyRows.forEach((r, idx)=>{
+      ensureSpace(rowH);
+      if(idx % 2 === 1){
+        doc.setFillColor(240,240,240);
+        doc.rect(marginL, y, marginR-marginL, rowH, 'F');
+      }
+      doc.setDrawColor(210,210,210);
+      doc.rect(marginL, y, marginR-marginL, rowH);
+      const values = {date:r[0], type:r[1], desc:r[2], debit:r[3], credit:r[4], balance:r[5]};
+      cols.forEach(col=>{
+        const text = values[col.key] || '';
+        if(text){
+          docTextSmart(doc, String(text), col.x2 - 2, y + rowH/2 + 1.3, {fontSize:8, align:'right', jsAlign:'right'});
+        }
+      });
+      y += rowH;
+    });
+    y += 10;
+  }
+
+  ensureSpace(28);
+  docTextSmart(doc, 'إجمالي المشتريات: ' + fmtMAD(totalPurchased) + ' درهم', marginR, y, {fontSize:11, bold:true, align:'right', jsAlign:'right'}); y += 7;
+  docTextSmart(doc, 'إجمالي المدفوع: ' + fmtMAD(totalPaid) + ' درهم', marginR, y, {fontSize:11, bold:true, align:'right', jsAlign:'right'}); y += 7;
+  const dueColor = due>0 ? '#b4201e' : '#1e64a0';
+  docTextSmart(doc, 'الرصيد المستحق: ' + fmtMAD(due) + ' درهم', marginR, y, {fontSize:11, bold:true, align:'right', jsAlign:'right', color:dueColor});
 
   doc.save('كشف-حساب-' + sup.name.replace(/\s+/g,'-') + '-' + new Date().toISOString().slice(0,10) + '.pdf');
 }
@@ -5750,7 +5833,7 @@ function generatePayslipPdf(worker, from, to){
   doc.text('Période: ' + from.split('-').reverse().join('/') + ' - ' + to.split('-').reverse().join('/'), 15, y); y += 8;
 
   const body = att.length ? att.map(a=>[a.date.split('-').reverse().join('/'), statusLabel[a.status]||a.status]) : [['—','لا حضور مسجل بهاد الفترة']];
-  doc.autoTable({
+  arabicAwareAutoTable(doc, {
     startY: y,
     head: [['Date','Statut']],
     body,
