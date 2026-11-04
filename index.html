@@ -6754,190 +6754,210 @@ console.log('✅ Ultimate Voice Fallback Loaded');
 })();
 </script>
 <script>
-/* ═══ ALIOUA BTP — TRUE VOICE & TEXT SOLUTION (Bypasses Old Code) ═══ */
+/* ═══ ALIOUA BTP — FINAL MASTER PATCH (ALL IN ONE) ═══ */
 (function(){
 'use strict';
-console.log('🚀 Activating True Voice Solution...');
+console.log('🚀 Activating ALIOUA FINAL Master Patch...');
 
-const micBtn = document.getElementById('micBtn');
-const sendBtn = document.getElementById('sendBtn');
-const inputEl = document.getElementById('msgInput');
-
-if (!micBtn || !sendBtn) return;
-
-// 1. مسح الأزرار القديمة وصنع جديدة (باش نمسحو أي كود قديم)
-const newMicBtn = micBtn.cloneNode(true);
-const newSendBtn = sendBtn.cloneNode(true);
-const newInputEl = inputEl.cloneNode(true);
-
-micBtn.parentNode.replaceChild(newMicBtn, micBtn);
-sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
-inputEl.parentNode.replaceChild(newInputEl, inputEl);
-
-// 2. إعدادات المايكرو
-let mediaRecorder, audioChunks = [], isRecording = false, recognition = null;
-
-if (window.SpeechRecognition || window.webkitSpeechRecognition) {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SR();
-    recognition.lang = 'ar-MA'; // دارجة
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.onresult = (e) => {
-        let text = "";
-        for (let i = e.resultIndex; i < e.results.length; ++i) {
-            if (e.results[i].isFinal) text += e.results[i][0].transcript + " ";
-        }
-        if (text) newInputEl.value = text;
-    };
-}
-
-newMicBtn.addEventListener('click', async () => {
-    if (!isRecording) {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-            newInputEl.value = "";
-            
-            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-            
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                const reader = new FileReader();
-                reader.readAsDataURL(audioBlob);
-                reader.onloadend = () => {
-                    window._audioToSend = reader.result; // خبينا الصوت
-                    stream.getTracks().forEach(t => t.stop());
-                    window.customSendMessage(); // إرسال أوتوماتيكي
-                };
-            };
-            
-            mediaRecorder.start();
-            if (recognition) recognition.start();
-            isRecording = true;
-            newMicBtn.classList.add('recording');
-            newMicBtn.style.background = '#7C241C';
-        } catch (err) {
-            alert("تأكد من إذن المايكروفون فالهاتف.");
-        }
-    } else {
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-        if (recognition) recognition.stop();
-        isRecording = false;
-        newMicBtn.classList.remove('recording');
-        newMicBtn.style.background = '';
-    }
-});
-
-newSendBtn.addEventListener('click', () => window.customSendMessage());
-newInputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        window.customSendMessage();
-    }
-});
-
-// 3. الدالة السحرية اللي كتصيفط كلشي
-window.customSendMessage = async function() {
-    const text = newInputEl.value.trim() || "🎤 (رسالة صوتية)";
-    const audio = window._audioToSend || null;
-    window._audioToSend = null;
-    newInputEl.value = '';
-
-    // إضافة الرسالة للشات
-    const msgObj = {role: 'user', text: text, time: Date.now(), audio: audio};
-    window.messages.push(msgObj);
-    
-    // عرض الرسالة
-    window.renderMessages();
-    if (audio) {
-        setTimeout(() => {
-            const bubbles = document.querySelectorAll('#chat .msg.user');
-            const lastBubble = bubbles[bubbles.length - 1];
-            if (lastBubble && !lastBubble.querySelector('audio')) {
-                const audioEl = document.createElement('audio');
-                audioEl.controls = true;
-                audioEl.src = audio;
-                audioEl.style.cssText = 'width:100%; max-width:220px; margin-bottom:6px; border-radius:10px;';
-                lastBubble.insertBefore(audioEl, lastBubble.firstChild);
-            }
-        }, 100);
-    }
-
-    // مؤشر الكتابة
-    const chatEl = document.getElementById('chat');
-    const typing = document.createElement('div');
-    typing.className = 'typing';
-    typing.id = 'typingIndicator';
-    typing.innerHTML = '<span></span><span></span><span></span>';
-    chatEl.appendChild(typing);
-    chatEl.scrollTop = chatEl.scrollHeight;
-
-    // جلب المفاتيح
-    const gKey = window.getApiKey ? window.getApiKey() : '';
-    const dKey = window.getDeepSeekKey ? window.getDeepSeekKey() : '';
-    const kKey = window.getOpenRouterKey ? window.getOpenRouterKey() : '';
-
-    let reply = null;
-    let provider = '';
-
-    // 1. المحاولة بـ Gemini (مع الصوت)
-    if (gKey) {
-        try {
-            // تجهيز الرسائل بالطريقة الصحيحة لـ Gemini
-            const contents = window.messages.slice(-10).map(m => {
-                const parts = [];
-                if (m.text) parts.push({text: m.text});
-                if (m.audio) parts.push({inlineData: {mimeType: 'audio/webm', data: m.audio.split(',')[1]}});
-                return {role: m.role === 'user' ? 'user' : 'model', parts};
-            });
-
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${gKey}`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    system_instruction: {parts: [{text: window.SYSTEM_PROMPT || ''}]},
-                    contents: contents
-                })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                reply = data?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('').trim();
-                provider = 'Gemini';
-            }
-        } catch (e) { console.log('Gemini failed'); }
-    }
-
-    // 2. المحاولة بـ DeepSeek (النص فقط إلا طاح Gemini)
-    if (!reply && dKey) {
-        try {
-            const msgs = window.messages.slice(-10).map(m => ({role: m.role === 'user' ? 'user' : 'assistant', content: m.text || '🎤 (رسالة صوتية)'}));
-            const res = await fetch('https://api.deepseek.com/chat/completions', {
-                method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dKey},
-                body: JSON.stringify({model: 'deepseek-chat', messages: [{role:'system', content: window.SYSTEM_PROMPT || ''}, ...msgs]})
-            });
-            if (res.ok) {
-                const data = await res.json();
-                reply = data?.choices?.[0]?.message?.content?.trim();
-                provider = 'DeepSeek (بالنص)';
-            }
-        } catch (e) { console.log('DeepSeek failed'); }
-    }
-
-    document.getElementById('typingIndicator')?.remove();
-
-    if (reply) {
-        const finalReply = provider.includes('Gemini') ? reply : `_(رد عبر ${provider}، حيت Gemini ما جاوبش)_\n\n` + reply;
-        window.messages.push({role: 'model', text: finalReply, time: Date.now()});
-        window.renderMessages();
-        window.saveHistory();
-        if (window.speakText) window.speakText(reply);
-    } else {
-        window.messages.push({role: 'model', text: '⚠️ كل المزودين فشلو. تأكد من الإنترنت والمفاتيح فالإعدادات.', time: Date.now()});
-        window.renderMessages();
-    }
+/* 1. الحماية */
+window.escapeHtml = function(str){
+  return String(str === null || str === undefined ? '' : str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 };
 
-console.log('✅ True Voice Solution Activated!');
+/* 2. DeepSeek */
+const DS_KEY = 'alioua_btp_deepseek_key';
+window.getDeepSeekKey = function(){ return localStorage.getItem(DS_KEY) || ''; };
+window.setDeepSeekKey = function(k){ localStorage.setItem(DS_KEY, k); };
+
+window.callDeepSeek = async function(key, msgs){
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA');
+  const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
+  const accountingSnapshot = (typeof window.accountingSnapshotNeeded === 'function' && window.accountingSnapshotNeeded(lastUserMsg)) ? window.buildAccountingSnapshotText() : '';
+  const fullSystemPrompt = (window.SYSTEM_PROMPT || '') + `\n\nالتاريخ اليوم: ${todayStr}.` + accountingSnapshot;
+  const dsMessages = [{role:'system', content: fullSystemPrompt}];
+  msgs.slice(-14).forEach(m => dsMessages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text || '' }));
+
+  let res = await fetch('https://api.deepseek.com/chat/completions', {
+    method:'POST', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + key},
+    body: JSON.stringify({ model: 'deepseek-chat', messages: dsMessages, max_tokens: 2048 })
+  }).catch(e => { throw new Error('NETWORK'); });
+  if(res.status === 401 || res.status === 403) throw new Error('AUTH');
+  if(res.status === 429) throw new Error('QUOTA');
+  if(!res.ok) throw new Error('NETWORK');
+  const data = await res.json();
+  return (data?.choices?.[0]?.message?.content || '').trim();
+};
+
+const _origBuildChain = window.buildProviderChain;
+window.buildProviderChain = function(hasImage) {
+  const gKey = window.getApiKey ? window.getApiKey() : '';
+  const kKey = window.getOpenRouterKey ? window.getOpenRouterKey() : '';
+  const dKey = window.getDeepSeekKey();
+  const chain = [];
+  if(hasImage){
+    if(gKey) chain.push({fn: window.callGemini, key: gKey, name: 'Gemini'});
+  }else{
+    if(kKey) chain.push({fn: window.callKimi, key: kKey, name: 'Kimi'});
+    if(dKey) chain.push({fn: window.callDeepSeek, key: dKey, name: 'DeepSeek'});
+    if(gKey) chain.push({fn: window.callGemini, key: gKey, name: 'Gemini'});
+  }
+  return chain;
+};
+
+/* 3. واجهة الإعدادات */
+const _origOpenModal = window.openModal;
+window.openModal = function(isFirstRun) {
+  if(typeof _origOpenModal === 'function') _origOpenModal(isFirstRun);
+  setTimeout(() => {
+    const orInput = document.getElementById('openrouterKeyInput');
+    if(orInput && !document.getElementById('deepseekKeyInput')){
+      const wrapper = document.createElement('div');
+      wrapper.style.marginTop = '14px';
+      wrapper.innerHTML = `<p class="mini-title" style="margin-bottom:8px;">🐋 مفتاح DeepSeek (اختياري)</p>
+        <input type="password" id="deepseekKeyInput" placeholder="sk-..." autocomplete="off">
+        <p style="font-size:11px; color:var(--ink-soft); margin-top:6px;">احصل عليه من platform.deepseek.com</p>`;
+      orInput.parentNode.parentNode.insertBefore(wrapper, orInput.parentNode.nextSibling);
+    }
+    const dsInput = document.getElementById('deepseekKeyInput');
+    if(dsInput) dsInput.value = window.getDeepSeekKey();
+  }, 100);
+};
+const _origSaveSettings = window.saveAllSettings;
+window.saveAllSettings = function() {
+  const dsInput = document.getElementById('deepseekKeyInput');
+  if(dsInput) window.setDeepSeekKey(dsInput.value.trim());
+  if(typeof _origSaveSettings === 'function') _origSaveSettings();
+};
+
+/* 4. المايكرو (صوت + تحويل لنص) */
+const micBtn = document.getElementById('micBtn');
+if (micBtn) {
+  const newMicBtn = micBtn.cloneNode(true);
+  micBtn.parentNode.replaceChild(newMicBtn, micBtn);
+  
+  let mediaRecorder, audioChunks = [], isRecording = false, recognition = null, transcriptText = "";
+
+  if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SR();
+      recognition.lang = 'ar-MA';
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.onresult = (e) => {
+          for (let i = e.resultIndex; i < e.results.length; ++i) {
+              if (e.results[i].isFinal) transcriptText += e.results[i][0].transcript + " ";
+          }
+      };
+  }
+
+  newMicBtn.addEventListener('click', async () => {
+      if (!isRecording) {
+          try {
+              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              mediaRecorder = new MediaRecorder(stream);
+              audioChunks = [];
+              transcriptText = "";
+              
+              mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+              
+              mediaRecorder.onstop = () => {
+                  const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                  const reader = new FileReader();
+                  reader.readAsDataURL(audioBlob);
+                  reader.onloadend = () => {
+                      const audioBase64 = reader.result;
+                      const chatEl = document.getElementById('chat');
+                      const wrapper = document.createElement('div');
+                      wrapper.className = 'msg user';
+                      wrapper.setAttribute('dir', 'auto');
+                      wrapper.innerHTML = `<audio controls src="${audioBase64}" style="width:100%; max-width:220px; margin-bottom:6px; border-radius:10px;"></audio>`;
+                      chatEl.appendChild(wrapper);
+                      chatEl.scrollTop = chatEl.scrollHeight;
+
+                      const finalText = transcriptText.trim() || "🎤 (رسالة صوتية)";
+                      const inputEl = document.getElementById('msgInput');
+                      if (inputEl) {
+                          inputEl.value = finalText;
+                          setTimeout(() => { const sendBtn = document.getElementById('sendBtn'); if (sendBtn) sendBtn.click(); }, 100);
+                      }
+                  };
+              };
+              mediaRecorder.start();
+              if (recognition) recognition.start();
+              isRecording = true;
+              newMicBtn.style.background = '#7C241C';
+              newMicBtn.style.color = 'white';
+          } catch (err) { alert("تأكد من إذن المايكروفون."); }
+      } else {
+          if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+          if (recognition) recognition.stop();
+          isRecording = false;
+          newMicBtn.style.background = '';
+          newMicBtn.style.color = '';
+      }
+  });
+}
+
+/* 5. المحاسبة */
+const CLOTURE_KEY = 'alioua_btp_cloture_status';
+window.checkCloture = function(dateStr) {
+  const cloture = localStorage.getItem(CLOTURE_KEY);
+  if(!cloture) return true;
+  if(dateStr && dateStr <= cloture) { alert('🚫 الفترة المحاسبية مغلقة.'); return false; }
+  return true;
+};
+const _origConfirm = window.confirm;
+window.confirm = function(msg) {
+  if(msg.includes('مسح') || msg.includes('حذف')) { if(!window.checkCloture()) return false; }
+  return _origConfirm.apply(this, arguments);
+};
+const _origRenderProjects = window.renderProjects;
+window.renderProjects = function() {
+  if(typeof _origRenderProjects === 'function') _origRenderProjects();
+  setTimeout(() => {
+    document.querySelectorAll('#projectsList .list-card').forEach(card => {
+      if(card.querySelector('.proj-budget-btn')) return;
+      const delBtn = card.querySelector('.lc-del');
+      if(delBtn) {
+        const budgetBtn = document.createElement('button');
+        budgetBtn.className = 'lc-btn proj-budget-btn';
+        budgetBtn.style.cssText = 'padding:4px 8px; font-size:10px; margin-right:4px;';
+        budgetBtn.textContent = '💰 ميزانية';
+        budgetBtn.onclick = function() {
+          const title = card.querySelector('.lc-title').textContent;
+          const budget = prompt('أدخل ميزانية المشروع بالدرهم:');
+          if(budget && !isNaN(budget)) {
+            let budgets = JSON.parse(localStorage.getItem('alioua_btp_budgets') || '{}');
+            budgets[title] = parseFloat(budget);
+            localStorage.setItem('alioua_btp_budgets', JSON.stringify(budgets));
+            alert('تم الحفظ.');
+          }
+        };
+        delBtn.parentNode.insertBefore(budgetBtn, delBtn);
+      }
+    });
+  }, 200);
+};
+const _origFillCompanyForm = window.fillCompanyForm;
+window.fillCompanyForm = function() {
+  if(typeof _origFillCompanyForm === 'function') _origFillCompanyForm();
+  setTimeout(() => {
+    const invProject = document.getElementById('invProject');
+    if(invProject && !document.getElementById('invRetenue')) {
+      const extra = document.createElement('div');
+      extra.style.cssText = 'display:flex; gap:8px; margin-top:10px;';
+      extra.innerHTML = `<div style="flex:1;"><label style="font-size:10px;">Retenue %</label><input type="number" id="invRetenue" value="7" style="padding:8px;"></div>
+        <div style="flex:1;"><label style="font-size:10px;">Avance %</label><input type="number" id="invAvance" value="0" style="padding:8px;"></div>`;
+      invProject.parentNode.insertBefore(extra, invProject.nextSibling);
+    }
+  }, 100);
+};
+
+console.log('✅ FINAL Master Patch Loaded Successfully!');
 })();
 </script>
+</body>
+</html>
