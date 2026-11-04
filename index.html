@@ -6564,3 +6564,19 @@ setTimeout(() => {
     if(btn2) btn2.addEventListener('click', saveDS);
 }, 2000);
 </script>
+<script>
+// 🔥 إصلاح حفظ مفتاح DeepSeek أوتوماتيكياً
+setInterval(() => {
+    const dsInput = document.getElementById('deepseekKeyInput');
+    if (dsInput && !dsInput.dataset.fixed) {
+        dsInput.dataset.fixed = 'true';
+        // حفظ المفتاح بمجرد ما تكتبو
+        dsInput.addEventListener('input', function() {
+            window.setDeepSeekKey(this.value.trim());
+            console.log('✅ DeepSeek Key Auto-Saved');
+        });
+        // عاود حط المفتاح اللي محفوظ إلا كان كاين
+        dsInput.value = window.getDeepSeekKey();
+    }
+}, 500);
+</script>
