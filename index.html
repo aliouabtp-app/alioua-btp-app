@@ -6291,6 +6291,150 @@ try{
   try{ decideOpenSetupModal(); }catch(e2){}
 }
 
+  <!-- زر وواجهة المحادثة الصوتية -->
+<div class="voice-chat-container">
+    <button id="voiceBtn" class="voice-btn" title="تحدث مع المساعد الصوتي">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v1a7 7 0 0 1-14 0v-1"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+        <span id="voiceStatus">اضغط للتحدث</span>
+    </button>
+    <div id="voiceOutput" class="voice-output"></div>
+</div>
+
+<style>
+/* تنسيق زر المحادثة الصوتية المدمج */
+.voice-chat-container {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    font-family: 'IBM Plex Sans Arabic', Arial, sans-serif;
+}
+
+.voice-btn {
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transition: all 0.3s ease;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.voice-btn.listening {
+    background-color: #dc2626;
+    animation: pulse 1.5s infinite;
+}
+
+.voice-output {
+    background: white;
+    padding: 10px 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-width: 250px;
+    font-size: 13px;
+    color: #333;
+    display: none;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+    70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+</style>
+
+<script>
+// تفعيل المحادثة الصوتية وتكاملها مع تطبيق ALIOUA BTP
+const voiceBtn = document.getElementById('voiceBtn');
+const voiceStatus = document.getElementById('voiceStatus');
+const voiceOutput = document.getElementById('voiceOutput');
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (!SpeechRecognition) {
+    voiceStatus.textContent = "متصفحك لا يدعم الصوت";
+    voiceBtn.disabled = true;
+} else {
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ar-MA'; // دعم اللهجة المغربية لعملاء البناء والتعمير
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    let isListening = false;
+
+    voiceBtn.addEventListener('click', () => {
+        if (!isListening) {
+            recognition.start();
+        } else {
+            recognition.stop();
+        }
+    });
+
+    recognition.onstart = () => {
+        isListening = true;
+        voiceBtn.classList.add('listening');
+        voiceStatus.textContent = "جاري الاستماع...";
+        voiceOutput.style.display = 'block';
+        voiceOutput.textContent = "تفضل، أسمعك...";
+    };
+
+    recognition.onresult = (event) => {
+        const speechText = event.results[0][0].transcript;
+        voiceOutput.textContent = "أنت: " + speechText;
+        handleBotResponse(speechText);
+    };
+
+    recognition.onerror = () => {
+        voiceStatus.textContent = "خطأ في الصوت، حاول مجدداً";
+        stopListeningState();
+    };
+
+    recognition.onend = () => {
+        stopListeningState();
+    };
+
+    function stopListeningState() {
+        isListening = false;
+        voiceBtn.classList.remove('listening');
+        voiceStatus.textContent = "اضغط للتحدث";
+    }
+
+    function speakResponse(text) {
+        const synth = window.speechSynthesis;
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'ar-SA';
+        synth.speak(utterance);
+        voiceOutput.textContent = "المساعد: " + text;
+    }
+
+    function handleBotResponse(input) {
+        let reply = "مرحباً بك في يونس | ALIOUA BTP، كيف يمكنني مساعدتك في مشاريع البناء والتجديد؟";
+        const lowerInput = input.toLowerCase();
+
+        if (lowerInput.includes('ثمن') || lowerInput.includes('سعر') || lowerInput.includes('تكلفة')) {
+            reply = "تختلف تكلفة البناء حسب المساحة والمواصفات. تفضل بحجز موعد استشارة مع فريقنا.";
+        } else if (lowerInput.includes('خدمات') || lowerInput.includes('اشغال') || lowerInput.includes('بناء')) {
+            reply = "نحن نقدم خدمات البناء العامة، التجديد، وهندسة الأساسات بأعلى معايير الجودة.";
+        } else if (lowerInput.includes('موعد') || lowerInput.includes('حجز')) {
+            reply = "يمكنك إدارة وتتبع المواعيد مباشرة من لوحة التحكم الخاصة بالتطبيق.";
+        } else if (lowerInput.includes('شكرا') || lowerInput.includes('بارك الله')) {
+            reply = "على الرحب والسعة! شركة ALIOUA BTP في خدمتك دائماً.";
+        }
+
+        speakResponse(reply);
+    }
+}
 </script>
+
 </body>
 </html>
