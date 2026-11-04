@@ -6354,87 +6354,68 @@ try{
 </style>
 
 <script>
-// تفعيل المحادثة الصوتية وتكاملها مع تطبيق ALIOUA BTP
-const voiceBtn = document.getElementById('voiceBtn');
-const voiceStatus = document.getElementById('voiceStatus');
-const voiceOutput = document.getElementById('voiceOutput');
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>المحادثة الصوتية المجانية - ALIOUA BTP</title>
+    <style>
+        body { font-family: Tahoma, sans-serif; text-align: center; margin-top: 50px; background-color: #f4f4f9; }
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; background-color: #007BFF; color: white; border: none; border-radius: 8px; margin: 10px; }
+        button:hover { background-color: #0056b3; }
+        #output { margin-top: 20px; font-size: 20px; color: #333; }
+    </style>
+</head>
+<body>
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    <h2>مساعد ALIOUA BTP الصوتي (مجاني)</h2>
+    <button onclick="startListening()">اضغط وتحدث 🎤</button>
+    <div id="output">النص المكتوب سيظهر هنا...</div>
 
-if (!SpeechRecognition) {
-    voiceStatus.textContent = "متصفحك لا يدعم الصوت";
-    voiceBtn.disabled = true;
-} else {
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ar-MA'; // دعم اللهجة المغربية لعملاء البناء والتعمير
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    let isListening = false;
-
-    voiceBtn.addEventListener('click', () => {
-        if (!isListening) {
-            recognition.start();
+    <script>
+        // التأكد من دعم المتصفح لخاصية التعرف على الصّوت
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        
+        if (!SpeechRecognition) {
+            alert("متصفحك لا يدعم المحادثة الصوتية، يجدر بك استخدام متصفح Google Chrome.");
         } else {
-            recognition.stop();
-        }
-    });
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'ar-SA'; // تحديد اللغة العربية (يمكنك تغيير اللهجة حسب الحاجة)
+            recognition.interimResults = false;
 
-    recognition.onstart = () => {
-        isListening = true;
-        voiceBtn.classList.add('listening');
-        voiceStatus.textContent = "جاري الاستماع...";
-        voiceOutput.style.display = 'block';
-        voiceOutput.textContent = "تفضل، أسمعك...";
-    };
+            function startListening() {
+                recognition.start();
+                document.getElementById("output").innerText = "جاري الاستماع... تحدث الآن.";
+            }
 
-    recognition.onresult = (event) => {
-        const speechText = event.results[0][0].transcript;
-        voiceOutput.textContent = "أنت: " + speechText;
-        handleBotResponse(speechText);
-    };
+            // عند التعرف على الصوت وتحويله إلى نص
+            recognition.onresult = function(event) {
+                const speechText = event.results[0][0].transcript;
+                document.getElementById("output").innerText = "أنت قلت: " + speechText;
+                
+                // هنا يمكنك إرسال النص إلى نموذج الذكاء الاصطناعي الخاص بك لمعالجته
+                // الرد التجريبي كمثال:
+                let aiResponse = "أهلاً بك، لقد فهمت طلبك بخصوص شركة ALIOUA BTP وسأقوم بتنفيذه.";
+                
+                speakResponse(aiResponse);
+            };
 
-    recognition.onerror = () => {
-        voiceStatus.textContent = "خطأ في الصوت، حاول مجدداً";
-        stopListeningState();
-    };
-
-    recognition.onend = () => {
-        stopListeningState();
-    };
-
-    function stopListeningState() {
-        isListening = false;
-        voiceBtn.classList.remove('listening');
-        voiceStatus.textContent = "اضغط للتحدث";
-    }
-
-    function speakResponse(text) {
-        const synth = window.speechSynthesis;
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ar-SA';
-        synth.speak(utterance);
-        voiceOutput.textContent = "المساعد: " + text;
-    }
-
-    function handleBotResponse(input) {
-        let reply = "مرحباً بك في يونس | ALIOUA BTP، كيف يمكنني مساعدتك في مشاريع البناء والتجديد؟";
-        const lowerInput = input.toLowerCase();
-
-        if (lowerInput.includes('ثمن') || lowerInput.includes('سعر') || lowerInput.includes('تكلفة')) {
-            reply = "تختلف تكلفة البناء حسب المساحة والمواصفات. تفضل بحجز موعد استشارة مع فريقنا.";
-        } else if (lowerInput.includes('خدمات') || lowerInput.includes('اشغال') || lowerInput.includes('بناء')) {
-            reply = "نحن نقدم خدمات البناء العامة، التجديد، وهندسة الأساسات بأعلى معايير الجودة.";
-        } else if (lowerInput.includes('موعد') || lowerInput.includes('حجز')) {
-            reply = "يمكنك إدارة وتتبع المواعيد مباشرة من لوحة التحكم الخاصة بالتطبيق.";
-        } else if (lowerInput.includes('شكرا') || lowerInput.includes('بارك الله')) {
-            reply = "على الرحب والسعة! شركة ALIOUA BTP في خدمتك دائماً.";
+            recognition.onerror = function(event) {
+                document.getElementById("output").innerText = "حدث خطأ في التعرف على الصوت: " + event.error;
+            };
         }
 
-        speakResponse(reply);
-    }
-}
-</script>
+        // دالة تحويل النص إلى صوت (مجانية بالكامل من المتصفح)
+        function speakResponse(text) {
+            const synth = window.speechSynthesis;
+            const utterThis = new SpeechSynthesisUtterance(text);
+            utterThis.lang = 'ar-SA'; // لغة النطق
+            synth.speak(utterThis);
+        }
+    </script>
+
+</body>
+</html>
 
 </body>
 </html>
