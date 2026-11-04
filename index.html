@@ -6895,6 +6895,25 @@ newMicBtn.addEventListener('click', async (e) => {
 });
 console.log('✅ True WhatsApp Voice Experience Activated!');
 })();
+<script>
+// ═══ إصلاح سريع: تغيير نموذج Kimi المحذوف إلى Llama-3 المجاني ═══
+(function(){
+    const originalFetch = window.fetch;
+    window.fetch = function(url, options) {
+        if (typeof url === 'string' && url.includes('openrouter.ai/api/v1/chat/completions')) {
+            if (options && options.body) {
+                try {
+                    let body = JSON.parse(options.body);
+                    // استبدال النموذج المحذوف بنموذج مجاني مستقر
+                    body.model = "meta-llama/llama-3-8b-instruct:free"; 
+                    options.body = JSON.stringify(body);
+                } catch(e) {}
+            }
+        }
+        return originalFetch.apply(this, arguments);
+    };
+    console.log('✅ OpenRouter Model Fixed to Llama-3');
+})();
 </script>
 </body>
 </html>
