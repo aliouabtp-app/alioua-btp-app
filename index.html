@@ -6867,152 +6867,118 @@ if (micBtn) {
                   const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                   const reader = new FileReader();
                   reader.readAsDataURL(audioBlob);
-                  reader.onloadend = () => {
-                      const audioBase64 = reader.result;
-                      const chatEl = document.getElementById('chat');
-                      const wrapper = document.createElement('div');
-                      wrapper.className = 'msg user';
-                      wrapper.setAttribute('dir', 'auto');
-                      wrapper.innerHTML = `<audio controls src="${audioBase64}" style="width:100%; max-width:220px; margin-bottom:6px; border-radius:10px;"></audio>`;
-                      chatEl.appendChild(wrapper);
-                      chatEl.scrollTop = chatEl.scrollHeight;
-
-                      const finalText = transcriptText.trim() || "🎤 (رسالة صوتية)";
-                      const inputEl = document.getElementById('msgInput');
-                      if (inputEl) {
-                          inputEl.value = finalText;
-                          setTimeout(() => { const sendBtn = document.getElementById('sendBtn'); if (sendBtn) sendBtn.click(); }, 100);
-                      }
-                  };
-              };
-              mediaRecorder.start();
-              if (recognition) recognition.start();
-              isRecording = true;
-              newMicBtn.style.background = '#7C241C';
-              newMicBtn.style.color = 'white';
-          } catch (err) { alert("تأكد من إذن المايكروفون."); }
-      } else {
-          if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-          if (recognition) recognition.stop();
-          isRecording = false;
-          newMicBtn.style.background = '';
-          newMicBtn.style.color = '';
-      }
-  });
-}
-
-/* 5. المحاسبة */
-const CLOTURE_KEY = 'alioua_btp_cloture_status';
-<script>
-/* ═══ ALIOUA BTP — PERFECT VOICE NOTE (WhatsApp Style) ═══ */
+                  reade<script>
+/* ═══ ALIOUA BTP — DEFINITIVE VOICE & ERROR FIX ═══ */
 (function(){
 'use strict';
-console.log('🎙️ Activating Perfect Voice Note...');
+console.log('🎙️ Activating Definitive Voice Fix...');
 
-const oldMicBtn = document.getElementById('micBtn');
-if (!oldMicBtn) return;
-
-// مسح الزر القديم تماماً باش نمسحو أي أخطاء سابقة
-const newMicBtn = oldMicBtn.cloneNode(true);
-oldMicBtn.parentNode.replaceChild(newMicBtn, oldMicBtn);
-
-let mediaRecorder;
-let audioChunks = [];
-let isRecording = false;
-let recognition = null;
-let transcriptText = "";
-
-// 1. إعداد تحويل الصوت إلى نص (STT)
-if (window.SpeechRecognition || window.webkitSpeechRecognition) {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SR();
-    recognition.lang = 'ar-MA'; // دارجة مغربية
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    
-    recognition.onresult = (e) => {
-        for (let i = e.resultIndex; i < e.results.length; ++i) {
-            if (e.results[i].isFinal) {
-                transcriptText += e.results[i][0].transcript + " ";
-            }
-        }
-    };
-}
-
-// 2. تفعيل زر المايكرو
-newMicBtn.addEventListener('click', async () => {
-    if (!isRecording) {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-            transcriptText = "";
-
-            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                const reader = new FileReader();
-                reader.readAsDataURL(audioBlob);
-                reader.onloadend = () => {
-                    const audioBase64 = reader.result;
-
-                    // أ) إرسال النص للذكاء الاصطناعي (Gemini/DeepSeek)
-                    const inputEl = document.getElementById('msgInput');
-                    const sendBtn = document.getElementById('sendBtn');
-                    
-                    if (inputEl && sendBtn) {
-                        // إلا ما سمعش كلام، كنصيفطو تنبيه
-                        inputEl.value = transcriptText.trim() || "🎤 (رسالة صوتية غير واضحة)";
-                        
-                        // إرسال الرسالة
-                        sendBtn.click();
-
-                        // ب) حقن الفويس نوت فالشات بعد ما تبان رسالة النص
-                        setTimeout(() => {
-                            const bubbles = document.querySelectorAll('#chat .msg.user');
-                            if (bubbles.length > 0) {
-                                const lastBubble = bubbles[bubbles.length - 1];
-                                if (!lastBubble.querySelector('audio')) {
-                                    const audioEl = document.createElement('audio');
-                                    audioEl.controls = true;
-                                    audioEl.src = audioBase64;
-                                    audioEl.style.cssText = 'width:100%; max-width:220px; margin-bottom:8px; border-radius:10px; display:block;';
-                                    lastBubble.insertBefore(audioEl, lastBubble.firstChild);
-                                }
-                            }
-                        }, 300); // كنستناو 300ms باش المتصفح يرسم الفقاعة
+// 1. إصلاح عرض الرسائل باش يبان الصوت (Audio) وما يتمسحش
+const _origRender = window.renderMessages;
+window.renderMessages = function() {
+    if (typeof _origRender === 'function') _origRender();
+    setTimeout(() => {
+        const bubbles = document.querySelectorAll('#chat .msg.user');
+        if (window.messages && bubbles.length) {
+            let userMsgIndex = 0;
+            window.messages.forEach(m => {
+                if (m.role === 'user') {
+                    if (m.audio && bubbles[userMsgIndex]) {
+                        const bubble = bubbles[userMsgIndex];
+                        if (!bubble.querySelector('audio')) {
+                            const audioEl = document.createElement('audio');
+                            audioEl.controls = true;
+                            audioEl.src = m.audio;
+                            audioEl.style.cssText = 'width:100%; max-width:220px; margin-bottom:8px; border-radius:10px; display:block;';
+                            bubble.insertBefore(audioEl, bubble.firstChild);
+                        }
                     }
-                };
-                stream.getTracks().forEach(t => t.stop());
-            };
-
-            mediaRecorder.start();
-            if (recognition) recognition.start();
-            isRecording = true;
-            
-            // تحويل الزر للأحمر
-            newMicBtn.style.background = '#7C241C';
-            newMicBtn.style.color = 'white';
-            newMicBtn.style.borderColor = '#5C1A14';
-            
-        } catch (err) {
-            alert("تأكد من إعطاء إذن المايكروفون للمتصفح.");
+                    userMsgIndex++;
+                }
+            });
         }
-    } else {
-        // إيقاف التسجيل
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-        if (recognition) recognition.stop();
-        isRecording = false;
-        
-        // إرجاع الزر للونه الطبيعي
-        newMicBtn.style.background = '';
-        newMicBtn.style.color = '';
-        newMicBtn.style.borderColor = '';
+    }, 100);
+};
+
+// 2. إعدادات المايكرو
+const oldMicBtn = document.getElementById('micBtn');
+if (oldMicBtn) {
+    const newMicBtn = oldMicBtn.cloneNode(true);
+    oldMicBtn.parentNode.replaceChild(newMicBtn, oldMicBtn);
+    
+    let mediaRecorder, audioChunks = [], isRecording = false, recognition = null, transcriptText = "";
+
+    if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SR();
+        recognition.lang = 'ar-MA'; 
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.onresult = (e) => {
+            for (let i = e.resultIndex; i < e.results.length; ++i) {
+                if (e.results[i].isFinal) transcriptText += e.results[i][0].transcript + " ";
+            }
+        };
     }
-});
-console.log('✅ Perfect Voice Note Activated!');
+
+    newMicBtn.addEventListener('click', async () => {
+        if (!isRecording) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                transcriptText = "";
+                
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const reader = new FileReader();
+                    reader.readAsDataURL(audioBlob);
+                    reader.onloadend = () => {
+                        const base64Audio = reader.result;
+                        const text = transcriptText.trim() || "🎤 (رسالة صوتية)";
+                        
+                        // إضافة الرسالة للذاكرة مع الصوت
+                        const msgObj = { role: 'user', text: text, audio: base64Audio, time: Date.now() };
+                        window.messages.push(msgObj);
+                        
+                        // إعادة رسم الشات باش يبان الصوت
+                        window.renderMessages();
+                        window.saveHistory();
+                        
+                        // إرسال للذكاء الاصطناعي (بدون صراخ)
+                        const inputEl = document.getElementById('msgInput');
+                        if(inputEl) {
+                            inputEl.value = text;
+                            // نستعملو الدالة الأصلية ديال الإرسال
+                            setTimeout(() => {
+                                const sendBtn = document.getElementById('sendBtn');
+                                if(sendBtn) sendBtn.click();
+                                inputEl.value = ""; // نمسحو النص باش ما يتبعتش مرتين
+                            }, 100);
+                        }
+                    };
+                    stream.getTracks().forEach(t => t.stop());
+                };
+                
+                mediaRecorder.start();
+                if (recognition) recognition.start();
+                isRecording = true;
+                newMicBtn.style.background = '#7C241C';
+                newMicBtn.style.color = 'white';
+            } catch (err) { alert("تأكد من إذن المايكروفون."); }
+        } else {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            if (recognition) recognition.stop();
+            isRecording = false;
+            newMicBtn.style.background = '';
+            newMicBtn.style.color = '';
+        }
+    });
+}
+console.log('✅ Definitive Voice Fix Loaded!');
 })();
-</script>
+                </script>
 </body>
 </html>
