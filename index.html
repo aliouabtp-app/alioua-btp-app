@@ -6551,3 +6551,16 @@ window.fillCompanyForm = function() {
 console.log('%c[MASTER PATCH] All features loaded successfully ✅', 'background:#166534;color:white;padding:4px 8px;border-radius:4px;font-weight:bold');
 })();
 </script>
+<script>
+// إصلاح زر الحفظ باش يقبل مفتاح DeepSeek
+setTimeout(() => {
+    const btn1 = document.getElementById('saveKeyBtn');
+    const btn2 = document.getElementById('saveKeyBtn2');
+    const saveDS = () => {
+        const inp = document.getElementById('deepseekKeyInput');
+        if(inp) localStorage.setItem('alioua_btp_deepseek_key', inp.value.trim());
+    };
+    if(btn1) btn1.addEventListener('click', saveDS);
+    if(btn2) btn2.addEventListener('click', saveDS);
+}, 2000);
+</script>
