@@ -6294,3 +6294,260 @@ try{
 </script>
 </body>
 </html>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   ALIOUA BTP — ULTIMATE MASTER PATCH (Security + DeepSeek + Acc + Voice)
+   ═══════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+console.log('%c[MASTER PATCH] Loading all features...', 'background:#0F3D5C;color:#D6AE4E;padding:4px 8px;border-radius:4px;font-weight:bold');
+
+/* ---------------------------------------------------
+   1. الحماية الأساسية (Security & XSS)
+--------------------------------------------------- */
+window.escapeHtml = function(str){
+  return String(str === null || str === undefined ? '' : str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+};
+
+const SEC_KEYS = ['alioua_btp_api_key','alioua_btp_openrouter_key','alioua_btp_mistral_key','alioua_btp_gtts_key','alioua_btp_deepseek_key'];
+const _c = window.collectAllAppData;
+if(typeof _c === 'function'){
+  window.collectAllAppData = function(){
+    let d = _c.apply(this, arguments);
+    SEC_KEYS.forEach(k => delete d[k]);
+    return d;
+  };
+}
+
+/* ---------------------------------------------------
+   2. مفتاح DeepSeek والربط مع الذكاء الاصطناعي
+--------------------------------------------------- */
+const DS_KEY = 'alioua_btp_deepseek_key';
+window.getDeepSeekKey = function(){ return localStorage.getItem(DS_KEY) || ''; };
+window.setDeepSeekKey = function(k){ localStorage.setItem(DS_KEY, k); };
+
+window.callDeepSeek = async function(key, msgs){
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA');
+  const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
+  const accountingSnapshot = (typeof window.accountingSnapshotNeeded === 'function' && window.accountingSnapshotNeeded(lastUserMsg)) ? window.buildAccountingSnapshotText() : '';
+  const fullSystemPrompt = (window.SYSTEM_PROMPT || '') + `\n\nالتاريخ اليوم: ${todayStr}.` + accountingSnapshot;
+
+  const dsMessages = [{role:'system', content: fullSystemPrompt}];
+  msgs.slice(-14).forEach(m => dsMessages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text || '' }));
+
+  let res = await fetch('https://api.deepseek.com/chat/completions', {
+    method:'POST', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + key},
+    body: JSON.stringify({ model: 'deepseek-chat', messages: dsMessages, max_tokens: 2048 })
+  }).catch(e => { throw new Error('NETWORK'); });
+
+  if(res.status === 401 || res.status === 403) throw new Error('AUTH');
+  if(res.status === 429) throw new Error('QUOTA');
+  if(!res.ok) throw new Error('NETWORK');
+  
+  const data = await res.json();
+  return (data?.choices?.[0]?.message?.content || '').trim();
+};
+
+const _origBuildChain = window.buildProviderChain;
+window.buildProviderChain = function(hasImage) {
+  const gKey = window.getApiKey ? window.getApiKey() : '';
+  const kKey = window.getOpenRouterKey ? window.getOpenRouterKey() : '';
+  const dKey = window.getDeepSeekKey();
+  const chain = [];
+  if(hasImage){
+    if(gKey) chain.push({fn: window.callGemini, key: gKey, name: 'Gemini'});
+  }else{
+    if(kKey) chain.push({fn: window.callKimi, key: kKey, name: 'Kimi'});
+    if(dKey) chain.push({fn: window.callDeepSeek, key: dKey, name: 'DeepSeek'});
+    if(gKey) chain.push({fn: window.callGemini, key: gKey, name: 'Gemini'});
+  }
+  return chain;
+};
+
+/* ---------------------------------------------------
+   3. واجهة الإعدادات (DeepSeek + المحاسبة)
+--------------------------------------------------- */
+const _origOpenModal = window.openModal;
+window.openModal = function(isFirstRun) {
+  if(typeof _origOpenModal === 'function') _origOpenModal(isFirstRun);
+  setTimeout(() => {
+    const orInput = document.getElementById('openrouterKeyInput');
+    if(orInput && !document.getElementById('deepseekKeyInput')){
+      const wrapper = document.createElement('div');
+      wrapper.style.marginTop = '14px';
+      wrapper.innerHTML = `<p class="mini-title" style="margin-bottom:8px;">🐋 مفتاح DeepSeek (اختياري)</p>
+        <input type="password" id="deepseekKeyInput" placeholder="sk-..." autocomplete="off">
+        <p style="font-size:11px; color:var(--ink-soft); margin-top:6px;">احصل عليه من platform.deepseek.com</p>`;
+      orInput.parentNode.parentNode.insertBefore(wrapper, orInput.parentNode.nextSibling);
+    }
+    const dsInput = document.getElementById('deepseekKeyInput');
+    if(dsInput) dsInput.value = window.getDeepSeekKey();
+  }, 100);
+};
+
+const _origSaveSettings = window.saveAllSettings;
+window.saveAllSettings = function() {
+  const dsInput = document.getElementById('deepseekKeyInput');
+  if(dsInput) window.setDeepSeekKey(dsInput.value.trim());
+  if(typeof _origSaveSettings === 'function') _origSaveSettings();
+};
+
+/* ---------------------------------------------------
+   4. الرسائل الصوتية (WhatsApp Style Voice Notes)
+--------------------------------------------------- */
+const micBtn = document.getElementById('micBtn');
+if (micBtn) {
+  const newMicBtn = micBtn.cloneNode(true);
+  micBtn.parentNode.replaceChild(newMicBtn, micBtn);
+  
+  let mediaRecorder;
+  let audioChunks = [];
+  let isRecording = false;
+  let recognition = null;
+
+  if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SR();
+      recognition.lang = 'ar-MA';
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.onresult = (e) => {
+          let text = "";
+          for (let i = e.resultIndex; i < e.results.length; ++i) {
+              if (e.results[i].isFinal) text += e.results[i][0].transcript + " ";
+          }
+          if (text) document.getElementById('msgInput').value = text;
+      };
+  }
+
+  newMicBtn.addEventListener('click', async () => {
+      if (!isRecording) {
+          try {
+              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              mediaRecorder = new MediaRecorder(stream);
+              audioChunks = [];
+              document.getElementById('msgInput').value = "";
+              
+              mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+              
+              mediaRecorder.onstop = () => {
+                  const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                  const reader = new FileReader();
+                  reader.readAsDataURL(audioBlob);
+                  reader.onloadend = () => {
+                      window._lastVoiceBase64 = reader.result;
+                      const currentText = document.getElementById('msgInput').value.trim();
+                      document.getElementById('msgInput').value = currentText || "🎤 (رسالة صوتية)";
+                      
+                      if (typeof window.sendMessage === 'function') {
+                          window.sendMessage();
+                          
+                          // حقن مشغل الصوت فالمحادثة
+                          setTimeout(() => {
+                              const bubbles = document.querySelectorAll('#chat .msg.user');
+                              if (bubbles.length > 0) {
+                                  const lastBubble = bubbles[bubbles.length - 1];
+                                  if (!lastBubble.querySelector('audio') && window._lastVoiceBase64) {
+                                      const audio = document.createElement('audio');
+                                      audio.controls = true;
+                                      audio.src = window._lastVoiceBase64;
+                                      audio.style.cssText = 'width:100%; max-width:240px; height:40px; margin-bottom:8px; border-radius:10px; display:block;';
+                                      lastBubble.insertBefore(audio, lastBubble.firstChild);
+                                      window._lastVoiceBase64 = null;
+                                  }
+                              }
+                          }, 300);
+                      }
+                  };
+                  stream.getTracks().forEach(t => t.stop());
+              };
+              
+              mediaRecorder.start();
+              if (recognition) recognition.start();
+              isRecording = true;
+              newMicBtn.classList.add('recording');
+              newMicBtn.style.background = '#7C241C';
+          } catch (err) {
+              alert("تأكد من إذن المايكروفون فالهاتف.");
+          }
+      } else {
+          if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+          if (recognition) recognition.stop();
+          isRecording = false;
+          newMicBtn.classList.remove('recording');
+          newMicBtn.style.background = '';
+      }
+  });
+}
+
+/* ---------------------------------------------------
+   5. المحاسبة المتقدمة (Décomptes, Cloture, Sage)
+--------------------------------------------------- */
+const CLOTURE_KEY = 'alioua_btp_cloture_status';
+window.checkCloture = function(dateStr) {
+  const cloture = localStorage.getItem(CLOTURE_KEY);
+  if(!cloture) return true;
+  if(dateStr && dateStr <= cloture) {
+    alert('🚫 الفترة المحاسبية مغلقة. لا يمكن التعديل في هذا التاريخ.');
+    return false;
+  }
+  return true;
+};
+
+const _origConfirm = window.confirm;
+window.confirm = function(msg) {
+  if(msg.includes('مسح') || msg.includes('حذف') || msg.includes('تعديل')) {
+    if(!window.checkCloture()) return false;
+  }
+  return _origConfirm.apply(this, arguments);
+};
+
+const _origRenderProjects = window.renderProjects;
+window.renderProjects = function() {
+  if(typeof _origRenderProjects === 'function') _origRenderProjects();
+  setTimeout(() => {
+    document.querySelectorAll('#projectsList .list-card').forEach(card => {
+      if(card.querySelector('.proj-budget-btn')) return;
+      const delBtn = card.querySelector('.lc-del');
+      if(delBtn) {
+        const budgetBtn = document.createElement('button');
+        budgetBtn.className = 'lc-btn proj-budget-btn';
+        budgetBtn.style.cssText = 'padding:4px 8px; font-size:10px; margin-right:4px;';
+        budgetBtn.textContent = '💰 ميزانية';
+        budgetBtn.onclick = function() {
+          const title = card.querySelector('.lc-title').textContent;
+          const budget = prompt('أدخل ميزانية المشروع بالدرهم:');
+          if(budget && !isNaN(budget)) {
+            let budgets = JSON.parse(localStorage.getItem('alioua_btp_budgets') || '{}');
+            budgets[title] = parseFloat(budget);
+            localStorage.setItem('alioua_btp_budgets', JSON.stringify(budgets));
+            alert('تم الحفظ.');
+          }
+        };
+        delBtn.parentNode.insertBefore(budgetBtn, delBtn);
+      }
+    });
+  }, 200);
+};
+
+const _origFillCompanyForm = window.fillCompanyForm;
+window.fillCompanyForm = function() {
+  if(typeof _origFillCompanyForm === 'function') _origFillCompanyForm();
+  setTimeout(() => {
+    const invProject = document.getElementById('invProject');
+    if(invProject && !document.getElementById('invRetenue')) {
+      const extra = document.createElement('div');
+      extra.style.cssText = 'display:flex; gap:8px; margin-top:10px;';
+      extra.innerHTML = `<div style="flex:1;"><label style="font-size:10px;">Retenue %</label><input type="number" id="invRetenue" value="7" style="padding:8px;"></div>
+        <div style="flex:1;"><label style="font-size:10px;">Avance %</label><input type="number" id="invAvance" value="0" style="padding:8px;"></div>`;
+      invProject.parentNode.insertBefore(extra, invProject.nextSibling);
+    }
+  }, 100);
+};
+
+console.log('%c[MASTER PATCH] All features loaded successfully ✅', 'background:#166534;color:white;padding:4px 8px;border-radius:4px;font-weight:bold');
+})();
+</script>
