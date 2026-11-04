@@ -6753,3 +6753,191 @@ window.processVoiceMessage = async function() {
 console.log('✅ Ultimate Voice Fallback Loaded');
 })();
 </script>
+<script>
+/* ═══ ALIOUA BTP — TRUE VOICE & TEXT SOLUTION (Bypasses Old Code) ═══ */
+(function(){
+'use strict';
+console.log('🚀 Activating True Voice Solution...');
+
+const micBtn = document.getElementById('micBtn');
+const sendBtn = document.getElementById('sendBtn');
+const inputEl = document.getElementById('msgInput');
+
+if (!micBtn || !sendBtn) return;
+
+// 1. مسح الأزرار القديمة وصنع جديدة (باش نمسحو أي كود قديم)
+const newMicBtn = micBtn.cloneNode(true);
+const newSendBtn = sendBtn.cloneNode(true);
+const newInputEl = inputEl.cloneNode(true);
+
+micBtn.parentNode.replaceChild(newMicBtn, micBtn);
+sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
+inputEl.parentNode.replaceChild(newInputEl, inputEl);
+
+// 2. إعدادات المايكرو
+let mediaRecorder, audioChunks = [], isRecording = false, recognition = null;
+
+if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SR();
+    recognition.lang = 'ar-MA'; // دارجة
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = (e) => {
+        let text = "";
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+            if (e.results[i].isFinal) text += e.results[i][0].transcript + " ";
+        }
+        if (text) newInputEl.value = text;
+    };
+}
+
+newMicBtn.addEventListener('click', async () => {
+    if (!isRecording) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            newInputEl.value = "";
+            
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+            
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = () => {
+                    window._audioToSend = reader.result; // خبينا الصوت
+                    stream.getTracks().forEach(t => t.stop());
+                    window.customSendMessage(); // إرسال أوتوماتيكي
+                };
+            };
+            
+            mediaRecorder.start();
+            if (recognition) recognition.start();
+            isRecording = true;
+            newMicBtn.classList.add('recording');
+            newMicBtn.style.background = '#7C241C';
+        } catch (err) {
+            alert("تأكد من إذن المايكروفون فالهاتف.");
+        }
+    } else {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        if (recognition) recognition.stop();
+        isRecording = false;
+        newMicBtn.classList.remove('recording');
+        newMicBtn.style.background = '';
+    }
+});
+
+newSendBtn.addEventListener('click', () => window.customSendMessage());
+newInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        window.customSendMessage();
+    }
+});
+
+// 3. الدالة السحرية اللي كتصيفط كلشي
+window.customSendMessage = async function() {
+    const text = newInputEl.value.trim() || "🎤 (رسالة صوتية)";
+    const audio = window._audioToSend || null;
+    window._audioToSend = null;
+    newInputEl.value = '';
+
+    // إضافة الرسالة للشات
+    const msgObj = {role: 'user', text: text, time: Date.now(), audio: audio};
+    window.messages.push(msgObj);
+    
+    // عرض الرسالة
+    window.renderMessages();
+    if (audio) {
+        setTimeout(() => {
+            const bubbles = document.querySelectorAll('#chat .msg.user');
+            const lastBubble = bubbles[bubbles.length - 1];
+            if (lastBubble && !lastBubble.querySelector('audio')) {
+                const audioEl = document.createElement('audio');
+                audioEl.controls = true;
+                audioEl.src = audio;
+                audioEl.style.cssText = 'width:100%; max-width:220px; margin-bottom:6px; border-radius:10px;';
+                lastBubble.insertBefore(audioEl, lastBubble.firstChild);
+            }
+        }, 100);
+    }
+
+    // مؤشر الكتابة
+    const chatEl = document.getElementById('chat');
+    const typing = document.createElement('div');
+    typing.className = 'typing';
+    typing.id = 'typingIndicator';
+    typing.innerHTML = '<span></span><span></span><span></span>';
+    chatEl.appendChild(typing);
+    chatEl.scrollTop = chatEl.scrollHeight;
+
+    // جلب المفاتيح
+    const gKey = window.getApiKey ? window.getApiKey() : '';
+    const dKey = window.getDeepSeekKey ? window.getDeepSeekKey() : '';
+    const kKey = window.getOpenRouterKey ? window.getOpenRouterKey() : '';
+
+    let reply = null;
+    let provider = '';
+
+    // 1. المحاولة بـ Gemini (مع الصوت)
+    if (gKey) {
+        try {
+            // تجهيز الرسائل بالطريقة الصحيحة لـ Gemini
+            const contents = window.messages.slice(-10).map(m => {
+                const parts = [];
+                if (m.text) parts.push({text: m.text});
+                if (m.audio) parts.push({inlineData: {mimeType: 'audio/webm', data: m.audio.split(',')[1]}});
+                return {role: m.role === 'user' ? 'user' : 'model', parts};
+            });
+
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${gKey}`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    system_instruction: {parts: [{text: window.SYSTEM_PROMPT || ''}]},
+                    contents: contents
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                reply = data?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('').trim();
+                provider = 'Gemini';
+            }
+        } catch (e) { console.log('Gemini failed'); }
+    }
+
+    // 2. المحاولة بـ DeepSeek (النص فقط إلا طاح Gemini)
+    if (!reply && dKey) {
+        try {
+            const msgs = window.messages.slice(-10).map(m => ({role: m.role === 'user' ? 'user' : 'assistant', content: m.text || '🎤 (رسالة صوتية)'}));
+            const res = await fetch('https://api.deepseek.com/chat/completions', {
+                method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dKey},
+                body: JSON.stringify({model: 'deepseek-chat', messages: [{role:'system', content: window.SYSTEM_PROMPT || ''}, ...msgs]})
+            });
+            if (res.ok) {
+                const data = await res.json();
+                reply = data?.choices?.[0]?.message?.content?.trim();
+                provider = 'DeepSeek (بالنص)';
+            }
+        } catch (e) { console.log('DeepSeek failed'); }
+    }
+
+    document.getElementById('typingIndicator')?.remove();
+
+    if (reply) {
+        const finalReply = provider.includes('Gemini') ? reply : `_(رد عبر ${provider}، حيت Gemini ما جاوبش)_\n\n` + reply;
+        window.messages.push({role: 'model', text: finalReply, time: Date.now()});
+        window.renderMessages();
+        window.saveHistory();
+        if (window.speakText) window.speakText(reply);
+    } else {
+        window.messages.push({role: 'model', text: '⚠️ كل المزودين فشلو. تأكد من الإنترنت والمفاتيح فالإعدادات.', time: Date.now()});
+        window.renderMessages();
+    }
+};
+
+console.log('✅ True Voice Solution Activated!');
+})();
+</script>
