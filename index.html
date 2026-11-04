@@ -6754,129 +6754,22 @@ console.log('✅ Ultimate Voice Fallback Loaded');
 })();
 </script>
 <script>
-/* ═══ ALIOUA BTP — FINAL MASTER PATCH (ALL IN ONE) ═══ */
+/* ═══ ALIOUA BTP — BULLETPROOF VOICE RECORDER (No Conflict) ═══ */
 (function(){
 'use strict';
-console.log('🚀 Activating ALIOUA FINAL Master Patch...');
+console.log('🎙️ Activating Bulletproof Voice Recorder...');
 
-/* 1. الحماية */
-window.escapeHtml = function(str){
-  return String(str === null || str === undefined ? '' : str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-};
-
-/* 2. DeepSeek */
-const DS_KEY = 'alioua_btp_deepseek_key';
-window.getDeepSeekKey = function(){ return localStorage.getItem(DS_KEY) || ''; };
-window.setDeepSeekKey = function(k){ localStorage.setItem(DS_KEY, k); };
-
-window.callDeepSeek = async function(key, msgs){
-  const now = new Date();
-  const todayStr = now.toLocaleDateString('en-CA');
-  const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
-  const accountingSnapshot = (typeof window.accountingSnapshotNeeded === 'function' && window.accountingSnapshotNeeded(lastUserMsg)) ? window.buildAccountingSnapshotText() : '';
-  const fullSystemPrompt = (window.SYSTEM_PROMPT || '') + `\n\nالتاريخ اليوم: ${todayStr}.` + accountingSnapshot;
-  const dsMessages = [{role:'system', content: fullSystemPrompt}];
-  msgs.slice(-14).forEach(m => dsMessages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text || '' }));
-
-  let res = await fetch('https://api.deepseek.com/chat/completions', {
-    method:'POST', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + key},
-    body: JSON.stringify({ model: 'deepseek-chat', messages: dsMessages, max_tokens: 2048 })
-  }).catch(e => { throw new Error('NETWORK'); });
-  if(res.status === 401 || res.status === 403) throw new Error('AUTH');
-  if(res.status === 429) throw new Error('QUOTA');
-  if(!res.ok) throw new Error('NETWORK');
-  const data = await res.json();
-  return (data?.choices?.[0]?.message?.content || '').trim();
-};
-
-const _origBuildChain = window.buildProviderChain;
-window.buildProviderChain = function(hasImage) {
-  const gKey = window.getApiKey ? window.getApiKey() : '';
-  const kKey = window.getOpenRouterKey ? window.getOpenRouterKey() : '';
-  const dKey = window.getDeepSeekKey();
-  const chain = [];
-  if(hasImage){
-    if(gKey) chain.push({fn: window.callGemini, key: gKey, name: 'Gemini'});
-  }else{
-    if(kKey) chain.push({fn: window.callKimi, key: kKey, name: 'Kimi'});
-    if(dKey) chain.push({fn: window.callDeepSeek, key: dKey, name: 'DeepSeek'});
-    if(gKey) chain.push({fn: window.callGemini, key: gKey, name: 'Gemini'});
-  }
-  return chain;
-};
-
-/* 3. واجهة الإعدادات */
-const _origOpenModal = window.openModal;
-window.openModal = function(isFirstRun) {
-  if(typeof _origOpenModal === 'function') _origOpenModal(isFirstRun);
-  setTimeout(() => {
-    const orInput = document.getElementById('openrouterKeyInput');
-    if(orInput && !document.getElementById('deepseekKeyInput')){
-      const wrapper = document.createElement('div');
-      wrapper.style.marginTop = '14px';
-      wrapper.innerHTML = `<p class="mini-title" style="margin-bottom:8px;">🐋 مفتاح DeepSeek (اختياري)</p>
-        <input type="password" id="deepseekKeyInput" placeholder="sk-..." autocomplete="off">
-        <p style="font-size:11px; color:var(--ink-soft); margin-top:6px;">احصل عليه من platform.deepseek.com</p>`;
-      orInput.parentNode.parentNode.insertBefore(wrapper, orInput.parentNode.nextSibling);
-    }
-    const dsInput = document.getElementById('deepseekKeyInput');
-    if(dsInput) dsInput.value = window.getDeepSeekKey();
-  }, 100);
-};
-const _origSaveSettings = window.saveAllSettings;
-window.saveAllSettings = function() {
-  const dsInput = document.getElementById('deepseekKeyInput');
-  if(dsInput) window.setDeepSeekKey(dsInput.value.trim());
-  if(typeof _origSaveSettings === 'function') _origSaveSettings();
-};
-
-/* 4. المايكرو (صوت + تحويل لنص) */
 const micBtn = document.getElementById('micBtn');
-if (micBtn) {
-  const newMicBtn = micBtn.cloneNode(true);
-  micBtn.parentNode.replaceChild(newMicBtn, micBtn);
-  
-  let mediaRecorder, audioChunks = [], isRecording = false, recognition = null, transcriptText = "";
+if (!micBtn) return;
 
-  if (window.SpeechRecognition || window.webkitSpeechRecognition) {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognition = new SR();
-      recognition.lang = 'ar-MA';
-      recognition.continuous = true;
-      recognition.interimResults = false;
-      recognition.onresult = (e) => {
-          for (let i = e.resultIndex; i < e.results.length; ++i) {
-              if (e.results[i].isFinal) transcriptText += e.results[i][0].transcript + " ";
-          }
-      };
-  }
+let mediaRecorder;
+let audioChunks = [];
+let isRecording = false;
 
-  newMicBtn.addEventListener('click', async () => {
-      if (!isRecording) {
-          try {
-              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-              mediaRecorder = new MediaRecorder(stream);
-              audioChunks = [];
-              transcriptText = "";
-              
-              mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-              
-              mediaRecorder.onstop = () => {
-                  const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                  const reader = new FileReader();
-                  reader.readAsDataURL(audioBlob);
-                  reade<script>
-/* ═══ ALIOUA BTP — DEFINITIVE VOICE & ERROR FIX ═══ */
-(function(){
-'use strict';
-console.log('🎙️ Activating Definitive Voice Fix...');
-
-// 1. إصلاح عرض الرسائل باش يبان الصوت (Audio) وما يتمسحش
+// 1. تعديل دالة الرسم باش تظهر الصوتية
 const _origRender = window.renderMessages;
 window.renderMessages = function() {
-    if (typeof _origRender === 'function') _origRender();
+    if (typeof _origRender === 'function') _origRender.apply(this, arguments);
     setTimeout(() => {
         const bubbles = document.querySelectorAll('#chat .msg.user');
         if (window.messages && bubbles.length) {
@@ -6897,88 +6790,109 @@ window.renderMessages = function() {
                 }
             });
         }
-    }, 100);
+    }, 50);
 };
 
-// 2. إعدادات المايكرو
-const oldMicBtn = document.getElementById('micBtn');
-if (oldMicBtn) {
-    const newMicBtn = oldMicBtn.cloneNode(true);
-    oldMicBtn.parentNode.replaceChild(newMicBtn, oldMicBtn);
-    
-    let mediaRecorder, audioChunks = [], isRecording = false, recognition = null, transcriptText = "";
+// 2. اعتراض زر المايكرو (قبل ما يخدم الكود القديم)
+micBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation(); // كيوقفو الكود القديم باش ما يتخربقش
 
-    if (window.SpeechRecognition || window.webkitSpeechRecognition) {
-        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SR();
-        recognition.lang = 'ar-MA'; 
-        recognition.continuous = true;
-        recognition.interimResults = false;
-        recognition.onresult = (e) => {
-            for (let i = e.resultIndex; i < e.results.length; ++i) {
-                if (e.results[i].isFinal) transcriptText += e.results[i][0].transcript + " ";
-            }
-        };
+    if (!isRecording) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = async () => {
+                    const base64Audio = reader.result;
+                    await sendVoiceToAI(base64Audio);
+                };
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            
+            // لون أحمر باش تعرف أنك كتسجل
+            micBtn.style.background = '#7C241C';
+            micBtn.style.color = 'white';
+            
+        } catch (err) {
+            alert("المرجو السماح بالوصول إلى الميكروفون من إعدادات المتصفح.");
+            console.error(err);
+        }
+    } else {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+        isRecording = false;
+        micBtn.style.background = '';
+        micBtn.style.color = '';
+    }
+}, true); // <--- Capture phase (مهم جداً باش يسبق الكود القديم)
+
+// 3. دالة إرسال الصوت لـ Gemini
+async function sendVoiceToAI(base64Audio) {
+    const gKey = window.getApiKey ? window.getApiKey() : '';
+    if (!gKey) {
+        alert('المرجو إضافة مفتاح Gemini في الإعدادات (⚙️) ليتمكن يونس من سماع الصوت.');
+        return;
     }
 
-    newMicBtn.addEventListener('click', async () => {
-        if (!isRecording) {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                audioChunks = [];
-                transcriptText = "";
-                
-                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-                
-                mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                    const reader = new FileReader();
-                    reader.readAsDataURL(audioBlob);
-                    reader.onloadend = () => {
-                        const base64Audio = reader.result;
-                        const text = transcriptText.trim() || "🎤 (رسالة صوتية)";
-                        
-                        // إضافة الرسالة للذاكرة مع الصوت
-                        const msgObj = { role: 'user', text: text, audio: base64Audio, time: Date.now() };
-                        window.messages.push(msgObj);
-                        
-                        // إعادة رسم الشات باش يبان الصوت
-                        window.renderMessages();
-                        window.saveHistory();
-                        
-                        // إرسال للذكاء الاصطناعي (بدون صراخ)
-                        const inputEl = document.getElementById('msgInput');
-                        if(inputEl) {
-                            inputEl.value = text;
-                            // نستعملو الدالة الأصلية ديال الإرسال
-                            setTimeout(() => {
-                                const sendBtn = document.getElementById('sendBtn');
-                                if(sendBtn) sendBtn.click();
-                                inputEl.value = ""; // نمسحو النص باش ما يتبعتش مرتين
-                            }, 100);
-                        }
-                    };
-                    stream.getTracks().forEach(t => t.stop());
-                };
-                
-                mediaRecorder.start();
-                if (recognition) recognition.start();
-                isRecording = true;
-                newMicBtn.style.background = '#7C241C';
-                newMicBtn.style.color = 'white';
-            } catch (err) { alert("تأكد من إذن المايكروفون."); }
+    // إضافة الرسالة للشات مع الصوت
+    const msgObj = { role: 'user', text: '🎤 (رسالة صوتية)', audio: base64Audio, time: Date.now() };
+    window.messages.push(msgObj);
+    window.renderMessages();
+    window.saveHistory();
+
+    // تجهيز الطلب لـ Gemini 1.5 Flash
+    const mimeType = base64Audio.split(';')[0].split(':')[1];
+    const audioData = base64Audio.split(',')[1];
+
+    try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${gKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                system_instruction: { parts: [{ text: window.SYSTEM_PROMPT || '' }] },
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        { text: 'استمع إلى هذه الرسالة الصوتية، وافهمها، ثم أجب عليّ بنفس لغة المتحدث (الدارجة المغربية أو العربية).' },
+                        { inline_data: { mime_type: mimeType, data: audioData } }
+                    ]
+                }]
+            })
+        });
+
+        const data = await res.json();
+        const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (reply) {
+            window.messages.push({ role: 'model', text: reply, time: Date.now() });
+            window.renderMessages();
+            window.saveHistory();
+            if (window.speakText) window.speakText(reply);
         } else {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-            if (recognition) recognition.stop();
-            isRecording = false;
-            newMicBtn.style.background = '';
-            newMicBtn.style.color = '';
+            throw new Error('No reply from Gemini');
         }
-    });
+
+    } catch (err) {
+        window.messages.push({ role: 'model', text: '⚠️ لم أتمكن من سماع الصوت. تأكد من مفتاح Gemini ومن اتصال الإنترنت.', time: Date.now() });
+        window.renderMessages();
+    }
 }
-console.log('✅ Definitive Voice Fix Loaded!');
+console.log('✅ Bulletproof Voice Recorder Activated!');
 })();
-                </script>
+</script>
 </body>
 </html>
