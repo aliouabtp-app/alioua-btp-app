@@ -17,36 +17,52 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 /* ===== Voice Chat Overlay ===== */
 .voice-chat-overlay{
-  position:fixed; inset:0; z-index:90;
-  background:linear-gradient(160deg, var(--navy-deep) 0%, var(--navy) 55%, var(--blue-mid) 100%);
-  display:none; flex-direction:column; align-items:center; justify-content:center;
-  padding:20px; color:#fff; text-align:center;
+  position:fixed; inset:0; z-index:90; display:none; flex-direction:column; align-items:center; justify-content:flex-start;
+  padding:calc(env(safe-area-inset-top) + 64px) 20px calc(env(safe-area-inset-bottom) + 26px);
+  color:#fff; text-align:center; --lvl:0;
+  background:radial-gradient(120% 90% at 50% 22%, var(--blue-mid) 0%, var(--navy) 52%, var(--navy-deep) 100%);
 }
 .voice-chat-overlay.active{ display:flex; }
-.voice-chat-overlay .vc-pulse{
-  width:150px; height:150px; border-radius:50%;
-  background:rgba(255,255,255,.12);
-  display:flex; align-items:center; justify-content:center;
-  margin-bottom:36px; position:relative; transition:background .3s, box-shadow .3s;
+.voice-chat-overlay .vc-stage{ flex:1; min-height:0; width:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.voice-chat-overlay .vc-orb{
+  position:relative; width:170px; height:170px; border:none; background:none; padding:0; cursor:pointer;
+  -webkit-tap-highlight-color:transparent; transform:scale(calc(1 + var(--lvl) * .25)); transition:transform .09s linear;
 }
-.voice-chat-overlay .vc-pulse::before{
-  content:''; position:absolute; inset:-8px; border-radius:50%;
-  border:2px solid rgba(255,255,255,.25);
-  animation:vcPulse 2.2s infinite;
+.voice-chat-overlay .vc-orb-core{
+  position:absolute; inset:0; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #fff 0%, #cfe6f5 25%, #4fa3d1 60%, #1d5f8a 100%);
+  box-shadow:0 0 60px rgba(79,163,209,.55); animation:vcBreath 3.2s ease-in-out infinite;
+  transition:background .4s, box-shadow .4s;
 }
-.voice-chat-overlay.listening .vc-pulse{ background:rgba(214,174,78,.28); box-shadow:0 0 50px rgba(214,174,78,.55); }
-.voice-chat-overlay.listening .vc-pulse::before{ border-color:rgba(214,174,78,.65); }
-.voice-chat-overlay.speaking .vc-pulse{ background:rgba(79,163,209,.32); box-shadow:0 0 50px rgba(79,163,209,.55); }
-.voice-chat-overlay.speaking .vc-pulse::before{ border-color:rgba(79,163,209,.65); }
-@keyframes vcPulse{ 0%{transform:scale(1);opacity:1;} 100%{transform:scale(1.65);opacity:0;} }
-.voice-chat-overlay .vc-icon{ font-size:56px; }
-.voice-chat-overlay .vc-status{ font-size:17px; font-weight:700; margin-bottom:12px; min-height:26px; }
-.voice-chat-overlay .vc-transcript{ font-size:14px; color:var(--gold-soft); max-width:420px; min-height:48px; line-height:1.75; padding:0 10px; }
-.voice-chat-overlay .vc-bot-text{ font-size:13px; color:rgba(255,255,255,.75); max-width:420px; margin-top:14px; line-height:1.7; padding:0 10px; font-style:italic; max-height:110px; overflow:hidden; }
+.voice-chat-overlay .vc-orb-ring{ position:absolute; inset:-6px; border-radius:50%; border:2px solid rgba(255,255,255,.3); opacity:0; }
+.voice-chat-overlay.listening .vc-orb-core{ background:radial-gradient(circle at 35% 30%, #fff 0%, #f4e2b0 28%, #d6ae4e 62%, #8a6a1f 100%); box-shadow:0 0 70px rgba(214,174,78,.6); }
+.voice-chat-overlay.listening .vc-orb-ring{ border-color:rgba(214,174,78,.6); animation:vcRing 2.4s ease-out infinite; }
+.voice-chat-overlay.listening .vc-orb-ring.r2{ animation-delay:1.2s; }
+.voice-chat-overlay.speaking .vc-orb-core{ animation:vcSpeak .9s ease-in-out infinite; }
+.voice-chat-overlay.speaking .vc-orb-ring{ border-color:rgba(79,163,209,.65); animation:vcRing 1.6s ease-out infinite; }
+.voice-chat-overlay.speaking .vc-orb-ring.r2{ animation-delay:.8s; }
+.voice-chat-overlay.thinking .vc-orb-core{ animation:vcThink 1.3s ease-in-out infinite; filter:saturate(.75); }
+.voice-chat-overlay.idle .vc-orb-core{ filter:saturate(.6); }
+.voice-chat-overlay.muted .vc-orb-core{ background:radial-gradient(circle at 35% 30%, #f1f1f1, #9aa7b0 60%, #4b5a64); box-shadow:none; animation:none; }
+.voice-chat-overlay.muted .vc-orb-ring{ animation:none; opacity:0; }
+@keyframes vcBreath{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
+@keyframes vcSpeak{ 0%,100%{ transform:scale(.96); } 50%{ transform:scale(1.13); } }
+@keyframes vcThink{ 0%,100%{ transform:scale(.94); opacity:.75; } 50%{ transform:scale(1.03); opacity:1; } }
+@keyframes vcRing{ 0%{ transform:scale(1); opacity:.9; } 100%{ transform:scale(1.7); opacity:0; } }
+.voice-chat-overlay .vc-status{ margin-top:34px; font-size:18px; font-weight:700; min-height:26px; }
+.voice-chat-overlay .vc-texts{ width:100%; max-width:440px; flex:none; }
+.voice-chat-overlay .vc-transcript{ font-size:15px; color:var(--gold-soft); line-height:1.8; min-height:28px; max-height:90px; overflow:auto; }
+.voice-chat-overlay .vc-bot-text{ font-size:13.5px; color:rgba(255,255,255,.82); line-height:1.8; max-height:120px; overflow:auto; margin-top:8px; white-space:pre-line; }
+.voice-chat-overlay .vc-controls{ display:flex; gap:30px; align-items:center; margin-top:18px; flex:none; }
+.voice-chat-overlay .vc-ctl{
+  width:60px; height:60px; border-radius:50%; border:1px solid rgba(255,255,255,.3);
+  background:rgba(255,255,255,.14); color:#fff; font-size:24px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+.voice-chat-overlay .vc-ctl.on{ background:#fff; color:#123F5C; }
 .voice-chat-overlay .vc-hangup{
-  margin-top:44px; background:linear-gradient(135deg, var(--maroon), var(--maroon-deep));
-  color:#fff; border:none; border-radius:50%; width:72px; height:72px; cursor:pointer;
-  box-shadow:0 10px 28px rgba(124,36,28,.55); display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg, var(--maroon), var(--maroon-deep)); color:#fff; border:none; border-radius:50%;
+  width:72px; height:72px; cursor:pointer; box-shadow:0 10px 28px rgba(124,36,28,.55);
+  display:flex; align-items:center; justify-content:center;
 }
 .voice-chat-overlay .vc-hangup svg{ width:30px; height:30px; transform:rotate(135deg); }
 .voice-chat-overlay .vc-close-top{
@@ -1373,13 +1389,22 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 </div>
 <div class="voice-chat-overlay" id="voiceChatOverlay">
   <button class="vc-close-top" id="vcCloseTop">✕ إنهاء</button>
-  <div class="vc-pulse"><span class="vc-icon" id="vcIcon">🎙️</span></div>
-  <div class="vc-status" id="vcStatus">جاري الاتصال بيونس...</div>
-  <div class="vc-transcript" id="vcTranscript"></div>
-  <div class="vc-bot-text" id="vcBotText"></div>
-  <button class="vc-hangup" id="vcHangup" title="إنهاء المكالمة">
-    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>
-  </button>
+  <div class="vc-stage">
+    <button class="vc-orb" id="vcOrb" aria-label="اضغط لمقاطعة يونس أو لإرسال كلامك الآن">
+      <span class="vc-orb-core"></span><span class="vc-orb-ring"></span><span class="vc-orb-ring r2"></span>
+    </button>
+    <div class="vc-status" id="vcStatus">جاري الاتصال…</div>
+  </div>
+  <div class="vc-texts">
+    <div class="vc-transcript" id="vcTranscript"></div>
+    <div class="vc-bot-text" id="vcBotText"></div>
+  </div>
+  <div class="vc-controls">
+    <button class="vc-ctl" id="vcMute" title="كتم الميكروفون">🎙️</button>
+    <button class="vc-hangup" id="vcHangup" title="إنهاء المكالمة">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>
+    </button>
+  </div>
 </div>
 <div class="modal-backdrop" id="modalBackdrop">
   <div class="modal">
@@ -2289,15 +2314,8 @@ async function sendMessage(){
         messages.push({role:'model', text, time:Date.now()});
         renderMessages();
         saveHistory();
-        if(voiceChatActive){
-  const botEl = document.getElementById('vcBotText');
-  if(botEl) botEl.textContent = reply.slice(0, 220);
-  setVCStatus('speaking', '🔊 يونس كيهدر...');
-  const sess = vcSessionId;
-  speakText(reply, ()=> voiceChatOnSpeakEnd(sess));
-}else{
-  speakText(reply);
-        }
+        if(voiceChatActive){ VC.onReply(reply); }
+        else{ speakText(reply); }
         lastErr = null;
         break;
       }catch(err){
@@ -2445,7 +2463,7 @@ async function callGemini(key, msgs){
   const timeStr = now.toTimeString().slice(0,5);
   const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
   const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
-  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
+  const fullSystemPrompt = SYSTEM_PROMPT + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
 
   async function tryModel(modelId){
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`;
@@ -2501,7 +2519,7 @@ async function callKimi(orKey, msgs){
   const timeStr = now.toTimeString().slice(0,5);
   const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
   const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
-  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
+  const fullSystemPrompt = SYSTEM_PROMPT + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
 
   const orMessages = [{role:'system', content: fullSystemPrompt}];
   msgs.slice(-14).forEach(m=>{
@@ -2552,7 +2570,7 @@ async function callMistral(mKey, msgs){
   const timeStr = now.toTimeString().slice(0,5);
   const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
   const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
-  const fullSystemPrompt = SYSTEM_PROMPT + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
+  const fullSystemPrompt = SYSTEM_PROMPT + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
 
   const recent = msgs.slice(-14);
   const mistralMessages = [{role:'system', content: fullSystemPrompt}];
@@ -3017,109 +3035,471 @@ const micBtn = document.getElementById('micBtn');
 const voiceToggleBtn = document.getElementById('voiceToggleBtn');
 
 let voiceReplyOn = localStorage.getItem(VOICE_KEY) === '1';
-  /* ===== Voice Chat Mode ===== */
+/* ===== المحادثة الصوتية (على نمط ChatGPT) ===== */
 let voiceChatActive = false;
+let vcSessionId = 0;
+// متغيرات ودوال قديمة محفوظة فقط لأن بقية الكود القديم لا يزال يشير إليها
 let vcShouldBeListening = false;
 let vcFinalTranscript = '';
 let voiceChatSilenceTimer = null;
-let vcSessionId = 0;
-let vcWakeLock = null;
+function finalizeVCMessage(){}
+function voiceChatOnSpeakEnd(){}
+function setVCStatus(kind, text){ try{ VC.setState(kind === 'idle' ? 'listening' : kind, text); }catch(e){} }
+function enterVoiceChat(){ return VC.enter(); }
+function exitVoiceChat(){ return VC.exit(); }
 
-function setVCStatus(kind, text){
-  const overlay = document.getElementById('voiceChatOverlay');
-  if(!overlay) return;
-  overlay.classList.remove('listening','speaking','thinking');
-  if(kind) overlay.classList.add(kind);
-  const st = document.getElementById('vcStatus'); if(st) st.textContent = text || '';
-  const icon = document.getElementById('vcIcon');
-  if(icon) icon.textContent = kind==='listening'?'🎙️':kind==='speaking'?'🔊':kind==='thinking'?'💭':'🎧';
-}
-async function requestVCWakeLock(){ try{ if('wakeLock' in navigator && document.visibilityState === 'visible'){ vcWakeLock = await navigator.wakeLock.request('screen'); } }catch(e){} }
-function releaseVCWakeLock(){ try{ if(vcWakeLock){ vcWakeLock.release(); vcWakeLock = null; } }catch(e){} }
+const VOICE_CALL_RULE = '\n\nأنت الآن في مكالمة صوتية مباشرة مع المستخدم: جاوب كما يتحدث إنسان، بجمل قصيرة وطبيعية (من جملة إلى أربع جمل)، وبنفس لهجة المستخدم، بدون جداول ولا قوائم ولا عناوين ولا رموز ولا إيموجي ولا روابط. انطق الأرقام والمبالغ باختصار. وإذا كان الطلب يحتاج كتلة أمر خاصة (مثل إضافة موعد أو معاملة) فاكتب جملة قصيرة تؤكد ثم الكتلة بصيغتها المعتادة.';
 
-function enterVoiceChat(){
-  if(!SpeechRecognitionAPI){ alert('المتصفح ديالك ما كيدعمش التعرف على الصوت.'); return; }
-  if(!window.isSecureContext){ alert('المكالمة محتاجة https.'); return; }
-  if(!getApiKey() && !getOpenRouterKey()){ openModal(true); return; }
-  vcSessionId++;
-  voiceChatActive = true;
-  voiceReplyOn = true;
-  updateVoiceToggleUI();
-  micBtn.disabled = true;
-  document.getElementById('voiceChatOverlay').classList.add('active');
-  requestVCWakeLock();
-  setVCStatus('thinking', 'جاري الاتصال بيونس...');
-  document.getElementById('vcTranscript').textContent = '';
-  document.getElementById('vcBotText').textContent = '';
-  try{ inputEl.blur(); }catch(e){}
-  setTimeout(()=>{
-    speakText('السلام عليكم، أنا يونس. كيف نقدر نعاونك اليوم؟', ()=>{ if(voiceChatActive) startVCListening(); });
-  }, 400);
-}
+const VC = (function(){
+  const $ = id => document.getElementById(id);
+  const S = {
+    state:'idle', muted:false, mode:'sr', lang:'ar-MA', rec:null, srTimes:[],
+    turnBase:'', lastDisplay:'', silenceT:null, token:0, spk:0, turning:false,
+    prevVoice:false, wake:null,
+    stream:null, ctx:null, proc:null, src:null, sink:null, sampleRate:48000,
+    pre:[], buf:[], inSpeech:false, hot:0, voiced:0, speechStart:0, lastVoice:0,
+    calib:[], thr:0.02, level:0, busy:false
+  };
+  const SRClass = () => window.SpeechRecognition || window.webkitSpeechRecognition;
 
-function exitVoiceChat(){
-  voiceChatActive = false;
-  vcSessionId++;
-  vcShouldBeListening = false;
-  clearTimeout(voiceChatSilenceTimer);
-  try{ recognition.stop(); }catch(e){}
-  try{ recognition.abort(); }catch(e){}
-  try{ window.speechSynthesis.cancel(); }catch(e){}
-  micBtn.disabled = false;
-  document.getElementById('voiceChatOverlay').classList.remove('active');
-  releaseVCWakeLock();
-}
-
-function startVCListening(){
-  if(!voiceChatActive) return;
-  vcFinalTranscript = '';
-  inputEl.value = '';
-  vcShouldBeListening = true;
-  setVCStatus('listening', '🎙️ نسمع فيك...');
-  const txEl = document.getElementById('vcTranscript'); if(txEl) txEl.textContent = '';
-  const botEl = document.getElementById('vcBotText'); if(botEl) botEl.textContent = '';
-  try{
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'ar-SA';
-    recognition.start();
-  }catch(e){}
-}
-
-function stopVCListening(){
-  vcShouldBeListening = false;
-  clearTimeout(voiceChatSilenceTimer);
-  try{ recognition.stop(); }catch(e){}
-}
-
-function finalizeVCMessage(){
-  if(!voiceChatActive) return;
-  clearTimeout(voiceChatSilenceTimer);
-  const text = inputEl.value.trim();
-  if(!text){ setVCStatus('idle','🎧 نسمع...'); startVCListening(); return; }
-  stopVCListening();
-  setVCStatus('thinking','💭 كنفكر...');
-  setTimeout(()=>{ if(voiceChatActive) sendMessage(); }, 250);
-}
-
-function voiceChatOnSpeakEnd(sessionAtStart){
-  if(!voiceChatActive) return;
-  if(sessionAtStart && sessionAtStart !== vcSessionId) return;
-  setTimeout(()=>{ if(voiceChatActive) startVCListening(); }, 250);
-}
-
-document.getElementById('voiceCallBtn')?.addEventListener('click', enterVoiceChat);
-document.getElementById('vcHangup')?.addEventListener('click', exitVoiceChat);
-document.getElementById('vcCloseTop')?.addEventListener('click', exitVoiceChat);
-
-document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState === 'hidden' && voiceChatActive){
-    try{ recognition.stop(); }catch(e){}
-    try{ window.speechSynthesis.cancel(); }catch(e){}
-  }else if(document.visibilityState === 'visible' && voiceChatActive && vcShouldBeListening){
-    try{ recognition.start(); }catch(e){}
+  /* ---------- الواجهة ---------- */
+  function setState(st, text){
+    S.state = st;
+    const ov = $('voiceChatOverlay'); if(!ov) return;
+    ov.classList.remove('listening','speaking','thinking','idle','muted');
+    ov.classList.add(st);
+    if(S.muted) ov.classList.add('muted');
+    if(st !== 'listening') ov.style.setProperty('--lvl', '0');
+    const labels = { idle:'جاري الاتصال…', listening:'أسمعك…', thinking:'أفكّر…', speaking:'يونس يتكلم… (اضغط للمقاطعة)' };
+    const st2 = $('vcStatus');
+    if(st2) st2.textContent = text || ((S.muted && st === 'listening') ? 'الميكروفون مكتوم' : (labels[st] || ''));
   }
-});
+  function updateMuteUI(){
+    const b = $('vcMute'); if(!b) return;
+    b.classList.toggle('on', S.muted);
+    b.textContent = S.muted ? '🔇' : '🎙️';
+    b.title = S.muted ? 'تشغيل الميكروفون' : 'كتم الميكروفون';
+  }
+  function fatal(msg){
+    clearTimeout(S.silenceT); stopRecognizer(); cancelSpeech();
+    S.state = 'idle';
+    const ov = $('voiceChatOverlay');
+    if(ov){ ov.classList.remove('listening','speaking','thinking','muted'); ov.classList.add('idle'); }
+    const st = $('vcStatus'); if(st) st.textContent = 'تعذّر تشغيل المحادثة الصوتية';
+    const bt = $('vcBotText'); if(bt) bt.textContent = msg;
+  }
+
+  /* ---------- النطق ---------- */
+  function cleanForSpeech(t){
+    return String(t || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/```[\s\S]*$/g, ' ')
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/^\s*\|.*\|\s*$/gm, '')
+      .replace(/^\s*[-*•]\s+/gm, '')
+      .replace(/^\s*#{1,6}\s*/gm, '')
+      .replace(/[*_`#>~|]/g, '')
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+  function splitSentences(text){
+    const raw = text.match(/[^.!?؟\n]+[.!?؟]*/g) || [text];
+    const out = []; let cur = '';
+    raw.forEach(p=>{
+      p = p.trim(); if(!p) return;
+      cur = cur ? cur + ' ' + p : p;
+      if(cur.length >= 25){ out.push(cur); cur = ''; }
+    });
+    if(cur){ if(out.length && cur.length < 25) out[out.length-1] += ' ' + cur; else out.push(cur); }
+    const fin = [];
+    out.forEach(s=>{
+      while(s.length > 200){
+        let cut = s.lastIndexOf(' ', 200); if(cut <= 0) cut = 200;
+        fin.push(s.slice(0, cut)); s = s.slice(cut).trim();
+      }
+      if(s) fin.push(s);
+    });
+    return fin;
+  }
+  function cancelSpeech(){
+    S.spk++;
+    window._ttsStop = true;
+    try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
+    try{ window._ttsAudio && window._ttsAudio.pause(); }catch(e){}
+  }
+  function speak(text, done){
+    const id = ++S.spk;
+    window._ttsStop = false;
+    const fin = ()=>{ if(id === S.spk && done) done(); };
+    const synth = window.speechSynthesis;
+    let voice = null;
+    try{
+      const voices = synth ? synth.getVoices() : [];
+      const chosen = localStorage.getItem(VOICE_NAME_KEY);
+      voice = voices.find(v=>v.name === chosen) || voices.find(v=>v.lang && v.lang.toLowerCase().startsWith('ar')) || null;
+    }catch(e){}
+    if(synth && voice){
+      const parts = splitSentences(text);
+      let i = 0;
+      const next = ()=>{
+        if(id !== S.spk) return;
+        if(i >= parts.length) return fin();
+        const u = new SpeechSynthesisUtterance(parts[i++]);
+        u.voice = voice; u.lang = voice.lang; u.rate = 1;
+        let went = false, to = null;
+        const nx = ()=>{ if(went) return; went = true; clearTimeout(to); next(); };
+        to = setTimeout(nx, Math.max(4000, u.text.length * 130) + 4000);
+        u.onend = nx; u.onerror = nx;
+        synth.speak(u);
+      };
+      try{ synth.cancel(); }catch(e){}
+      setTimeout(next, 60);
+      return;
+    }
+    const onStatus = (s)=>{
+      if(s === 'fail'){
+        const bt = $('vcBotText');
+        if(bt && bt.textContent.indexOf('⚠️') === -1) bt.textContent += '\n⚠️ لا يتوفر صوت عربي في جهازك. ثبّت اللغة العربية من إعدادات «تحويل النص إلى كلام».';
+      }
+    };
+    const gk = getGttsKey();
+    const p = gk ? speakViaGoogleCloudTTS(text, gk, onStatus) : speakViaGoogleTTS(text, onStatus);
+    Promise.resolve(p).then(fin).catch(fin);
+  }
+
+  /* ---------- دورة المحادثة ---------- */
+  function startListening(){
+    if(!voiceChatActive) return;
+    clearTimeout(S.silenceT);
+    S.turning = false; S.turnBase = ''; S.lastDisplay = '';
+    const tx = $('vcTranscript'); if(tx) tx.textContent = '';
+    setState('listening');
+    if(S.muted) return;
+    if(S.mode === 'sr') srStart();
+    else{
+      S.pre = []; S.buf = []; S.inSpeech = false; S.hot = 0; S.voiced = 0; S.calib = []; S.busy = false;
+    }
+  }
+
+  async function finalizeTurn(text){
+    text = (text || '').trim();
+    if(!text || !voiceChatActive || S.turning) return;
+    S.turning = true;
+    clearTimeout(S.silenceT);
+    stopRecognizer();
+    const tok = ++S.token;
+    setState('thinking');
+    const tx = $('vcTranscript'); if(tx) tx.textContent = text;
+    const bt = $('vcBotText'); if(bt) bt.textContent = '';
+    inputEl.value = text;
+    try{ await sendMessage(); }catch(e){}
+    if(!voiceChatActive || tok !== S.token) return;
+    if(S.state === 'thinking'){
+      setState('thinking', 'لم يصلني ردّ، حاول مرة أخرى');
+      setTimeout(()=>{ if(voiceChatActive && tok === S.token && S.state === 'thinking') startListening(); }, 1800);
+    }
+  }
+
+  function onReply(reply){
+    if(!voiceChatActive) return;
+    let spoken = cleanForSpeech(reply);
+    if(!spoken && /```/.test(reply || '')) spoken = 'تم.';
+    const bt = $('vcBotText'); if(bt) bt.textContent = spoken.slice(0, 500);
+    if(!spoken){ startListening(); return; }
+    setState('speaking');
+    const tok = S.token;
+    speak(spoken, ()=>{
+      if(!voiceChatActive || tok !== S.token || S.state !== 'speaking') return;
+      setTimeout(()=>{ if(voiceChatActive && tok === S.token && S.state === 'speaking') startListening(); }, 300);
+    });
+  }
+
+  function onOrbTap(){
+    if(!voiceChatActive) return;
+    if(S.state === 'speaking'){ cancelSpeech(); S.token++; startListening(); return; }
+    if(S.state === 'listening'){
+      if(S.muted){ toggleMute(); return; }
+      if(S.mode === 'sr'){ if(S.lastDisplay) finalizeTurn(S.lastDisplay); }
+      else if(S.inSpeech){ endUtterance(); }
+    }
+  }
+  function toggleMute(){
+    if(!voiceChatActive) return;
+    S.muted = !S.muted;
+    updateMuteUI();
+    if(S.muted){
+      clearTimeout(S.silenceT); stopRecognizer();
+      S.inSpeech = false; S.buf = []; S.pre = [];
+      if(S.state === 'listening') setState('listening');
+      else{ const ov = $('voiceChatOverlay'); if(ov) ov.classList.add('muted'); }
+    }else{
+      const ov = $('voiceChatOverlay'); if(ov) ov.classList.remove('muted');
+      if(S.state === 'listening') startListening();
+    }
+  }
+
+  /* ---------- التعرّف على الصوت (Web Speech) ---------- */
+  function stopRecognizer(){
+    if(S.rec){
+      const r = S.rec; S.rec = null;
+      r.onresult = r.onerror = r.onend = null;
+      try{ r.abort(); }catch(e){}
+    }
+  }
+  function srStart(){
+    if(!voiceChatActive || S.state !== 'listening' || S.muted || S.mode !== 'sr') return;
+    const R = SRClass();
+    if(!R){ switchToRec(); return; }
+    const now = Date.now();
+    S.srTimes = S.srTimes.filter(t => now - t < 6000); S.srTimes.push(now);
+    if(S.srTimes.length > 10){ S.srTimes = []; switchToRec('التعرّف على الصوت غير مستقر في هذا المتصفح، سأستعمل التسجيل بدلاً منه.'); return; }
+    stopRecognizer();
+    const r = new R(); S.rec = r;
+    r.lang = S.lang; r.continuous = false; r.interimResults = true; r.maxAlternatives = 1;
+    r.onresult = (e)=>{
+      if(S.state !== 'listening' || S.muted) return;
+      let sess = '';
+      for(let i = 0; i < e.results.length; i++) sess += e.results[i][0].transcript + ' ';
+      const display = ((S.turnBase ? S.turnBase + ' ' : '') + sess).replace(/\s+/g, ' ').trim();
+      S.lastDisplay = display;
+      const tx = $('vcTranscript'); if(tx) tx.textContent = display;
+      clearTimeout(S.silenceT);
+      if(display) S.silenceT = setTimeout(()=>finalizeTurn(S.lastDisplay), 1400);
+    };
+    r.onerror = (e)=>{
+      const er = e && e.error;
+      if(er === 'no-speech' || er === 'aborted') return;
+      if(er === 'language-not-supported' && S.lang !== 'ar-SA'){ S.lang = 'ar-SA'; return; }
+      if(er === 'network' || er === 'service-not-allowed' || er === 'language-not-supported'){
+        switchToRec('خدمة التعرّف على الصوت غير متاحة في هذا المتصفح، سأستعمل التسجيل بدلاً منها.'); return;
+      }
+      if(er === 'not-allowed'){ fatal('إذن المايكروفون مرفوض. فعّله من إعدادات المتصفح للموقع ثم أعد المحاولة.'); return; }
+      if(er === 'audio-capture'){ fatal('لم أجد مايكروفوناً يعمل. تأكد أن تطبيقاً آخر لا يستعمله.'); return; }
+    };
+    r.onend = ()=>{
+      if(S.rec !== r) return;
+      S.rec = null;
+      if(!voiceChatActive || S.state !== 'listening' || S.muted || S.mode !== 'sr') return;
+      S.turnBase = S.lastDisplay;
+      setTimeout(srStart, 200);
+    };
+    try{ r.start(); }catch(e){ setTimeout(srStart, 400); }
+  }
+
+  /* ---------- بديل: تسجيل + كشف الصمت + تفريغ عبر Gemini ---------- */
+  async function recInit(){
+    if(S.ctx) return true;
+    try{
+      S.stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1 } });
+      const AC = window.AudioContext || window.webkitAudioContext;
+      S.ctx = new AC();
+      if(S.ctx.state === 'suspended') await S.ctx.resume();
+      S.sampleRate = S.ctx.sampleRate;
+      S.src = S.ctx.createMediaStreamSource(S.stream);
+      S.proc = S.ctx.createScriptProcessor(2048, 1, 1);
+      S.sink = S.ctx.createGain(); S.sink.gain.value = 0;
+      S.src.connect(S.proc); S.proc.connect(S.sink); S.sink.connect(S.ctx.destination);
+      S.proc.onaudioprocess = onAudio;
+      return true;
+    }catch(e){
+      const n = e && e.name;
+      if(n === 'NotAllowedError' || n === 'SecurityError') fatal('إذن المايكروفون مرفوض. فعّله من إعدادات المتصفح للموقع ثم أعد المحاولة.');
+      else if(n === 'NotFoundError') fatal('لم أجد مايكروفوناً في الجهاز.');
+      else fatal('تعذّر الوصول إلى المايكروفون: ' + ((e && (e.message || e.name)) || ''));
+      return false;
+    }
+  }
+  function recTeardown(){
+    try{ if(S.proc) S.proc.onaudioprocess = null; }catch(e){}
+    try{ S.src && S.src.disconnect(); }catch(e){}
+    try{ S.proc && S.proc.disconnect(); }catch(e){}
+    try{ S.stream && S.stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+    try{ S.ctx && S.ctx.close(); }catch(e){}
+    S.stream = S.ctx = S.proc = S.src = S.sink = null;
+    S.pre = []; S.buf = []; S.inSpeech = false;
+  }
+  async function switchToRec(msg){
+    if(S.mode === 'rec') return;
+    stopRecognizer();
+    if(!getApiKey()){
+      fatal('هذا المتصفح لا يدعم التعرّف على الصوت. أضف مفتاح Gemini من الإعدادات لاستعمال التسجيل بدلاً منه، أو افتح التطبيق في Chrome.');
+      return;
+    }
+    S.mode = 'rec';
+    try{ sessionStorage.setItem('alioua_vc_mode', 'rec'); }catch(e){}
+    const bt = $('vcBotText'); if(bt && msg) bt.textContent = msg;
+    const ok = await recInit();
+    if(ok && voiceChatActive) startListening();
+  }
+  function onAudio(e){
+    if(!voiceChatActive || S.mode !== 'rec' || S.state !== 'listening' || S.muted || S.busy) return;
+    const d = e.inputBuffer.getChannelData(0);
+    const f = new Float32Array(d);
+    let sum = 0; for(let i = 0; i < f.length; i++) sum += f[i] * f[i];
+    const rms = Math.sqrt(sum / f.length);
+    const now = performance.now();
+    S.level = S.level * 0.6 + Math.min(1, rms * 10) * 0.4;
+    const ov = $('voiceChatOverlay'); if(ov) ov.style.setProperty('--lvl', S.level.toFixed(2));
+    if(S.calib.length < 12){
+      S.calib.push(rms);
+      if(S.calib.length === 12){
+        const s = S.calib.slice().sort((a,b)=>a-b);
+        S.thr = Math.max(0.012, s[6] * 2.8 + 0.005);
+      }
+      return;
+    }
+    if(!S.inSpeech){
+      S.pre.push(f); if(S.pre.length > 10) S.pre.shift();
+      if(rms > S.thr){
+        S.hot++;
+        if(S.hot >= 3){
+          S.inSpeech = true; S.buf = S.pre.slice(); S.pre = [];
+          S.speechStart = now; S.lastVoice = now; S.voiced = S.hot;
+        }
+      }else S.hot = 0;
+    }else{
+      S.buf.push(f);
+      if(rms > S.thr){ S.lastVoice = now; S.voiced++; }
+      if(now - S.lastVoice > 1200 || now - S.speechStart > 30000) endUtterance();
+    }
+  }
+  function encodeWav(chunks, srcRate){
+    let n = 0; chunks.forEach(c => n += c.length);
+    const all = new Float32Array(n); let o = 0; chunks.forEach(c => { all.set(c, o); o += c.length; });
+    const target = 16000, ratio = srcRate / target, outLen = Math.max(1, Math.floor(n / ratio));
+    const pcm = new Int16Array(outLen);
+    for(let i = 0; i < outLen; i++){
+      const a = Math.floor(i * ratio), b = Math.min(n, Math.floor((i + 1) * ratio));
+      let s = 0, c = 0; for(let j = a; j < b; j++){ s += all[j]; c++; }
+      let v = c ? s / c : 0; v = Math.max(-1, Math.min(1, v));
+      pcm[i] = v < 0 ? v * 0x8000 : v * 0x7FFF;
+    }
+    const buffer = new ArrayBuffer(44 + pcm.length * 2); const dv = new DataView(buffer);
+    const w = (off, str)=>{ for(let i = 0; i < str.length; i++) dv.setUint8(off + i, str.charCodeAt(i)); };
+    w(0,'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); w(8,'WAVE'); w(12,'fmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, target, true); dv.setUint32(28, target * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+    w(36,'data'); dv.setUint32(40, pcm.length * 2, true);
+    for(let i = 0; i < pcm.length; i++) dv.setInt16(44 + i * 2, pcm[i], true);
+    return new Blob([buffer], { type:'audio/wav' });
+  }
+  function blobToB64(blob){
+    return new Promise((res, rej)=>{
+      const fr = new FileReader();
+      fr.onload = ()=> res(String(fr.result).split(',')[1] || '');
+      fr.onerror = ()=> rej(new Error('READ'));
+      fr.readAsDataURL(blob);
+    });
+  }
+  async function transcribe(blob){
+    const key = getApiKey(); if(!key) throw new Error('NOKEY');
+    const b64 = await blobToB64(blob);
+    const body = JSON.stringify({
+      contents:[{ role:'user', parts:[
+        { inlineData:{ mimeType:'audio/wav', data:b64 } },
+        { text:'هذا تسجيل صوتي لشخص يتكلم بالعربية أو الدارجة المغربية (وقد يخلط بعض الكلمات الفرنسية). اكتب ما قاله حرفياً فقط، بدون أي شرح أو إضافة أو علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY' }
+      ] }],
+      generationConfig:{ temperature:0, maxOutputTokens:1024 }
+    });
+    const call = (m)=> fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, { method:'POST', headers:{ 'Content-Type':'application/json' }, body });
+    let res = await call(MODEL);
+    if(res.status === 404 && MODEL !== FALLBACK_MODEL) res = await call(FALLBACK_MODEL);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+    let t = parts.map(p => p.text || '').join('').trim();
+    if(!t || /^EMPTY\b/i.test(t)) return '';
+    return t.replace(/^["«“]+|["»”]+$/g, '').trim();
+  }
+  function endUtterance(){
+    const buf = S.buf, voiced = S.voiced;
+    S.buf = []; S.pre = []; S.inSpeech = false; S.hot = 0; S.voiced = 0;
+    if(voiced < 5) return;
+    S.busy = true;
+    setState('thinking', 'أفهم كلامك…');
+    const tok = ++S.token;
+    let blob;
+    try{ blob = encodeWav(buf, S.sampleRate); }catch(e){ S.busy = false; startListening(); return; }
+    transcribe(blob).then(text=>{
+      S.busy = false;
+      if(!voiceChatActive || tok !== S.token) return;
+      if(!text){ startListening(); return; }
+      finalizeTurn(text);
+    }).catch(err=>{
+      S.busy = false;
+      if(!voiceChatActive || tok !== S.token) return;
+      const m = String((err && err.message) || '');
+      const msg = m === 'NOKEY' ? 'مفتاح Gemini غير موجود.' : (/429/.test(m) ? 'تجاوزت حدّ الاستعمال المجاني لـ Gemini، انتظر قليلاً.' : 'تعذّر فهم الصوت (' + m + '). تأكد من الإنترنت.');
+      setState('thinking', msg);
+      setTimeout(()=>{ if(voiceChatActive && tok === S.token) startListening(); }, 2200);
+    });
+  }
+
+  /* ---------- الدخول والخروج ---------- */
+  async function requestWake(){
+    try{ if('wakeLock' in navigator && document.visibilityState === 'visible') S.wake = await navigator.wakeLock.request('screen'); }catch(e){}
+  }
+  function releaseWake(){ try{ S.wake && S.wake.release(); }catch(e){} S.wake = null; }
+
+  async function enter(){
+    if(voiceChatActive) return;
+    if(!window.isSecureContext){ alert('المحادثة الصوتية تحتاج رابط https.'); return; }
+    if(!getApiKey() && !getOpenRouterKey()){ openModal(true); return; }
+    let brave = false;
+    try{ brave = !!(navigator.brave && await navigator.brave.isBrave()); }catch(e){}
+    S.mode = (!SRClass() || brave || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
+    if(S.mode === 'rec' && !getApiKey()){
+      alert('في هذا المتصفح تحتاج المحادثة الصوتية إلى مفتاح Gemini (لتفريغ الصوت). أضفه من الإعدادات، أو افتح التطبيق في Chrome.');
+      return;
+    }
+    voiceChatActive = true; vcSessionId++;
+    S.prevVoice = voiceReplyOn; voiceReplyOn = true; updateVoiceToggleUI();
+    S.muted = false; S.turning = false; S.srTimes = []; S.lang = 'ar-MA'; updateMuteUI();
+    micBtn.disabled = true;
+    $('voiceChatOverlay').classList.add('active');
+    $('vcTranscript').textContent = ''; $('vcBotText').textContent = '';
+    try{ inputEl.blur(); }catch(e){}
+    try{ const u = new SpeechSynthesisUtterance(' '); u.volume = 0; window.speechSynthesis.speak(u); }catch(e){}
+    requestWake();
+    setState('idle');
+    if(S.mode === 'rec'){ const ok = await recInit(); if(!ok) return; }
+    if(voiceChatActive) startListening();
+  }
+  function exit(){
+    const wasActive = voiceChatActive;
+    voiceChatActive = false; vcSessionId++; S.token++; S.turning = false; S.busy = false;
+    clearTimeout(S.silenceT);
+    cancelSpeech(); stopRecognizer(); recTeardown(); releaseWake();
+    if(wasActive){ voiceReplyOn = S.prevVoice; updateVoiceToggleUI(); }
+    try{ micBtn.disabled = false; }catch(e){}
+    const ov = $('voiceChatOverlay');
+    if(ov){ ov.classList.remove('active','listening','speaking','thinking','idle','muted'); }
+    S.state = 'idle';
+    if(!voiceReplyOn){ try{ window.speechSynthesis.cancel(); }catch(e){} }
+  }
+
+  document.addEventListener('visibilitychange', ()=>{
+    if(!voiceChatActive) return;
+    if(document.visibilityState === 'hidden'){
+      clearTimeout(S.silenceT); stopRecognizer();
+      S.inSpeech = false; S.buf = []; S.pre = [];
+    }else{
+      requestWake();
+      try{ if(S.ctx && S.ctx.state === 'suspended') S.ctx.resume(); }catch(e){}
+      if(S.state === 'listening') startListening();
+    }
+  });
+  $('voiceCallBtn') && $('voiceCallBtn').addEventListener('click', enter);
+  $('vcHangup') && $('vcHangup').addEventListener('click', exit);
+  $('vcCloseTop') && $('vcCloseTop').addEventListener('click', exit);
+  $('vcOrb') && $('vcOrb').addEventListener('click', onOrbTap);
+  $('vcMute') && $('vcMute').addEventListener('click', toggleMute);
+
+  return { enter, exit, onReply, setState, toggleMute, onOrbTap, _S:S, _encodeWav:encodeWav, _cleanForSpeech:cleanForSpeech, _splitSentences:splitSentences };
+})();
+
 updateVoiceToggleUI();
 
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -3282,6 +3662,7 @@ async function speakViaGoogleCloudTTS(text, apiKey, onStatus){
     remaining = remaining.slice(cut).trim();
   }
   for(const chunk of chunks){
+    if(window._ttsStop) return;
     try{
       const url = 'https://api.voicerss.org/?key=' + apiKey + '&hl=ar-sa&src=' + encodeURIComponent(chunk) + '&f=44khz_16bit_stereo';
       const res = await fetch(url);
@@ -3294,7 +3675,8 @@ async function speakViaGoogleCloudTTS(text, apiKey, onStatus){
       const blob = await res.blob();
       const objUrl = URL.createObjectURL(blob);
       await new Promise((resolve)=>{
-        const audio = new Audio(objUrl);
+        const audio = new Audio(objUrl); window._ttsAudio = audio;
+        audio.addEventListener('pause', ()=>{ resolve(); });
         audio.addEventListener('playing', ()=>{ if(onStatus) onStatus('ok'); });
         audio.addEventListener('ended', ()=>{ URL.revokeObjectURL(objUrl); resolve(); });
         audio.addEventListener('error', ()=>{ URL.revokeObjectURL(objUrl); resolve(); });
@@ -3323,13 +3705,14 @@ function speakViaGoogleTTS(text, onStatus){
       return `https://translate.google.com/translate_tts?ie=UTF-8&tl=ar&client=${client}&q=` + encodeURIComponent(chunk);
     }
     function playNext(){
-      if(i >= chunks.length){ resolve(); return; }
+      if(window._ttsStop || i >= chunks.length){ resolve(); return; }
       const chunk = chunks[i]; i++;
       tryPlay(chunk, 'tw-ob', false);
     }
     function tryPlay(chunk, client, isRetry){
-      const audio = new Audio(buildUrl(chunk, client));
-      let settled = false;
+      const audio = new Audio(buildUrl(chunk, client)); window._ttsAudio = audio;
+      audio.addEventListener('pause', ()=>{ if(window._ttsStop && !settledFlag.v){ settledFlag.v=true; resolve(); } });
+      let settled = false; const settledFlag = {v:false};
       audio.addEventListener('playing', ()=>{ if(onStatus) onStatus('ok'); });
       audio.addEventListener('ended', ()=>{ if(settled) return; settled=true; playNext(); });
       audio.addEventListener('error', ()=>{
@@ -6416,8 +6799,19 @@ function buildShareBtn(blob){
 /* ---------- بدء التشغيل ---------- */
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+    navigator.serviceWorker.register('service-worker.js',{updateViaCache:'none'}).then(r=>{ try{ r.update(); }catch(e){} }).catch(()=>{});
   });
+  // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
+  try{
+    const BUILD='fix-2026-11-05';
+    if(localStorage.getItem('alioua_build') !== BUILD){
+      localStorage.setItem('alioua_build', BUILD);
+      Promise.all([
+        navigator.serviceWorker.getRegistrations().then(rs=>Promise.all(rs.map(r=>r.unregister()))),
+        (window.caches ? caches.keys().then(ks=>Promise.all(ks.map(k=>caches.delete(k)))) : Promise.resolve())
+      ]).then(()=>location.reload()).catch(()=>{});
+    }
+  }catch(e){}
 }
 
 // كل خطوة معزولة بمفردها: خطأ فوحدة منهم (مثلاً بسبب مكتبة خارجية ماتحملاتش) ما خصوش يوقف اللي بعدها
