@@ -3141,18 +3141,6 @@ if(SpeechRecognitionAPI){
     errorAlreadyShown = false;
     micBtn.classList.add('recording');
   };
-  if(SpeechRecognitionAPI){
-  recognition = new SpeechRecognitionAPI();
-  recognition.lang = 'ar-SA';
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-
-  recognition.onstart = ()=>{
-    isRecording = true;
-    gotResult = false;
-    errorAlreadyShown = false;
-    micBtn.classList.add('recording');
-  };
   recognition.onend = ()=>{
     isRecording = false;
     micBtn.classList.remove('recording');
@@ -3216,50 +3204,7 @@ if(SpeechRecognitionAPI){
   };
 
   micBtn.addEventListener('click', async ()=>{
-    if(typeof voiceChatActive !== 'undefined' && voiceChatActive) return;
-    
-    if(!window.isSecureContext){
-      messages.push({role:'model', text:'المايكروفون محتاج رابط آمن (https) حتى يشتغل.', time:Date.now()});
-      renderMessages();
-      saveHistory();
-      return;
-    }
-    if(isRecording){ recognition.stop(); return; }
-
-    if(navigator.permissions && navigator.permissions.query){
-      try{
-        const status = await navigator.permissions.query({name:'microphone'});
-        if(status.state === 'denied'){
-          messages.push({role:'model', text:'🎙️ إذن المايكروفون محظور فهاد المتصفح. باش تصلحه دوسي على أيقونة القفل 🔒 وسمحي للمايكروفون.', time:Date.now()});
-          renderMessages();
-          saveHistory();
-          return;
-        }
-      }catch(e){ }
-    }
-
-    try{
-      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-      stream.getTracks().forEach(t=>t.stop());
-    }catch(permErr){
-      let msg = 'ما قدرت أوصل للمايكروفون.';
-      if(permErr.name === 'NotAllowedError' || permErr.name === 'SecurityError'){
-        msg = '🎙️ رفضتي إذن المايكروفون. دوسي على أيقونة القفل 🔒 لي جنب رابط الموقع وسمحي للمايكروفون.';
-      }
-      messages.push({role:'model', text: msg, time:Date.now()});
-      renderMessages();
-      saveHistory();
-      return;
-    }
-    try{ recognition.start(); }
-    catch(e){ }
-  });
-}else{
-  micBtn.disabled = true;
-  micBtn.title = 'المتصفح ما بيدعم التحدث الصوتي';
-  }
-
-  micBtn.addEventListener('click', async ()=>{
+    if(voiceChatActive) return;
     if(!window.isSecureContext){
       messages.push({role:'model', text:'المايكروفون محتاج رابط آمن (https) حتى يشتغل. التطبيق حاليًا مفتوح كملف محلي. استضفه على رابط مجاني (متل Netlify Drop) وجرب مرة ثانية.', time:Date.now()});
       renderMessages();
@@ -3309,109 +3254,6 @@ if(SpeechRecognitionAPI){
   micBtn.title = 'المتصفح ما بيدعم التحدث الصوتي';
 }
 
-/* ===== Voice Chat Mode ===== */
-let voiceChatActive = false;
-let vcShouldBeListening = false;
-let vcFinalTranscript = '';
-let voiceChatSilenceTimer = null;
-let vcSessionId = 0;
-let vcWakeLock = null;
-
-function setVCStatus(kind, text){
-  const overlay = document.getElementById('voiceChatOverlay');
-  if(!overlay) return;
-  overlay.classList.remove('listening','speaking','thinking');
-  if(kind) overlay.classList.add(kind);
-  const st = document.getElementById('vcStatus'); if(st) st.textContent = text || '';
-  const icon = document.getElementById('vcIcon');
-  if(icon) icon.textContent = kind==='listening'?'🎙️':kind==='speaking'?'🔊':kind==='thinking'?'💭':'🎧';
-}
-async function requestVCWakeLock(){ try{ if('wakeLock' in navigator && document.visibilityState === 'visible'){ vcWakeLock = await navigator.wakeLock.request('screen'); } }catch(e){} }
-function releaseVCWakeLock(){ try{ if(vcWakeLock){ vcWakeLock.release(); vcWakeLock = null; } }catch(e){} }
-
-function enterVoiceChat(){
-  if(!SpeechRecognitionAPI){ alert('المتصفح ديالك ما كيدعمش التعرف على الصوت.'); return; }
-  if(!window.isSecureContext){ alert('المكالمة محتاجة https.'); return; }
-  if(!getApiKey() && !getOpenRouterKey()){ openModal(true); return; }
-  vcSessionId++;
-  voiceChatActive = true;
-  voiceReplyOn = true;
-  updateVoiceToggleUI();
-  micBtn.disabled = true;
-  document.getElementById('voiceChatOverlay').classList.add('active');
-  requestVCWakeLock();
-  setVCStatus('thinking', 'جاري الاتصال بيونس...');
-  document.getElementById('vcTranscript').textContent = '';
-  document.getElementById('vcBotText').textContent = '';
-  try{ inputEl.blur(); }catch(e){}
-  setTimeout(()=>{
-    speakText('السلام عليكم، أنا يونس. كيف نقدر نعاونك اليوم؟', ()=>{ if(voiceChatActive) startVCListening(); });
-  }, 400);
-}
-
-function exitVoiceChat(){
-  voiceChatActive = false;
-  vcSessionId++;
-  vcShouldBeListening = false;
-  clearTimeout(voiceChatSilenceTimer);
-  try{ recognition.stop(); }catch(e){}
-  try{ recognition.abort(); }catch(e){}
-  try{ window.speechSynthesis.cancel(); }catch(e){}
-  micBtn.disabled = false;
-  document.getElementById('voiceChatOverlay').classList.remove('active');
-  releaseVCWakeLock();
-}
-
-function startVCListening(){
-  if(!voiceChatActive) return;
-  vcFinalTranscript = '';
-  inputEl.value = '';
-  vcShouldBeListening = true;
-  setVCStatus('listening', '🎙️ نسمع فيك...');
-  const txEl = document.getElementById('vcTranscript'); if(txEl) txEl.textContent = '';
-  const botEl = document.getElementById('vcBotText'); if(botEl) botEl.textContent = '';
-  try{
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'ar-SA';
-    recognition.start();
-  }catch(e){}
-}
-
-function stopVCListening(){
-  vcShouldBeListening = false;
-  clearTimeout(voiceChatSilenceTimer);
-  try{ recognition.stop(); }catch(e){}
-}
-
-function finalizeVCMessage(){
-  if(!voiceChatActive) return;
-  clearTimeout(voiceChatSilenceTimer);
-  const text = inputEl.value.trim();
-  if(!text){ setVCStatus('idle','🎧 نسمع...'); startVCListening(); return; }
-  stopVCListening();
-  setVCStatus('thinking','💭 كنفكر...');
-  setTimeout(()=>{ if(voiceChatActive) sendMessage(); }, 250);
-}
-
-function voiceChatOnSpeakEnd(sessionAtStart){
-  if(!voiceChatActive) return;
-  if(sessionAtStart && sessionAtStart !== vcSessionId) return;
-  setTimeout(()=>{ if(voiceChatActive) startVCListening(); }, 250);
-}
-
-document.getElementById('voiceCallBtn')?.addEventListener('click', enterVoiceChat);
-document.getElementById('vcHangup')?.addEventListener('click', exitVoiceChat);
-document.getElementById('vcCloseTop')?.addEventListener('click', exitVoiceChat);
-
-document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState === 'hidden' && voiceChatActive){
-    try{ recognition.stop(); }catch(e){}
-    try{ window.speechSynthesis.cancel(); }catch(e){}
-  }else if(document.visibilityState === 'visible' && voiceChatActive && vcShouldBeListening){
-    try{ recognition.start(); }catch(e){}
-  }
-});
   function updateVoiceToggleUI(){
   voiceToggleBtn.classList.toggle('active', voiceReplyOn);
   voiceToggleBtn.title = voiceReplyOn ? 'القراءة الصوتية: مفعّلة' : 'القراءة الصوتية: متوقفة';
@@ -3504,19 +3346,6 @@ function speakViaGoogleTTS(text, onStatus){
     playNext();
   });
 }
-    audio.play().catch(()=>{
-      if(!isRetry) tryPlay(chunk, 'gtx', true);
-      else{ if(onStatus) onStatus('fail'); playNext(); }
-    });
-  }
-  function playNext(){
-    if(i >= chunks.length) return;
-    const chunk = chunks[i];
-    i++;
-    tryPlay(chunk, 'tw-ob', false);
-  }
-  playNext();
-
 
   function speakText(text, onDone){
   return new Promise((resolve)=>{
