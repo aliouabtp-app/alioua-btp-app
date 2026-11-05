@@ -110,32 +110,149 @@ body{
   position:relative;
 }
 
-/* ---------- تصميم متجاوب للحاسوب / الشاشات العريضة ---------- */
-@media (min-width: 1300px){
-  body{
-    overflow:auto;
-    background:linear-gradient(160deg, #0f2a3d, #1a4a63);
-    display:flex;
-    justify-content:center;
-    align-items:flex-start;
-    min-height:100vh;
-    padding:24px 0;
-  }
+/* ---------- واجهة الحاسوب: مساحة عريضة + شريط جانبي (الهاتف يبقى كما هو) ---------- */
+@media (min-width: 1024px){
+  body{ overflow:hidden; background:var(--stone); display:block; padding:0; min-height:0; }
   #app{
-    max-width:640px;
-    height:calc(100vh - 48px);
-    height:calc(100dvh - 48px);
-    min-height:640px;
-    border-radius:20px;
-    box-shadow:0 20px 60px rgba(0,0,0,.35);
-    overflow:hidden;
+    max-width:none; width:100%; margin:0;
+    height:100vh; height:100dvh; min-height:0;
+    display:grid;
+    grid-template-columns:230px minmax(0, 1fr);
+    grid-template-rows:auto minmax(0, 1fr);
+    border-radius:0; box-shadow:none; overflow:hidden;
   }
-  .modal{ max-width:640px; }
-  .summary-cards{ grid-template-columns:repeat(3, 1fr); }
+  header{ grid-column:1 / -1; grid-row:1; padding:14px 28px 22px; }
+  #bottomNav{
+    grid-column:1; grid-row:2;
+    flex-direction:column; justify-content:flex-start; gap:6px;
+    padding:18px 12px; border-top:none; border-left:1px solid var(--line);
+    overflow-y:auto;
+  }
+  .nav-btn{ flex:none; flex-direction:row; justify-content:flex-start; gap:12px; padding:13px 16px; border-radius:12px; transition:background .15s; }
+  .nav-btn svg{ width:22px; height:22px; }
+  .nav-btn span{ font-size:15px; }
+  .nav-btn:hover{ background:var(--stone); }
+  .nav-btn.active{ background:#E3EDF4; }
+  .view{ grid-column:2; grid-row:2; min-width:0; min-height:0; }
+
+  /* المحادثة: عمود مركزي مريح */
+  #chat{ padding:26px max(28px, calc((100% - 940px) / 2)) 12px; gap:14px; }
+  .msg{ max-width:min(78%, 760px); font-size:15.5px; }
+  #inputbar{ padding:14px max(24px, calc((100% - 940px) / 2)) 18px; }
+  #inputbar textarea{ max-height:170px; font-size:15.5px; }
+  .chip-grid{ grid-template-columns:repeat(3, 1fr); }
+
+  /* التبويبات */
+  .tab-header{ padding:18px 28px 12px; }
+  .tab-header h2{ font-size:22px; }
+  .tab-scroll{ padding:22px 28px 40px; }
+  .sub-nav{ flex-wrap:wrap; }
+  .sub-nav-btn{ padding:9px 18px; font-size:13px; }
+  .summary-cards{ gap:14px; }
+  .card-form{ margin-bottom:16px; }
+  .modal-backdrop{ align-items:center; }
+  .modal{ border-radius:22px; max-width:640px; max-height:90vh; padding-bottom:22px; }
+
+  /* القوائم كبطاقات متجاورة */
+  #txList,
+  #clientList,
+  #supplierList,
+  #workersList,
+  #projectsList,
+  #caisseList,
+  #apptList{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:10px; align-content:start;
+  }
+  #txList > *,
+  #clientList > *,
+  #supplierList > *,
+  #workersList > *,
+  #projectsList > *,
+  #caisseList > *,
+  #apptList > *{ margin-bottom:0; }
+  #txList > .empty-hint,
+  #clientList > .empty-hint,
+  #supplierList > .empty-hint,
+  #workersList > .empty-hint,
+  #projectsList > .empty-hint,
+  #caisseList > .empty-hint,
+  #apptList > .empty-hint{ grid-column:1 / -1; }
+
+  /* أعمدة: النماذج يمين، القوائم والنتائج يسار */
+  #subExpenses.active, #subInvoices.active, #subClients.active, #subSuppliers.active,
+  #subWorkers.active, #subProjects.active, #subCaisse.active{
+    display:grid; grid-template-columns:minmax(340px, 430px) minmax(0, 1fr);
+    column-gap:26px; row-gap:0; align-items:start;
+  }
+  #subExpenses.active{ grid-template-rows:auto auto auto auto 1fr; }
+  #subExpenses > .summary-cards{ grid-column:1 / -1; grid-row:1; }
+  #subExpenses > .card-form{ grid-column:1; grid-row:2 / -1; }
+  #subExpenses > #accountingChartWrap{ grid-column:2; grid-row:2; }
+  #subExpenses > #exportReportBtn{ grid-column:2; grid-row:3; justify-self:start; margin-bottom:12px; }
+  #subExpenses > #txList{ grid-column:2; grid-row:4; }
+
+  #subInvoices.active{ grid-template-rows:auto auto 1fr; }
+  #subInvoices > .card-form:nth-child(1){ grid-column:1; grid-row:1; }
+  #subInvoices > .card-form:nth-child(2){ grid-column:1; grid-row:2; }
+  #subInvoices > .card-form:nth-child(3){ grid-column:2; grid-row:1 / -1; }
+
+  #subClients.active, #subSuppliers.active, #subWorkers.active, #subProjects.active{ grid-template-rows:auto 1fr; }
+  #subClients > .card-form{ grid-column:1; grid-row:1; }
+  #subClients > #clientList{ grid-column:2; grid-row:1 / -1; }
+  #subSuppliers > .card-form{ grid-column:1; grid-row:1; }
+  #subSuppliers > #supplierList{ grid-column:2; grid-row:1 / -1; }
+  #subWorkers > .card-form{ grid-column:1; grid-row:1; }
+  #subWorkers > #workersList{ grid-column:2; grid-row:1 / -1; }
+  #subProjects > .card-form{ grid-column:1; grid-row:1; }
+  #subProjects > #projectsList{ grid-column:2; grid-row:1 / -1; }
+
+  #subCaisse.active{ grid-template-rows:auto auto auto auto 1fr; }
+  #subCaisse > :nth-child(1){ grid-column:1 / -1; grid-row:1; }
+  #subCaisse > :nth-child(2){ grid-column:1; grid-row:2; }
+  #subCaisse > :nth-child(3){ grid-column:1; grid-row:3; }
+  #subCaisse > :nth-child(4){ grid-column:1; grid-row:4; }
+  #subCaisse > :nth-child(5){ grid-column:2; grid-row:2 / -1; }
+  #subCaisse > :nth-child(6){ grid-column:1; grid-row:5; }
+
+  #viewAppt .tab-scroll{
+    display:grid; grid-template-columns:minmax(340px, 430px) minmax(0, 1fr); grid-template-rows:auto auto auto 1fr;
+    column-gap:26px; align-content:start; align-items:start;
+  }
+  #viewAppt .tab-scroll > :nth-child(1){ grid-column:1; grid-row:1; }
+  #viewAppt .tab-scroll > :nth-child(2){ grid-column:1; grid-row:2; }
+  #viewAppt .tab-scroll > :nth-child(3){ grid-column:1; grid-row:3; }
+  #viewAppt .tab-scroll > :nth-child(4){ grid-column:2; grid-row:1 / -1; }
+
+  #viewMarketing .tab-scroll{
+    display:grid; grid-template-columns:1fr 1fr; grid-template-rows:auto 1fr;
+    column-gap:26px; align-content:start; align-items:start;
+  }
+  #viewMarketing .tab-scroll > :nth-child(1){ grid-column:1; grid-row:1; }
+  #viewMarketing .tab-scroll > :nth-child(2){ grid-column:1; grid-row:2; }
+  #viewMarketing .tab-scroll > :nth-child(3){ grid-column:2; grid-row:1 / -1; }
 }
-@media (min-width: 1500px){
-  #app{ max-width:760px; }
+
+/* ---------- تنبيهات المواعيد داخل التطبيق + أزرار التقويم ---------- */
+#apptToastWrap{
+  position:fixed; top:calc(env(safe-area-inset-top) + 12px); left:50%; transform:translateX(-50%);
+  z-index:300; display:flex; flex-direction:column; gap:8px; width:min(92vw, 440px); pointer-events:none;
 }
+.appt-toast{
+  pointer-events:auto; background:#123F5C; color:#fff; border-radius:14px; padding:12px 16px;
+  font-size:14px; line-height:1.7; white-space:pre-line; box-shadow:0 10px 30px rgba(0,0,0,.35);
+  border-right:5px solid var(--gold); cursor:pointer; animation:pop .2s ease;
+}
+.appt-cal-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.appt-cal-btn{
+  font-family:inherit; font-size:12px; font-weight:700; padding:7px 12px; border-radius:10px; cursor:pointer;
+  border:1.5px solid var(--line); background:var(--stone); color:var(--navy-deep);
+}
+.appt-cal-note{ font-size:11.5px; margin-top:6px; line-height:1.6; color:var(--ink-soft); }
+.appt-item .appt-cal, .appt-item .appt-gcal{
+  background:none; border:none; color:var(--ink-soft); font-size:15px; cursor:pointer; padding:2px 4px;
+}
+.appt-tools-note{ font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0; }
+#apptNotifStatus{ font-size:12.5px; font-weight:700; margin:0; line-height:1.7; }
 
 /* ---------- Header ---------- */
 header{
@@ -1126,7 +1243,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   <div id="viewAppt" class="view">
     <div class="tab-header">
       <h2>📅 المواعيد</h2>
-      <p>تذكيراتك تشتغل وقت ما التطبيق مفتوح بالمتصفح.</p>
+      <p>تذكيرات التطبيق تعمل والتطبيق مفتوح. وللتنبيه وهو مغلق أضف الموعد لتقويم هاتفك.</p>
     </div>
     <div class="tab-scroll">
       <div class="card-form">
@@ -1134,6 +1251,15 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <input type="datetime-local" id="apptDateTime">
         <textarea id="apptNotes" rows="2" dir="auto" placeholder="ملاحظات (اختياري)"></textarea>
         <button class="btn-primary" id="apptAddBtn">➕ إضافة الموعد</button>
+      </div>
+      <div class="card-form" id="apptToolsCard">
+        <p class="mini-title" style="margin:0;">🔔 الإشعارات والتقويم</p>
+        <p id="apptNotifStatus"></p>
+        <button class="btn-primary" id="apptNotifBtn" type="button">🔔 تفعيل الإشعارات</button>
+        <button class="btn-ghost" id="apptNotifTestBtn" type="button">🧪 تجربة إشعار الآن</button>
+        <button class="btn-ghost" id="apptIcsAllBtn" type="button">📥 تصدير كل المواعيد لتقويم الهاتف (.ics)</button>
+        <button class="btn-ghost" id="apptGcalSyncBtn" type="button" style="display:none;">🔄 مزامنة المواعيد مع Google Calendar</button>
+        <p class="appt-tools-note">ملف .ics يضيف المواعيد لتقويم الهاتف أو الحاسوب مع تنبيه قبل 30 و5 دقائق، ويعمل حتى والتطبيق مغلق.</p>
       </div>
       <button class="btn-ghost" id="apptDedupeBtn" style="width:100%; margin-bottom:10px;">🧹 حذف المواعيد المكررة</button>
       <div id="apptList"></div>
@@ -1923,8 +2049,10 @@ function initGcalTokenClient(clientId){
       if(resp && resp.access_token){
         saveGcalToken(resp.access_token, resp.expires_in);
         updateGcalStatusUI();
+        try{ gcalSyncPending(false).then(r=>{ if(r && r.ok) apptToast('📅 تمت مزامنة ' + r.ok + ' موعد مع Google Calendar ✅'); }); }catch(e){}
       }
-    }
+    },
+    error_callback: (err)=>{ try{ apptToast('⚠️ تعذّر ربط Google: ' + ((err && (err.type || err.message)) || 'ألغيت النافذة أو حُجبت')); }catch(e){} }
   });
 }
 
@@ -1947,53 +2075,62 @@ document.getElementById('gcalConnectBtn')?.addEventListener('click', ()=>{
   gcalTokenClient.requestAccessToken({prompt: 'consent'});
 });
 
-async function ensureGcalToken(){
+async function ensureGcalToken(interactive){
   if(gcalAccessToken && gcalTokenExpiry > Date.now()) return gcalAccessToken;
-  // إذا فشلت آخر محاولة، نتفاداو نعاودو نحاولو قبل ما يعدي ساعة، باش ما نقاطعوش المستخدم بصفحة خطأ Google بزاف
-  const lastFail = parseInt(localStorage.getItem('alioua_btp_gcal_last_fail') || '0', 10);
-  if(Date.now() - lastFail < 60*60*1000) return null;
+  if(!interactive) return null; // التجديد يحتاج نقرة من المستخدم، وإلا يحجب المتصفح النافذة
   const clientId = getGcalClientId();
   if(!clientId || !window.google || !google.accounts || !google.accounts.oauth2) return null;
   if(!gcalTokenClient) gcalTokenClient = initGcalTokenClient(clientId);
   if(!gcalTokenClient) return null;
   return new Promise((resolve)=>{
     let settled = false;
+    const done = (v)=>{ if(!settled){ settled = true; resolve(v); } };
     gcalTokenClient.callback = (resp)=>{
-      settled = true;
       if(resp && resp.access_token){
         saveGcalToken(resp.access_token, resp.expires_in);
         updateGcalStatusUI();
-        localStorage.removeItem('alioua_btp_gcal_last_fail');
-        resolve(resp.access_token);
-      }else{
-        safeSetItem('alioua_btp_gcal_last_fail', String(Date.now()));
-        resolve(null);
-      }
+        done(resp.access_token);
+      }else done(null);
     };
-    gcalTokenClient.error_callback = ()=>{
-      settled = true;
-      safeSetItem('alioua_btp_gcal_last_fail', String(Date.now()));
-      resolve(null);
-    };
-    try{ gcalTokenClient.requestAccessToken({prompt: ''}); }
-    catch(e){ safeSetItem('alioua_btp_gcal_last_fail', String(Date.now())); resolve(null); }
-    // شبكة أمان: إذا ماوصلاش رد فـ8 ثواني، ما نبقاوش معلقين
-    setTimeout(()=>{ if(!settled) resolve(null); }, 8000);
+    gcalTokenClient.error_callback = ()=> done(null);
+    try{ gcalTokenClient.requestAccessToken({prompt: ''}); }catch(e){ done(null); }
+    setTimeout(()=> done(null), 120000);
   });
 }
 
-async function syncApptToGoogleCalendar(appt){
-  const clientId = getGcalClientId();
-  if(!clientId) return null; // ما ضافش الربط، تخطي بصمت بلا ما يعطل الموعد المحلي
-  const token = await ensureGcalToken();
-  if(!token) return null;
+function markApptGcalId(apptId, gid){
+  try{
+    const list = loadAppts();
+    const it = list.find(a=>a.id === apptId);
+    if(it){ it.gcalId = gid; saveAppts(list); }
+  }catch(e){}
+}
+
+function gcalReasonText(r){
+  if(!r) return 'سبب غير معروف';
+  if(r.reason === 'noclient') return 'لم تضف Client ID في الإعدادات.';
+  if(r.reason === 'auth') return 'انتهت صلاحية ربط Google (تدوم ساعة). اضغط «مزامنة» لتجديدها.';
+  if(r.reason === 'network') return 'لا يوجد اتصال بالإنترنت.';
+  if(r.reason === 'http'){
+    if(r.status === 403) return 'Google رفض الطلب (403). فعّل Google Calendar API في مشروعك وأضف حسابك كمستخدم تجريبي. ' + (r.message || '');
+    return 'خطأ من Google (' + r.status + '): ' + (r.message || '');
+  }
+  return String(r.reason || '');
+}
+
+async function syncApptToGoogleCalendar(appt, interactive){
+  if(!getGcalClientId()) return {ok:false, reason:'noclient'};
+  if(appt.gcalId) return {ok:true, id:appt.gcalId};
+  const token = await ensureGcalToken(!!interactive);
+  if(!token) return {ok:false, reason:'auth'};
   const startDt = new Date(appt.dt);
   const endDt = new Date(startDt.getTime() + 60*60000);
+  const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || undefined;
   const body = {
     summary: appt.title,
     description: appt.notes || '',
-    start: {dateTime: startDt.toISOString()},
-    end: {dateTime: endDt.toISOString()},
+    start: {dateTime: startDt.toISOString(), timeZone: tz},
+    end: {dateTime: endDt.toISOString(), timeZone: tz},
     reminders: {
       useDefault: false,
       overrides: [ {method:'popup', minutes: 30}, {method:'popup', minutes: 5} ]
@@ -2005,9 +2142,31 @@ async function syncApptToGoogleCalendar(appt){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
       body: JSON.stringify(body)
     });
-    if(res.ok){ const data = await res.json(); return data.id || true; }
-  }catch(e){ /* فشل صامت، الموعد يبقى محفوظ محليًا بردو */ }
-  return null;
+    if(res.ok){ const data = await res.json(); markApptGcalId(appt.id, data.id || true); return {ok:true, id:data.id || true}; }
+    if(res.status === 401){
+      gcalAccessToken = null; gcalTokenExpiry = 0;
+      try{ localStorage.removeItem(GCAL_TOKEN_KEY); }catch(e){}
+      updateGcalStatusUI();
+      return {ok:false, reason:'auth'};
+    }
+    let msg = ''; try{ const j = await res.json(); msg = (j.error && j.error.message) || ''; }catch(e){}
+    return {ok:false, reason:'http', status:res.status, message:msg};
+  }catch(e){
+    return {ok:false, reason:'network'};
+  }
+}
+
+async function gcalSyncPending(interactive){
+  if(!getGcalClientId()) return {ok:0, fail:0, reason:'noclient'};
+  const list = loadAppts().filter(a=> !a.done && !a.gcalId && new Date(a.dt).getTime() > Date.now() - 24*3600*1000);
+  if(!list.length) return {ok:0, fail:0, reason:'none'};
+  let ok = 0, fail = 0, last = null;
+  for(const a of list){
+    const r = await syncApptToGoogleCalendar(a, interactive);
+    if(r.ok) ok++;
+    else{ fail++; last = r; if(r.reason === 'auth' || r.reason === 'noclient') break; }
+  }
+  return {ok, fail, last, reason: last ? gcalReasonText(last) : ''};
 }
 
 /* ---------- توليد تقارير (Excel / PDF / Word) من رد يونس ---------- */
@@ -2127,14 +2286,7 @@ function appendAppointmentAction(container, jsonText){
     if(typeof renderAppts === 'function' && document.getElementById('viewAppt')?.classList.contains('active')){
       renderAppts();
     }
-    syncApptToGoogleCalendar(newAppt).then(ok=>{
-      if(ok){
-        const note = document.createElement('div');
-        note.style.cssText = 'font-size:11px; color:#2e7d32; margin-top:4px;';
-        note.textContent = '📅 تمت مزامنته مع Google Calendar';
-        wrap.appendChild(note);
-      }
-    });
+    appendApptCalendarActions(wrap, newAppt);
   }catch(e){
     wrap.innerHTML = `<span class="appt-action-icon">⚠️</span> ما قدرت أضيف الموعد، صار خطأ بالبيانات.`;
   }
@@ -4053,6 +4205,7 @@ document.getElementById('apptDedupeBtn')?.addEventListener('click', ()=>{
 });
 
 function renderAppts(){
+  try{ updateApptToolsUI(); }catch(e){}
   const list = loadAppts().sort((a,b)=> new Date(a.dt) - new Date(b.dt));
   const el = document.getElementById('apptList');
   if(list.length === 0){
@@ -4075,6 +4228,8 @@ function renderAppts(){
         <div class="appt-when">${isOverdue?'⚠️ متأخر — ':''}${whenStr}</div>
         ${appt.notes ? `<div class="appt-notes" dir="auto">${escapeHtml(appt.notes)}</div>` : ''}
       </div>
+      <button class="appt-cal" data-id="${appt.id}" title="أضف لتقويم الهاتف (.ics)">📥</button>
+      <button class="appt-gcal" data-id="${appt.id}" title="أضف في Google Calendar">📅</button>
       <button class="appt-del" data-id="${appt.id}">🗑</button>
     `;
     el.appendChild(div);
@@ -4084,6 +4239,18 @@ function renderAppts(){
       const list = loadAppts();
       const item = list.find(a=>a.id === c.dataset.id);
       if(item){ item.done = !item.done; saveAppts(list); renderAppts(); }
+    });
+  });
+  el.querySelectorAll('.appt-cal').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const it = loadAppts().find(a=>a.id === b.dataset.id);
+      if(it) downloadIcs([it], 'rdv-' + it.id + '.ics');
+    });
+  });
+  el.querySelectorAll('.appt-gcal').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const it = loadAppts().find(a=>a.id === b.dataset.id);
+      if(it) window.open(gcalTemplateUrl(it), '_blank', 'noopener');
     });
   });
   el.querySelectorAll('.appt-del').forEach(b=>{
@@ -4110,27 +4277,206 @@ document.getElementById('apptAddBtn').addEventListener('click', ()=>{
     Notification.requestPermission();
   }
   renderAppts();
-  syncApptToGoogleCalendar(newAppt);
+  if(getGcalClientId()){
+    syncApptToGoogleCalendar(newAppt, true).then(r=>{
+      if(r.ok) apptToast('📅 تمت مزامنة الموعد مع Google Calendar ✅');
+      else apptToast('⚠️ لم تتم المزامنة مع Google Calendar: ' + gcalReasonText(r));
+    });
+  }
+  checkApptReminders();
 });
 
-/* فحص دوري للتذكيرات (يشتغل فقط والتطبيق مفتوح) */
-setInterval(()=>{
-  if(!('Notification' in window) || Notification.permission !== 'granted') return;
-  const list = loadAppts();
-  const now = new Date();
+/* ---------- التذكيرات والتقويم ---------- */
+function apptPad(n){ return String(n).padStart(2, '0'); }
+function apptLocalStamp(d){
+  return d.getFullYear() + apptPad(d.getMonth()+1) + apptPad(d.getDate()) + 'T' + apptPad(d.getHours()) + apptPad(d.getMinutes()) + '00';
+}
+function icsEscape(t){
+  return String(t || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+function icsFold(line){
+  const out = []; let i = 0;
+  while(line.length - i > 60){ out.push(line.slice(i, i + 60)); i += 60; }
+  out.push(line.slice(i));
+  return out.join('\r\n ');
+}
+function buildIcsEvent(appt){
+  const start = new Date(appt.dt);
+  const end = new Date(start.getTime() + 60*60000);
+  const n = new Date();
+  const stamp = n.getUTCFullYear() + apptPad(n.getUTCMonth()+1) + apptPad(n.getUTCDate()) + 'T' + apptPad(n.getUTCHours()) + apptPad(n.getUTCMinutes()) + apptPad(n.getUTCSeconds()) + 'Z';
+  const alarm = (trig)=>['BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(appt.title), 'TRIGGER:' + trig, 'END:VALARM'];
+  return ['BEGIN:VEVENT', 'UID:' + appt.id + '@alioua-btp', 'DTSTAMP:' + stamp,
+    'DTSTART:' + apptLocalStamp(start), 'DTEND:' + apptLocalStamp(end),
+    'SUMMARY:' + icsEscape(appt.title), 'DESCRIPTION:' + icsEscape(appt.notes || '')]
+    .concat(alarm('-PT30M'), alarm('-PT5M'), ['END:VEVENT']);
+}
+function buildIcs(list){
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ALIOUA BTP//Younes//AR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
+  list.forEach(a => buildIcsEvent(a).forEach(l => lines.push(l)));
+  lines.push('END:VCALENDAR');
+  return lines.map(icsFold).join('\r\n') + '\r\n';
+}
+function downloadIcs(list, filename){
+  const blob = new Blob([buildIcs(list)], {type:'text/calendar;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename || 'mawaid.ics';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+function gcalTemplateUrl(appt){
+  const s = new Date(appt.dt), e = new Date(s.getTime() + 60*60000);
+  const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || '';
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(appt.title)
+    + '&dates=' + apptLocalStamp(s) + '/' + apptLocalStamp(e)
+    + '&details=' + encodeURIComponent(appt.notes || '') + (tz ? '&ctz=' + encodeURIComponent(tz) : '');
+}
+
+function apptToast(msg){
+  let wrap = document.getElementById('apptToastWrap');
+  if(!wrap){ wrap = document.createElement('div'); wrap.id = 'apptToastWrap'; document.body.appendChild(wrap); }
+  const t = document.createElement('div');
+  t.className = 'appt-toast';
+  t.textContent = msg;
+  t.addEventListener('click', ()=> t.remove());
+  wrap.appendChild(t);
+  setTimeout(()=>{ try{ t.remove(); }catch(e){} }, 15000);
+}
+function apptBeep(){
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext; if(!AC) return;
+    const c = new AC(); const o = c.createOscillator(); const g = c.createGain();
+    o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.08;
+    o.connect(g); g.connect(c.destination); o.start();
+    setTimeout(()=>{ try{ o.stop(); c.close(); }catch(e){} }, 350);
+  }catch(e){}
+}
+function apptNotifState(){ return ('Notification' in window) ? Notification.permission : 'unsupported'; }
+async function apptRequestNotifPermission(){
+  if(!('Notification' in window)) return 'unsupported';
+  try{ return await Notification.requestPermission(); }catch(e){ return Notification.permission; }
+}
+async function apptShowNotification(title, body, tag){
+  apptToast(title + (body ? '\n' + body : ''));
+  try{ if(navigator.vibrate) navigator.vibrate([200, 100, 200]); }catch(e){}
+  apptBeep();
+  if(apptNotifState() !== 'granted') return false;
+  const opts = {body: body || '', tag: tag || undefined, lang:'ar', dir:'rtl', requireInteraction:true};
+  // على أندرويد لا يعمل new Notification()، لازم عبر service worker
+  try{
+    if('serviceWorker' in navigator){
+      const reg = await navigator.serviceWorker.getRegistration();
+      if(reg){ await reg.showNotification(title, opts); return true; }
+    }
+  }catch(e){}
+  try{ new Notification(title, opts); return true; }catch(e){}
+  return false;
+}
+
+function checkApptReminders(){
+  let list;
+  try{ list = loadAppts(); }catch(e){ return; }
+  const now = Date.now();
   let changed = false;
-  list.forEach(appt=>{
-    if(appt.done || appt.notified) return;
-    const dt = new Date(appt.dt);
-    const diffMin = (dt - now) / 60000;
-    if(diffMin <= 5 && diffMin > -5){
-      try{ new Notification('⏰ تذكير: ' + appt.title, {body: appt.notes || 'حان وقت الموعد'}); }catch(e){}
-      appt.notified = true;
-      changed = true;
+  list.forEach(a=>{
+    if(a.done) return;
+    const t = new Date(a.dt).getTime();
+    if(isNaN(t)) return;
+    const diff = (t - now) / 60000;
+    if(diff <= 0 && diff > -180 && !a.notified){
+      a.notified = true; a.n30 = true; changed = true;
+      apptShowNotification('⏰ حان موعدك: ' + a.title, a.notes || 'الموعد الآن', 'appt-' + a.id);
+    }else if(diff > 0 && diff <= 30 && !a.n30){
+      a.n30 = true; changed = true;
+      apptShowNotification('⏰ بعد ' + Math.ceil(diff) + ' دقيقة: ' + a.title, a.notes || '', 'appt30-' + a.id);
+    }else if(diff <= -180 && !a.notified){
+      a.notified = true; a.n30 = true; changed = true; // فات وقته بكثير: نغلقه بصمت
     }
   });
   if(changed) saveAppts(list);
-}, 30000);
+}
+setInterval(checkApptReminders, 20000);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible') checkApptReminders(); });
+window.addEventListener('focus', checkApptReminders);
+setTimeout(checkApptReminders, 2500);
+
+function updateApptToolsUI(){
+  const st = document.getElementById('apptNotifStatus'); if(!st) return;
+  const p = apptNotifState();
+  const map = {
+    granted:'✅ الإشعارات مفعّلة',
+    denied:'⛔ الإشعارات محظورة لهذا الموقع. فعّلها من إعدادات الموقع في المتصفح ثم أعد تحميل الصفحة.',
+    default:'🔕 الإشعارات غير مفعّلة بعد',
+    unsupported:'⚠️ هذا المتصفح لا يدعم الإشعارات'
+  };
+  st.textContent = map[p] || '';
+  const btn = document.getElementById('apptNotifBtn');
+  if(btn) btn.style.display = (p === 'granted' || p === 'unsupported') ? 'none' : '';
+  const g = document.getElementById('apptGcalSyncBtn');
+  if(g) g.style.display = getGcalClientId() ? '' : 'none';
+}
+
+function appendApptCalendarActions(wrap, appt){
+  const row = document.createElement('div'); row.className = 'appt-cal-actions';
+  const mk = (txt, fn)=>{
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'appt-cal-btn';
+    b.textContent = txt; b.addEventListener('click', fn); row.appendChild(b); return b;
+  };
+  mk('📥 تقويم الهاتف (.ics)', ()=> downloadIcs([appt], 'rdv-' + appt.id + '.ics'));
+  mk('📅 Google Calendar', ()=> window.open(gcalTemplateUrl(appt), '_blank', 'noopener'));
+  const p = apptNotifState();
+  if(p === 'default' || p === 'denied'){
+    const nb = mk('🔔 تفعيل الإشعارات', async ()=>{
+      const r = await apptRequestNotifPermission(); updateApptToolsUI();
+      if(r === 'granted') nb.remove(); else if(r === 'denied') alert('الإشعارات محظورة. فعّلها من إعدادات الموقع في المتصفح.');
+    });
+  }
+  wrap.appendChild(row);
+  const note = document.createElement('div'); note.className = 'appt-cal-note'; wrap.appendChild(note);
+  if(getGcalClientId()){
+    note.textContent = '⏳ جاري المزامنة مع Google Calendar…';
+    syncApptToGoogleCalendar(appt, false).then(r=>{
+      if(r.ok){ note.style.color = '#2e7d32'; note.textContent = '📅 تمت مزامنته مع Google Calendar ✅'; return; }
+      note.style.color = '#b26a00'; note.textContent = '⚠️ ' + gcalReasonText(r);
+      if(r.reason === 'auth'){
+        note.appendChild(document.createElement('br'));
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'appt-cal-btn'; b.textContent = '🔄 مزامنة الآن';
+        b.addEventListener('click', async ()=>{
+          b.disabled = true;
+          const res = await gcalSyncPending(true);
+          if(res.ok){ note.style.color = '#2e7d32'; note.textContent = '📅 تمت مزامنته مع Google Calendar ✅'; }
+          else{ b.disabled = false; note.firstChild.textContent = '⚠️ ' + (res.reason || 'تعذّرت المزامنة'); }
+        });
+        note.appendChild(b);
+      }
+    });
+  }
+}
+
+document.getElementById('apptNotifBtn')?.addEventListener('click', async ()=>{
+  const r = await apptRequestNotifPermission(); updateApptToolsUI();
+  if(r === 'denied') alert('الإشعارات محظورة لهذا الموقع. افتح إعدادات الموقع في المتصفح (أيقونة القفل أو ⋮ ← إعدادات الموقع) وفعّل الإشعارات.');
+});
+document.getElementById('apptNotifTestBtn')?.addEventListener('click', async ()=>{
+  if(apptNotifState() === 'default') await apptRequestNotifPermission();
+  updateApptToolsUI();
+  const ok = await apptShowNotification('🔔 تجربة الإشعارات', 'إذا ظهر لك هذا الإشعار فالتذكيرات تعمل ✅', 'appt-test');
+  if(!ok && apptNotifState() !== 'granted') apptToast('ℹ️ الإشعار ظهر داخل التطبيق فقط، لأن إشعارات المتصفح غير مفعّلة.');
+});
+document.getElementById('apptIcsAllBtn')?.addEventListener('click', ()=>{
+  const list = loadAppts().filter(a=> !a.done && new Date(a.dt).getTime() > Date.now() - 24*3600*1000);
+  if(!list.length){ alert('لا توجد مواعيد قادمة لتصديرها.'); return; }
+  downloadIcs(list, 'mawaid-alioua-btp.ics');
+});
+document.getElementById('apptGcalSyncBtn')?.addEventListener('click', async ()=>{
+  const btn = document.getElementById('apptGcalSyncBtn'); btn.disabled = true;
+  const r = await gcalSyncPending(true);
+  btn.disabled = false;
+  if(r.ok) apptToast('📅 تمت مزامنة ' + r.ok + ' موعد مع Google Calendar ✅');
+  else if(r.reason === 'none') apptToast('كل المواعيد القادمة متزامنة بالفعل ✅');
+  else apptToast('⚠️ ' + (r.reason || 'تعذّرت المزامنة'));
+});
 
 /* ---------- المحاسبة ---------- */
 const TX_KEY = 'alioua_btp_transactions';
