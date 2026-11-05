@@ -110,128 +110,6 @@ body{
   position:relative;
 }
 
-/* ---------- واجهة الحاسوب: مساحة عريضة + شريط جانبي (الهاتف يبقى كما هو) ---------- */
-@media (min-width: 1024px){
-  body{ overflow:hidden; background:var(--stone); display:block; padding:0; min-height:0; }
-  #app{
-    max-width:none; width:100%; margin:0;
-    height:100vh; height:100dvh; min-height:0;
-    display:grid;
-    grid-template-columns:230px minmax(0, 1fr);
-    grid-template-rows:auto minmax(0, 1fr);
-    border-radius:0; box-shadow:none; overflow:hidden;
-  }
-  header{ grid-column:1 / -1; grid-row:1; padding:14px 28px 22px; }
-  #bottomNav{
-    grid-column:1; grid-row:2;
-    flex-direction:column; justify-content:flex-start; gap:6px;
-    padding:18px 12px; border-top:none; border-left:1px solid var(--line);
-    overflow-y:auto;
-  }
-  .nav-btn{ flex:none; flex-direction:row; justify-content:flex-start; gap:12px; padding:13px 16px; border-radius:12px; transition:background .15s; }
-  .nav-btn svg{ width:22px; height:22px; }
-  .nav-btn span{ font-size:15px; }
-  .nav-btn:hover{ background:var(--stone); }
-  .nav-btn.active{ background:#E3EDF4; }
-  .view{ grid-column:2; grid-row:2; min-width:0; min-height:0; }
-
-  /* المحادثة: عمود مركزي مريح */
-  #chat{ padding:26px max(28px, calc((100% - 940px) / 2)) 12px; gap:14px; }
-  .msg{ max-width:min(78%, 760px); font-size:15.5px; }
-  #inputbar{ padding:14px max(24px, calc((100% - 940px) / 2)) 18px; }
-  #inputbar textarea{ max-height:170px; font-size:15.5px; }
-  .chip-grid{ grid-template-columns:repeat(3, 1fr); }
-
-  /* التبويبات */
-  .tab-header{ padding:18px 28px 12px; }
-  .tab-header h2{ font-size:22px; }
-  .tab-scroll{ padding:22px 28px 40px; }
-  .sub-nav{ flex-wrap:wrap; }
-  .sub-nav-btn{ padding:9px 18px; font-size:13px; }
-  .summary-cards{ gap:14px; }
-  .card-form{ margin-bottom:16px; }
-  .modal-backdrop{ align-items:center; }
-  .modal{ border-radius:22px; max-width:640px; max-height:90vh; padding-bottom:22px; }
-
-  /* القوائم كبطاقات متجاورة */
-  #txList,
-  #clientList,
-  #supplierList,
-  #workersList,
-  #projectsList,
-  #caisseList,
-  #apptList{
-    display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:10px; align-content:start;
-  }
-  #txList > *,
-  #clientList > *,
-  #supplierList > *,
-  #workersList > *,
-  #projectsList > *,
-  #caisseList > *,
-  #apptList > *{ margin-bottom:0; }
-  #txList > .empty-hint,
-  #clientList > .empty-hint,
-  #supplierList > .empty-hint,
-  #workersList > .empty-hint,
-  #projectsList > .empty-hint,
-  #caisseList > .empty-hint,
-  #apptList > .empty-hint{ grid-column:1 / -1; }
-
-  /* أعمدة: النماذج يمين، القوائم والنتائج يسار */
-  #subExpenses.active, #subInvoices.active, #subClients.active, #subSuppliers.active,
-  #subWorkers.active, #subProjects.active, #subCaisse.active{
-    display:grid; grid-template-columns:minmax(340px, 430px) minmax(0, 1fr);
-    column-gap:26px; row-gap:0; align-items:start;
-  }
-  #subExpenses.active{ grid-template-rows:auto auto auto auto 1fr; }
-  #subExpenses > .summary-cards{ grid-column:1 / -1; grid-row:1; }
-  #subExpenses > .card-form{ grid-column:1; grid-row:2 / -1; }
-  #subExpenses > #accountingChartWrap{ grid-column:2; grid-row:2; }
-  #subExpenses > #exportReportBtn{ grid-column:2; grid-row:3; justify-self:start; margin-bottom:12px; }
-  #subExpenses > #txList{ grid-column:2; grid-row:4; }
-
-  #subInvoices.active{ grid-template-rows:auto auto 1fr; }
-  #subInvoices > .card-form:nth-child(1){ grid-column:1; grid-row:1; }
-  #subInvoices > .card-form:nth-child(2){ grid-column:1; grid-row:2; }
-  #subInvoices > .card-form:nth-child(3){ grid-column:2; grid-row:1 / -1; }
-
-  #subClients.active, #subSuppliers.active, #subWorkers.active, #subProjects.active{ grid-template-rows:auto 1fr; }
-  #subClients > .card-form{ grid-column:1; grid-row:1; }
-  #subClients > #clientList{ grid-column:2; grid-row:1 / -1; }
-  #subSuppliers > .card-form{ grid-column:1; grid-row:1; }
-  #subSuppliers > #supplierList{ grid-column:2; grid-row:1 / -1; }
-  #subWorkers > .card-form{ grid-column:1; grid-row:1; }
-  #subWorkers > #workersList{ grid-column:2; grid-row:1 / -1; }
-  #subProjects > .card-form{ grid-column:1; grid-row:1; }
-  #subProjects > #projectsList{ grid-column:2; grid-row:1 / -1; }
-
-  #subCaisse.active{ grid-template-rows:auto auto auto auto 1fr; }
-  #subCaisse > :nth-child(1){ grid-column:1 / -1; grid-row:1; }
-  #subCaisse > :nth-child(2){ grid-column:1; grid-row:2; }
-  #subCaisse > :nth-child(3){ grid-column:1; grid-row:3; }
-  #subCaisse > :nth-child(4){ grid-column:1; grid-row:4; }
-  #subCaisse > :nth-child(5){ grid-column:2; grid-row:2 / -1; }
-  #subCaisse > :nth-child(6){ grid-column:1; grid-row:5; }
-
-  #viewAppt .tab-scroll{
-    display:grid; grid-template-columns:minmax(340px, 430px) minmax(0, 1fr); grid-template-rows:auto auto auto 1fr;
-    column-gap:26px; align-content:start; align-items:start;
-  }
-  #viewAppt .tab-scroll > :nth-child(1){ grid-column:1; grid-row:1; }
-  #viewAppt .tab-scroll > :nth-child(2){ grid-column:1; grid-row:2; }
-  #viewAppt .tab-scroll > :nth-child(3){ grid-column:1; grid-row:3; }
-  #viewAppt .tab-scroll > :nth-child(4){ grid-column:2; grid-row:1 / -1; }
-
-  #viewMarketing .tab-scroll{
-    display:grid; grid-template-columns:1fr 1fr; grid-template-rows:auto 1fr;
-    column-gap:26px; align-content:start; align-items:start;
-  }
-  #viewMarketing .tab-scroll > :nth-child(1){ grid-column:1; grid-row:1; }
-  #viewMarketing .tab-scroll > :nth-child(2){ grid-column:1; grid-row:2; }
-  #viewMarketing .tab-scroll > :nth-child(3){ grid-column:2; grid-row:1 / -1; }
-}
-
 /* ---------- تنبيهات المواعيد داخل التطبيق + أزرار التقويم ---------- */
 #apptToastWrap{
   position:fixed; top:calc(env(safe-area-inset-top) + 12px); left:50%; transform:translateX(-50%);
@@ -1166,6 +1044,185 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   font-size:13px;
   color:var(--gold-soft);
 }
+
+/* ---------- الرسائل الصوتية (واتساب) ---------- */
+#micBtn{ display:none !important; }
+#vnBtn{
+  width:44px; height:44px; border-radius:14px; border:1.5px solid var(--line); background:var(--stone); color:var(--navy);
+  display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;
+  touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+}
+#vnBtn svg{ width:19px; height:19px; }
+#vnBtn .vn-ic-send{ display:none; }
+#vnRecBar{
+  display:none; flex:1; min-width:0; align-items:center; gap:10px; background:var(--stone);
+  border:1px solid var(--line); border-radius:22px; padding:6px 12px; min-height:44px;
+}
+#inputbar.vn-recording #vnRecBar{ display:flex; }
+#inputbar.vn-recording #attachBtn, #inputbar.vn-recording #msgInput, #inputbar.vn-recording #sendBtn{ display:none; }
+#inputbar.vn-recording #vnBtn{
+  background:linear-gradient(135deg, var(--maroon), var(--maroon-deep)); border-color:var(--maroon-deep); color:#fff;
+  animation:pulseRec 1.2s infinite; transform:scale(1.22);
+}
+#inputbar.vn-locked #vnBtn{ background:linear-gradient(135deg, var(--navy), var(--blue-mid)); border-color:var(--navy); animation:none; }
+#inputbar.vn-locked #vnBtn .vn-ic-mic{ display:none; }
+#inputbar.vn-locked #vnBtn .vn-ic-send{ display:block; transform:scaleX(-1); }
+#vnCancelBtn{ display:none; background:none; border:none; font-size:19px; cursor:pointer; padding:0 2px; }
+#inputbar.vn-locked #vnCancelBtn{ display:inline-flex; }
+#inputbar.vn-locked #vnHint{ display:none; }
+.vn-dot{ width:10px; height:10px; border-radius:50%; background:#d32f2f; animation:vnBlink 1s infinite; flex-shrink:0; }
+@keyframes vnBlink{ 0%,100%{ opacity:1; } 50%{ opacity:.25; } }
+#vnTimer{ font-size:14px; font-weight:700; color:var(--ink); min-width:36px; font-variant-numeric:tabular-nums; }
+#vnLive{ flex:1; min-width:0; height:26px; display:flex; align-items:center; gap:2px; overflow:hidden; }
+#vnLive span{ flex:1; max-width:4px; min-height:3px; border-radius:2px; background:var(--blue-mid); height:12%; }
+#vnHint{ font-size:12px; color:var(--ink-soft); white-space:nowrap; }
+#inputbar.vn-cancel #vnHint{ color:#d32f2f; font-weight:700; }
+.vn{ display:flex; align-items:center; gap:10px; min-width:230px; }
+.vn-play{
+  width:36px; height:36px; border-radius:50%; border:none; background:rgba(255,255,255,.25); color:#fff;
+  font-size:14px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; padding:0;
+}
+.vn-wave{ flex:1; height:30px; display:flex; align-items:center; gap:2px; direction:ltr; }
+.vn-wave span{ flex:1; max-width:4px; border-radius:2px; background:rgba(255,255,255,.45); }
+.vn-wave span.on{ background:#fff; }
+.vn-dur{ font-size:12px; opacity:.9; font-variant-numeric:tabular-nums; }
+.vn-text{ margin-top:8px; padding-top:7px; border-top:1px solid rgba(255,255,255,.28); font-size:13.5px; line-height:1.7; white-space:pre-wrap; }
+.vn-status{ margin-top:6px; font-size:12px; opacity:.95; }
+.vn-retry{
+  font-family:inherit; font-size:12px; margin:6px 0 0 6px; padding:5px 10px; border-radius:9px; cursor:pointer;
+  border:1px solid rgba(255,255,255,.5); background:rgba(255,255,255,.15); color:#fff;
+}
+
+/* ---------- المكالمة: ردّ كتابي ---------- */
+.voice-chat-overlay .vc-stage{ flex:none; width:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-top:6px; }
+.voice-chat-overlay .vc-orb{ width:130px; height:130px; }
+.voice-chat-overlay .vc-status{ margin-top:20px; }
+.voice-chat-overlay .vc-texts{ width:100%; max-width:560px; flex:1; min-height:0; overflow-y:auto; margin-top:14px; -webkit-overflow-scrolling:touch; }
+.voice-chat-overlay .vc-bot-text{ font-size:16.5px; color:#fff; line-height:1.9; margin-top:8px; white-space:pre-line; text-align:start; background:rgba(255,255,255,.09); border-radius:16px; padding:14px 16px; max-height:none; }
+.voice-chat-overlay .vc-bot-text:empty{ display:none; }
+
+/* ---------- واجهة الحاسوب: مساحة عريضة + شريط جانبي (الهاتف يبقى كما هو) ---------- */
+@media (min-width: 1024px){
+  body{ overflow:hidden; background:var(--stone); display:block; padding:0; min-height:0; }
+  #app{
+    max-width:none; width:100%; margin:0;
+    height:100vh; height:100dvh; min-height:0;
+    display:grid;
+    grid-template-columns:230px minmax(0, 1fr);
+    grid-template-rows:auto minmax(0, 1fr);
+    border-radius:0; box-shadow:none; overflow:hidden;
+  }
+  header{ grid-column:1 / -1; grid-row:1; padding:14px 28px 22px; }
+  #bottomNav{
+    grid-column:1; grid-row:2;
+    flex-direction:column; justify-content:flex-start; gap:6px;
+    padding:18px 12px; border-top:none; border-left:1px solid var(--line);
+    overflow-y:auto;
+  }
+  .nav-btn{ flex:none; flex-direction:row; justify-content:flex-start; gap:12px; padding:13px 16px; border-radius:12px; transition:background .15s; }
+  .nav-btn svg{ width:22px; height:22px; }
+  .nav-btn span{ font-size:15px; }
+  .nav-btn:hover{ background:var(--stone); }
+  .nav-btn.active{ background:#E3EDF4; }
+  .view{ grid-column:2; grid-row:2; min-width:0; min-height:0; }
+
+  /* المحادثة: عمود مركزي مريح */
+  #chat{ padding:26px max(28px, calc((100% - 940px) / 2)) 12px; gap:14px; }
+  .msg{ max-width:min(78%, 760px); font-size:15.5px; }
+  #inputbar{ padding:14px max(24px, calc((100% - 940px) / 2)) 18px; }
+  #inputbar textarea{ max-height:170px; font-size:15.5px; }
+  .chip-grid{ grid-template-columns:repeat(3, 1fr); }
+
+  /* التبويبات */
+  .tab-header{ padding:18px 28px 12px; }
+  .tab-header h2{ font-size:22px; }
+  .tab-scroll{ padding:22px 28px 40px; }
+  .sub-nav{ flex-wrap:wrap; }
+  .sub-nav-btn{ padding:9px 18px; font-size:13px; }
+  .summary-cards{ gap:14px; }
+  .card-form{ margin-bottom:16px; }
+  .modal-backdrop{ align-items:center; }
+  .modal{ border-radius:22px; max-width:640px; max-height:90vh; padding-bottom:22px; }
+
+  /* القوائم كبطاقات متجاورة */
+  #txList,
+  #clientList,
+  #supplierList,
+  #workersList,
+  #projectsList,
+  #caisseList,
+  #apptList{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:10px; align-content:start;
+  }
+  #txList > *,
+  #clientList > *,
+  #supplierList > *,
+  #workersList > *,
+  #projectsList > *,
+  #caisseList > *,
+  #apptList > *{ margin-bottom:0; }
+  #txList > .empty-hint,
+  #clientList > .empty-hint,
+  #supplierList > .empty-hint,
+  #workersList > .empty-hint,
+  #projectsList > .empty-hint,
+  #caisseList > .empty-hint,
+  #apptList > .empty-hint{ grid-column:1 / -1; }
+
+  /* أعمدة: النماذج يمين، القوائم والنتائج يسار */
+  #subExpenses.active, #subInvoices.active, #subClients.active, #subSuppliers.active,
+  #subWorkers.active, #subProjects.active, #subCaisse.active{
+    display:grid; grid-template-columns:minmax(340px, 430px) minmax(0, 1fr);
+    column-gap:26px; row-gap:0; align-items:start;
+  }
+  #subExpenses.active{ grid-template-rows:auto auto auto auto 1fr; }
+  #subExpenses > .summary-cards{ grid-column:1 / -1; grid-row:1; }
+  #subExpenses > .card-form{ grid-column:1; grid-row:2 / -1; }
+  #subExpenses > #accountingChartWrap{ grid-column:2; grid-row:2; }
+  #subExpenses > #exportReportBtn{ grid-column:2; grid-row:3; justify-self:start; margin-bottom:12px; }
+  #subExpenses > #txList{ grid-column:2; grid-row:4; }
+
+  #subInvoices.active{ grid-template-rows:auto auto 1fr; }
+  #subInvoices > .card-form:nth-child(1){ grid-column:1; grid-row:1; }
+  #subInvoices > .card-form:nth-child(2){ grid-column:1; grid-row:2; }
+  #subInvoices > .card-form:nth-child(3){ grid-column:2; grid-row:1 / -1; }
+
+  #subClients.active, #subSuppliers.active, #subWorkers.active, #subProjects.active{ grid-template-rows:auto 1fr; }
+  #subClients > .card-form{ grid-column:1; grid-row:1; }
+  #subClients > #clientList{ grid-column:2; grid-row:1 / -1; }
+  #subSuppliers > .card-form{ grid-column:1; grid-row:1; }
+  #subSuppliers > #supplierList{ grid-column:2; grid-row:1 / -1; }
+  #subWorkers > .card-form{ grid-column:1; grid-row:1; }
+  #subWorkers > #workersList{ grid-column:2; grid-row:1 / -1; }
+  #subProjects > .card-form{ grid-column:1; grid-row:1; }
+  #subProjects > #projectsList{ grid-column:2; grid-row:1 / -1; }
+
+  #subCaisse.active{ grid-template-rows:auto auto auto auto 1fr; }
+  #subCaisse > :nth-child(1){ grid-column:1 / -1; grid-row:1; }
+  #subCaisse > :nth-child(2){ grid-column:1; grid-row:2; }
+  #subCaisse > :nth-child(3){ grid-column:1; grid-row:3; }
+  #subCaisse > :nth-child(4){ grid-column:1; grid-row:4; }
+  #subCaisse > :nth-child(5){ grid-column:2; grid-row:2 / -1; }
+  #subCaisse > :nth-child(6){ grid-column:1; grid-row:5; }
+
+  #viewAppt .tab-scroll{
+    display:grid; grid-template-columns:minmax(340px, 430px) minmax(0, 1fr); grid-template-rows:auto auto auto 1fr;
+    column-gap:26px; align-content:start; align-items:start;
+  }
+  #viewAppt .tab-scroll > :nth-child(1){ grid-column:1; grid-row:1; }
+  #viewAppt .tab-scroll > :nth-child(2){ grid-column:1; grid-row:2; }
+  #viewAppt .tab-scroll > :nth-child(3){ grid-column:1; grid-row:3; }
+  #viewAppt .tab-scroll > :nth-child(4){ grid-column:2; grid-row:1 / -1; }
+
+  #viewMarketing .tab-scroll{
+    display:grid; grid-template-columns:1fr 1fr; grid-template-rows:auto 1fr;
+    column-gap:26px; align-content:start; align-items:start;
+  }
+  #viewMarketing .tab-scroll > :nth-child(1){ grid-column:1; grid-row:1; }
+  #viewMarketing .tab-scroll > :nth-child(2){ grid-column:1; grid-row:2; }
+  #viewMarketing .tab-scroll > :nth-child(3){ grid-column:2; grid-row:1 / -1; }
+}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -1234,6 +1291,16 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       <button id="micBtn" title="تحدث">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v1a7 7 0 0 1-14 0v-1"></path><line x1="12" y1="18" x2="12" y2="22"></line><line x1="8" y1="22" x2="16" y2="22"></line></svg>
       </button>
+      <button id="vnBtn" type="button" title="رسالة صوتية: اضغط مطوّلاً للتسجيل أو اضغط مرة للقفل">
+        <svg class="vn-ic-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v1a7 7 0 0 1-14 0v-1"></path><line x1="12" y1="18" x2="12" y2="22"></line><line x1="8" y1="22" x2="16" y2="22"></line></svg>
+        <svg class="vn-ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+      </button>
+      <div id="vnRecBar">
+        <button type="button" id="vnCancelBtn" title="إلغاء">🗑</button>
+        <span class="vn-dot"></span><span id="vnTimer">0:00</span>
+        <div id="vnLive"></div>
+        <span id="vnHint">اسحب للإلغاء</span>
+      </div>
       <button id="sendBtn" title="إرسال">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
       </button>
@@ -1523,9 +1590,9 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
     </button>
     <div class="vc-status" id="vcStatus">جاري الاتصال…</div>
   </div>
-  <div class="vc-texts">
+  <div class="vc-texts" id="vcTexts">
     <div class="vc-transcript" id="vcTranscript"></div>
-    <div class="vc-bot-text" id="vcBotText"></div>
+    <div class="vc-bot-text" id="vcBotText" dir="auto"></div>
   </div>
   <div class="vc-controls">
     <button class="vc-ctl" id="vcMute" title="كتم الميكروفون">🎙️</button>
@@ -1835,7 +1902,13 @@ function renderMessages(){
       }else if(m.image){
         imgHtml = `<img class="msg-img" src="data:${m.image.mime};base64,${m.image.data}">`;
       }
-      div.innerHTML = imgHtml + escapeHtml(m.text).replace(/\n/g,'<br>') + `<time>${fmtTime(m.time)}</time>`;
+      if(m.voice && window.VN){
+        div.innerHTML = imgHtml;
+        div.appendChild(window.VN.buildContent(m.voice, m.text));
+        const tt = document.createElement('time'); tt.textContent = fmtTime(m.time); div.appendChild(tt);
+      }else{
+        div.innerHTML = imgHtml + escapeHtml(m.text).replace(/\n/g,'<br>') + `<time>${fmtTime(m.time)}</time>`;
+      }
     }else{
       renderRichBotContent(div, m.text);
       const t = document.createElement('time');
@@ -2440,6 +2513,7 @@ async function sendMessage(){
   }
 
   const msgObj = {role:'user', text, time:Date.now()};
+  if(window._vnPending){ msgObj.voice = window._vnPending; window._vnPending = null; }
   if(pendingImages.length === 1) msgObj.image = pendingImages[0];
   else if(pendingImages.length > 1) msgObj.images = pendingImages.slice();
   messages.push(msgObj);
@@ -3202,7 +3276,7 @@ function setVCStatus(kind, text){ try{ VC.setState(kind === 'idle' ? 'listening'
 function enterVoiceChat(){ return VC.enter(); }
 function exitVoiceChat(){ return VC.exit(); }
 
-const VOICE_CALL_RULE = '\n\nأنت الآن في مكالمة صوتية مباشرة مع المستخدم: جاوب كما يتحدث إنسان، بجمل قصيرة وطبيعية (من جملة إلى أربع جمل)، وبنفس لهجة المستخدم، بدون جداول ولا قوائم ولا عناوين ولا رموز ولا إيموجي ولا روابط. انطق الأرقام والمبالغ باختصار. وإذا كان الطلب يحتاج كتلة أمر خاصة (مثل إضافة موعد أو معاملة) فاكتب جملة قصيرة تؤكد ثم الكتلة بصيغتها المعتادة.';
+const VOICE_CALL_RULE = '\n\nالمستخدم الآن في مكالمة صوتية معك: هو يكلمك بالصوت وردّك سيظهر له مكتوباً على الشاشة. جاوب بإيجاز ووضوح وبنفس لهجته، في بضع جمل قصيرة، وتجنب الجداول الطويلة والعناوين. وإذا كان الطلب يحتاج كتلة أمر خاصة (مثل إضافة موعد أو معاملة أو تقرير) فاكتب جملة قصيرة تؤكد ثم الكتلة بصيغتها المعتادة.';
 
 const VC = (function(){
   const $ = id => document.getElementById(id);
@@ -3328,7 +3402,6 @@ const VC = (function(){
     if(!voiceChatActive) return;
     clearTimeout(S.silenceT);
     S.turning = false; S.turnBase = ''; S.lastDisplay = '';
-    const tx = $('vcTranscript'); if(tx) tx.textContent = '';
     setState('listening');
     if(S.muted) return;
     if(S.mode === 'sr') srStart();
@@ -3356,18 +3429,24 @@ const VC = (function(){
     }
   }
 
+  function cleanForDisplay(t){
+    let removed = false;
+    let out = String(t || '')
+      .replace(/```[\s\S]*?```/g, ()=>{ removed = true; return ''; })
+      .replace(/```[\s\S]*$/g, ()=>{ removed = true; return ''; })
+      .replace(/^\s*\|.*\|\s*$/gm, ()=>{ removed = true; return ''; })
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/^\s*#{1,6}\s*/gm, '')
+      .replace(/[`_~]/g, '')
+      .replace(/\n{3,}/g, '\n\n').trim();
+    if(removed) out = (out ? out + '\n\n' : '') + '📋 التفاصيل الكاملة (جداول أو تقارير أو مواعيد) في المحادثة.';
+    return out;
+  }
   function onReply(reply){
     if(!voiceChatActive) return;
-    let spoken = cleanForSpeech(reply);
-    if(!spoken && /```/.test(reply || '')) spoken = 'تم.';
-    const bt = $('vcBotText'); if(bt) bt.textContent = spoken.slice(0, 500);
-    if(!spoken){ startListening(); return; }
-    setState('speaking');
-    const tok = S.token;
-    speak(spoken, ()=>{
-      if(!voiceChatActive || tok !== S.token || S.state !== 'speaking') return;
-      setTimeout(()=>{ if(voiceChatActive && tok === S.token && S.state === 'speaking') startListening(); }, 300);
-    });
+    const bt = $('vcBotText'); if(bt) bt.textContent = cleanForDisplay(reply) || 'تم ✅';
+    const box = $('vcTexts'); if(box) box.scrollTop = 0;
+    startListening();
   }
 
   function onOrbTap(){
@@ -3547,7 +3626,7 @@ const VC = (function(){
       fr.readAsDataURL(blob);
     });
   }
-  async function transcribe(blob){
+  async function transcribe(blob, maxTok){
     const key = getApiKey(); if(!key) throw new Error('NOKEY');
     const b64 = await blobToB64(blob);
     const body = JSON.stringify({
@@ -3555,7 +3634,7 @@ const VC = (function(){
         { inlineData:{ mimeType:'audio/wav', data:b64 } },
         { text:'هذا تسجيل صوتي لشخص يتكلم بالعربية أو الدارجة المغربية (وقد يخلط بعض الكلمات الفرنسية). اكتب ما قاله حرفياً فقط، بدون أي شرح أو إضافة أو علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY' }
       ] }],
-      generationConfig:{ temperature:0, maxOutputTokens:1024 }
+      generationConfig:{ temperature:0, maxOutputTokens:(maxTok || 1024) }
     });
     const call = (m)=> fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, { method:'POST', headers:{ 'Content-Type':'application/json' }, body });
     let res = await call(MODEL);
@@ -3609,13 +3688,12 @@ const VC = (function(){
       return;
     }
     voiceChatActive = true; vcSessionId++;
-    S.prevVoice = voiceReplyOn; voiceReplyOn = true; updateVoiceToggleUI();
+    S.prevVoice = voiceReplyOn; voiceReplyOn = false; updateVoiceToggleUI();
     S.muted = false; S.turning = false; S.srTimes = []; S.lang = 'ar-MA'; updateMuteUI();
     micBtn.disabled = true;
     $('voiceChatOverlay').classList.add('active');
-    $('vcTranscript').textContent = ''; $('vcBotText').textContent = '';
+    $('vcTranscript').textContent = ''; $('vcBotText').textContent = 'تكلّم وسأجيبك كتابةً على الشاشة 👇';
     try{ inputEl.blur(); }catch(e){}
-    try{ const u = new SpeechSynthesisUtterance(' '); u.volume = 0; window.speechSynthesis.speak(u); }catch(e){}
     requestWake();
     setState('idle');
     if(S.mode === 'rec'){ const ok = await recInit(); if(!ok) return; }
@@ -3651,8 +3729,362 @@ const VC = (function(){
   $('vcOrb') && $('vcOrb').addEventListener('click', onOrbTap);
   $('vcMute') && $('vcMute').addEventListener('click', toggleMute);
 
-  return { enter, exit, onReply, setState, toggleMute, onOrbTap, _S:S, _encodeWav:encodeWav, _cleanForSpeech:cleanForSpeech, _splitSentences:splitSentences };
+  return { enter, exit, onReply, setState, toggleMute, onOrbTap, transcribe, _S:S, _encodeWav:encodeWav, _cleanForSpeech:cleanForSpeech, _splitSentences:splitSentences };
 })();
+
+/* ===== الرسائل الصوتية (مثل واتساب) ===== */
+const VNStore = (function(){
+  let dbp = null;
+  const mem = {};
+  function db(){
+    if(dbp) return dbp;
+    dbp = new Promise((res, rej)=>{
+      if(typeof indexedDB === 'undefined'){ rej(new Error('NOIDB')); return; }
+      const r = indexedDB.open('alioua_vn', 1);
+      r.onupgradeneeded = ()=> r.result.createObjectStore('notes');
+      r.onsuccess = ()=> res(r.result);
+      r.onerror = ()=> rej(r.error);
+    });
+    return dbp;
+  }
+  async function put(id, blob){
+    mem[id] = blob;
+    try{
+      const d = await db();
+      await new Promise((res, rej)=>{
+        const tx = d.transaction('notes', 'readwrite');
+        tx.objectStore('notes').put(blob, id);
+        tx.oncomplete = res; tx.onerror = ()=> rej(tx.error);
+      });
+      prune(d);
+    }catch(e){}
+  }
+  async function get(id){
+    if(mem[id]) return mem[id];
+    try{
+      const d = await db();
+      return await new Promise((res, rej)=>{
+        const rq = d.transaction('notes').objectStore('notes').get(id);
+        rq.onsuccess = ()=> res(rq.result || null); rq.onerror = ()=> rej(rq.error);
+      });
+    }catch(e){ return null; }
+  }
+  function prune(d){
+    try{
+      const rq = d.transaction('notes').objectStore('notes').getAllKeys();
+      rq.onsuccess = ()=>{
+        const keys = (rq.result || []).slice().sort();
+        const extra = keys.length - 80;
+        if(extra > 0){
+          const tx = d.transaction('notes', 'readwrite');
+          keys.slice(0, extra).forEach(k => tx.objectStore('notes').delete(k));
+        }
+      };
+    }catch(e){}
+  }
+  return { put, get };
+})();
+
+const VN = (function(){
+  const $ = id => document.getElementById(id);
+  const MAX_SEC = 180, MIN_SEC = 0.6, BAR_N = 36, LIVE_N = 28;
+  const S = {
+    st:'idle', mode:'hold', downT:0, downX:0, willCancel:false, downWhileLocked:false, upEarly:false, startToken:0,
+    stream:null, ctx:null, proc:null, src:null, sink:null, rate:48000,
+    rec:null, recChunks:[], pcm:[], levels:[], t0:0, timer:null, phase:0, acc:0, cnt:0
+  };
+  const P = { audio:null, url:null, id:null, btn:null, wave:null, dur:0 };
+  const note = (m)=>{ try{ apptToast(m); }catch(e){ try{ alert(m); }catch(_){} } };
+  const pad = n => String(n).padStart(2, '0');
+  const fmtDur = s => { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ':' + pad(s % 60); };
+
+  /* ---------- واجهة التسجيل ---------- */
+  function setUI(on){
+    const ib = $('inputbar'); if(ib){ ib.classList.toggle('vn-recording', !!on); if(!on){ ib.classList.remove('vn-locked', 'vn-cancel'); } }
+    const t = $('vnTimer'); if(t && on) t.textContent = '0:00';
+    const live = $('vnLive');
+    if(live && !live.children.length){ for(let i = 0; i < LIVE_N; i++) live.appendChild(document.createElement('span')); }
+    updateModeUI();
+  }
+  function updateModeUI(){
+    const ib = $('inputbar'); if(!ib) return;
+    ib.classList.toggle('vn-locked', S.mode === 'locked');
+    ib.classList.toggle('vn-cancel', S.willCancel);
+    const h = $('vnHint'); if(h) h.textContent = S.willCancel ? 'أفلت للإلغاء' : 'اسحب للإلغاء';
+  }
+  function tickUI(){
+    const el = (performance.now() - S.t0) / 1000;
+    const t = $('vnTimer'); if(t) t.textContent = fmtDur(el);
+    const live = $('vnLive');
+    if(live && live.children && live.children.length){
+      const lv = S.levels.slice(-LIVE_N);
+      for(let i = 0; i < live.children.length; i++){
+        const v = lv[lv.length - live.children.length + i];
+        live.children[i].style.height = Math.max(12, Math.min(100, (v || 0) * 100)) + '%';
+      }
+    }
+    if(el >= MAX_SEC){ note('وصلت الحدّ الأقصى للتسجيل (3 دقائق).'); finish(true); }
+  }
+
+  /* ---------- التقاط الصوت ---------- */
+  function onAudio(e){
+    if(S.st !== 'recording') return;
+    const d = e.inputBuffer.getChannelData(0);
+    const ratio = S.rate / 16000;
+    const out = []; let sum = 0;
+    for(let i = 0; i < d.length; i++){
+      const x = d[i]; sum += x * x; S.acc += x; S.cnt++; S.phase += 1;
+      if(S.phase >= ratio){ out.push(S.acc / S.cnt); S.acc = 0; S.cnt = 0; S.phase -= ratio; }
+    }
+    S.levels.push(Math.min(1, Math.sqrt(sum / d.length) * 8));
+    const pcm = new Int16Array(out.length);
+    for(let k = 0; k < out.length; k++){ const v = Math.max(-1, Math.min(1, out[k])); pcm[k] = v < 0 ? v * 0x8000 : v * 0x7FFF; }
+    S.pcm.push(pcm);
+  }
+  function startRecorder(){
+    S.recChunks = []; S.rec = null;
+    if(!window.MediaRecorder) return;
+    const cands = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    const mime = cands.find(m => { try{ return MediaRecorder.isTypeSupported(m); }catch(e){ return false; } });
+    try{ S.rec = mime ? new MediaRecorder(S.stream, { mimeType:mime, audioBitsPerSecond:32000 }) : new MediaRecorder(S.stream); }catch(e){ S.rec = null; return; }
+    S.rec.ondataavailable = ev => { if(ev.data && ev.data.size) S.recChunks.push(ev.data); };
+    try{ S.rec.start(1000); }catch(e){ S.rec = null; }
+  }
+  function stopRecorder(){
+    return new Promise(res=>{
+      const r = S.rec;
+      if(!r || r.state === 'inactive'){ res(null); return; }
+      const t = setTimeout(()=> res(null), 1500);
+      r.onstop = ()=>{ clearTimeout(t); res(new Blob(S.recChunks, { type:(r.mimeType || 'audio/webm') })); };
+      try{ r.stop(); }catch(e){ clearTimeout(t); res(null); }
+    });
+  }
+  function teardownAudio(){
+    try{ if(S.proc) S.proc.onaudioprocess = null; }catch(e){}
+    try{ S.src && S.src.disconnect(); }catch(e){}
+    try{ S.proc && S.proc.disconnect(); }catch(e){}
+    try{ S.stream && S.stream.getTracks().forEach(t => t.stop()); }catch(e){}
+    try{ S.ctx && S.ctx.close(); }catch(e){}
+    S.stream = S.ctx = S.proc = S.src = S.sink = null; S.rec = null;
+  }
+
+  async function start(){
+    if(S.st !== 'idle') return;
+    if(typeof voiceChatActive !== 'undefined' && voiceChatActive){ note('أنهِ المكالمة أولاً.'); return; }
+    if(!window.isSecureContext){ note('الرسائل الصوتية تحتاج رابط https.'); return; }
+    if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){ note('هذا المتصفح لا يدعم تسجيل الصوت.'); return; }
+    S.st = 'starting'; const tok = ++S.startToken;
+    S.mode = 'hold'; S.willCancel = false; S.upEarly = false; S.downWhileLocked = false; S.downT = performance.now();
+    setUI(true);
+    let stream;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1 } });
+    }catch(e){
+      if(tok === S.startToken){ S.st = 'idle'; setUI(false); }
+      const n = e && e.name;
+      note(n === 'NotAllowedError' || n === 'SecurityError' ? '🎙️ إذن المايكروفون مرفوض. فعّله من إعدادات الموقع في المتصفح.' : 'تعذّر الوصول إلى المايكروفون.');
+      return;
+    }
+    if(tok !== S.startToken || S.st !== 'starting'){ try{ stream.getTracks().forEach(t => t.stop()); }catch(e){} return; }
+    try{
+      S.stream = stream;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      S.ctx = new AC();
+      if(S.ctx.state === 'suspended') await S.ctx.resume();
+      S.rate = S.ctx.sampleRate;
+      S.src = S.ctx.createMediaStreamSource(stream);
+      S.proc = S.ctx.createScriptProcessor(2048, 1, 1);
+      S.sink = S.ctx.createGain(); S.sink.gain.value = 0;
+      S.src.connect(S.proc); S.proc.connect(S.sink); S.sink.connect(S.ctx.destination);
+      S.pcm = []; S.levels = []; S.phase = 0; S.acc = 0; S.cnt = 0;
+      S.proc.onaudioprocess = onAudio;
+      startRecorder();
+    }catch(e){
+      teardownAudio(); S.st = 'idle'; setUI(false); note('تعذّر بدء التسجيل.'); return;
+    }
+    S.t0 = performance.now();
+    S.st = 'recording';
+    S.timer = setInterval(tickUI, 100);
+    if(S.upEarly){ S.mode = 'locked'; updateModeUI(); }
+  }
+  function cancel(){
+    S.startToken++;
+    clearInterval(S.timer);
+    const r = S.rec;
+    if(r && r.state !== 'inactive'){ try{ r.onstop = null; r.stop(); }catch(e){} }
+    teardownAudio();
+    S.st = 'idle'; S.mode = 'hold'; S.willCancel = false; S.pcm = []; S.levels = [];
+    setUI(false);
+  }
+  async function finish(send){
+    if(S.st !== 'recording') return;
+    S.st = 'stopping';
+    clearInterval(S.timer);
+    const dur = (performance.now() - S.t0) / 1000;
+    const pcm = S.pcm, levels = S.levels;
+    const recBlob = await stopRecorder();
+    teardownAudio();
+    S.st = 'idle'; S.mode = 'hold'; S.willCancel = false; S.pcm = []; S.levels = [];
+    setUI(false);
+    if(!send) return;
+    if(dur < MIN_SEC){ note('الرسالة قصيرة جدًا.'); return; }
+    const id = 'vn' + Date.now();
+    const wav = pcmToWav(pcm);
+    const playBlob = (recBlob && recBlob.size > 0) ? recBlob : wav;
+    const meta = { id, dur:Math.round(dur), bars:makeBars(levels) };
+    VNStore.put(id, playBlob);
+    processNote(meta, wav);
+  }
+  function makeBars(levels){
+    const out = [];
+    if(!levels.length) return new Array(BAR_N).fill(20);
+    const step = levels.length / BAR_N;
+    for(let i = 0; i < BAR_N; i++){
+      const a = Math.floor(i * step), b = Math.max(a + 1, Math.floor((i + 1) * step));
+      let m = 0; for(let j = a; j < b && j < levels.length; j++) m = Math.max(m, levels[j]);
+      out.push(m);
+    }
+    const mx = Math.max.apply(null, out) || 1;
+    return out.map(v => Math.round(15 + 85 * (v / mx)));
+  }
+  function pcmToWav(chunks){
+    let n = 0; chunks.forEach(c => n += c.length);
+    const buf = new ArrayBuffer(44 + n * 2); const dv = new DataView(buf);
+    const w = (off, str)=>{ for(let i = 0; i < str.length; i++) dv.setUint8(off + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, 16000, true); dv.setUint32(28, 32000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+    w(36, 'data'); dv.setUint32(40, n * 2, true);
+    let o = 44; chunks.forEach(c => { for(let i = 0; i < c.length; i++){ dv.setInt16(o, c[i], true); o += 2; } });
+    return new Blob([buf], { type:'audio/wav' });
+  }
+
+  /* ---------- الفقاعة والتشغيل ---------- */
+  function stopPlayback(){
+    if(P.audio){ try{ P.audio.pause(); }catch(e){} }
+    if(P.url){ try{ URL.revokeObjectURL(P.url); }catch(e){} }
+    if(P.btn) P.btn.textContent = '▶';
+    if(P.wave){ for(let i = 0; i < P.wave.children.length; i++) P.wave.children[i].classList.remove('on'); }
+    P.audio = P.url = P.id = P.btn = P.wave = null;
+  }
+  async function togglePlay(meta, btn, wave){
+    if(P.audio && P.id === meta.id && P.btn === btn){
+      if(P.audio.paused){ try{ await P.audio.play(); btn.textContent = '⏸'; }catch(e){} }
+      else{ P.audio.pause(); btn.textContent = '▶'; }
+      return;
+    }
+    stopPlayback();
+    const blob = await VNStore.get(meta.id);
+    if(!blob){ note('التسجيل غير متوفر على هذا الجهاز، يظهر النص فقط.'); return; }
+    const url = URL.createObjectURL(blob);
+    const a = new Audio(url);
+    P.audio = a; P.url = url; P.id = meta.id; P.btn = btn; P.wave = wave; P.dur = meta.dur || 1;
+    a.addEventListener('timeupdate', ()=>{
+      const p = Math.min(1, a.currentTime / (P.dur || 1));
+      const n = wave.children.length;
+      for(let i = 0; i < n; i++) wave.children[i].classList.toggle('on', i < Math.round(p * n));
+    });
+    a.addEventListener('ended', stopPlayback);
+    a.addEventListener('error', ()=>{ stopPlayback(); note('تعذّر تشغيل التسجيل.'); });
+    btn.textContent = '⏸';
+    try{ await a.play(); }catch(e){ stopPlayback(); note('تعذّر تشغيل التسجيل.'); }
+  }
+  function buildContent(meta, text){
+    const frag = document.createDocumentFragment();
+    const row = document.createElement('div'); row.className = 'vn';
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'vn-play'; btn.textContent = '▶';
+    const wave = document.createElement('div'); wave.className = 'vn-wave';
+    (meta.bars && meta.bars.length ? meta.bars : new Array(BAR_N).fill(30)).forEach(h=>{
+      const b = document.createElement('span'); b.style.height = Math.max(12, h) + '%'; wave.appendChild(b);
+    });
+    const dur = document.createElement('span'); dur.className = 'vn-dur'; dur.textContent = fmtDur(meta.dur);
+    row.appendChild(btn); row.appendChild(wave); row.appendChild(dur);
+    frag.appendChild(row);
+    btn.addEventListener('click', ()=> togglePlay(meta, btn, wave));
+    if(text){
+      const t = document.createElement('div'); t.className = 'vn-text'; t.setAttribute('dir', 'auto'); t.textContent = text;
+      frag.appendChild(t);
+    }
+    return frag;
+  }
+
+  /* ---------- التفريغ ثم الإرسال إلى يونس ---------- */
+  async function processNote(meta, wav){
+    const chat = $('chat');
+    if(chat && typeof messages !== 'undefined' && messages.length === 0) chat.innerHTML = '';
+    const ph = document.createElement('div');
+    ph.className = 'msg user vn-pending'; ph.setAttribute('dir', 'auto');
+    ph.appendChild(buildContent(meta, ''));
+    const st = document.createElement('div'); st.className = 'vn-status'; st.textContent = '⏳ جاري تفريغ الصوت…';
+    ph.appendChild(st);
+    if(chat){ chat.appendChild(ph); chat.scrollTop = chat.scrollHeight; }
+    const fail = (msg)=>{
+      st.textContent = '⚠️ ' + msg;
+      const r = document.createElement('button'); r.type = 'button'; r.className = 'vn-retry'; r.textContent = '🔄 إعادة المحاولة';
+      r.addEventListener('click', ()=>{ ph.remove(); processNote(meta, wav); });
+      const d = document.createElement('button'); d.type = 'button'; d.className = 'vn-retry'; d.textContent = '🗑 حذف';
+      d.addEventListener('click', ()=> ph.remove());
+      ph.appendChild(r); ph.appendChild(d);
+    };
+    let text = '';
+    try{ text = await VC.transcribe(wav, 4096); }
+    catch(err){
+      const m = String((err && err.message) || '');
+      fail(m === 'NOKEY' ? 'التفريغ الصوتي يحتاج مفتاح Gemini (أضفه من الإعدادات ⚙️).'
+          : /429/.test(m) ? 'تجاوزت حدّ الاستعمال المجاني لـ Gemini، انتظر قليلاً ثم أعد المحاولة.'
+          : 'تعذّر تفريغ الصوت (' + m + '). تأكد من الإنترنت.');
+      return;
+    }
+    if(!text){ fail('لم أسمع كلاماً واضحاً في التسجيل.'); return; }
+    ph.remove();
+    let waited = 0;
+    while(sendBtn.disabled && waited < 60000){ await new Promise(r => setTimeout(r, 300)); waited += 300; }
+    const draft = inputEl.value;
+    inputEl.value = text;
+    window._vnPending = { id:meta.id, dur:meta.dur, bars:meta.bars };
+    const p = sendMessage();
+    window._vnPending = null;
+    inputEl.value = draft;
+    try{ autoGrow(); }catch(e){}
+    await p;
+  }
+
+  /* ---------- أحداث الزر (ضغط مطوّل أو نقرة قفل) ---------- */
+  function bind(){
+    const btn = $('vnBtn'); if(!btn) return;
+    btn.addEventListener('pointerdown', e=>{
+      e.preventDefault();
+      try{ btn.setPointerCapture(e.pointerId); }catch(_){}
+      if(S.st === 'recording' && S.mode === 'locked'){ S.downWhileLocked = true; return; }
+      if(S.st === 'idle'){ S.downX = e.clientX; start(); }
+    });
+    btn.addEventListener('pointermove', e=>{
+      if((S.st === 'recording' || S.st === 'starting') && S.mode === 'hold'){
+        const will = Math.abs(e.clientX - S.downX) > 90;
+        if(will !== S.willCancel){ S.willCancel = will; updateModeUI(); }
+      }
+    });
+    const up = (cancelled)=>{
+      if(S.downWhileLocked){ S.downWhileLocked = false; if(S.st === 'recording') finish(true); return; }
+      if(S.st === 'starting'){
+        if(S.mode === 'hold'){ if(S.willCancel) cancel(); else S.upEarly = true; }
+        return;
+      }
+      if(S.st !== 'recording' || S.mode !== 'hold') return;
+      if(S.willCancel){ cancel(); return; }
+      if(cancelled || (performance.now() - S.downT) < 500){ S.mode = 'locked'; updateModeUI(); return; }
+      finish(true);
+    };
+    btn.addEventListener('pointerup', ()=> up(false));
+    btn.addEventListener('pointercancel', ()=> up(true));
+    btn.addEventListener('contextmenu', e => e.preventDefault());
+    const c = $('vnCancelBtn'); if(c) c.addEventListener('click', ()=>{ if(S.st === 'recording' || S.st === 'starting') cancel(); });
+    document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && (S.st === 'recording' || S.st === 'starting')) cancel(); });
+  }
+  bind();
+  return { buildContent, _S:S, _start:start, _finish:finish, _cancel:cancel, _makeBars:makeBars, _pcmToWav:pcmToWav };
+})();
+window.VN = VN;
 
 updateVoiceToggleUI();
 
