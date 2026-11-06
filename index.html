@@ -1677,6 +1677,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <button class="btn-ghost" id="cloudPushBtn" style="flex:1;">☁️ مزامنة الآن</button>
         <button class="btn-ghost" id="cloudPullBtn" style="flex:1;">📥 استرجاع من السحابة</button>
       </div>
+      <button class="btn-ghost" id="cloudHistBtn" style="width:100%; margin-top:8px;">🕘 استرجاع نسخة سابقة (آخر 14 يوم)</button>
       <p id="cloudSyncResult" style="font-size:11px; color:var(--ink-soft); margin-top:6px;"></p>
       <p id="lastSyncDisplay" style="font-size:11px; color:var(--ink-soft); margin-top:4px; font-weight:600;"></p>
     </div>
@@ -2935,8 +2936,33 @@ async function _openAiStyleCall(url, apiKey, body, providerName){
   return (typeof content === 'string' ? content : content.map(p=>p.text||'').join('')).trim();
 }
 
+// Groq بدّل/حيّد موديلات (llama-3.3-70b وllama-3.1-8b وllama-4-scout توقفو) — نجيبو اللائحة الحية من Groq ونختارو تلقائيًا
+const GROQ_TEXT_PREF = ['openai/gpt-oss-120b','openai/gpt-oss-20b'];
+const GROQ_VISION_PREF = ['qwen/qwen3.8-27b','meta-llama/llama-4-maverick-17b-128e-instruct'];
+let _groqModels = null, _groqModelsAt = 0;
+async function groqModelCandidates(gKey, vision){
+  if(!_groqModels || Date.now() - _groqModelsAt > 3*3600*1000){
+    try{
+      const r = await fetch('https://api.groq.com/openai/v1/models', { headers:{ 'Authorization':'Bearer ' + gKey } });
+      if(r.status === 401 || r.status === 403){ const e = new Error('AUTH'); e.detail = 'مفتاح Groq غير صالح'; throw e; }
+      const j = await r.json();
+      _groqModels = (j.data || []).filter(m => m.active !== false).map(m => m.id);
+      _groqModelsAt = Date.now();
+    }catch(e){ if(e.message === 'AUTH') throw e; /* بلا إنترنت للائحة: نستعمل الأسماء المعروفة */ }
+  }
+  const live = (_groqModels || []).filter(id => !/whisper|guard|safeguard|tts|orpheus|playai|embed|compound|distil/i.test(id));
+  const pref = vision ? GROQ_VISION_PREF : GROQ_TEXT_PREF;
+  let out = pref.filter(id => !live.length || live.includes(id));
+  if(vision){
+    live.filter(id => /scout|maverick|vision|qwen/i.test(id) && !out.includes(id)).forEach(id => out.push(id));
+  }else{
+    live.filter(id => !out.includes(id)).sort((x, y)=> (/gpt-oss|qwen|llama/.test(y) ? 1 : 0) - (/gpt-oss|qwen|llama/.test(x) ? 1 : 0)).forEach(id => out.push(id));
+  }
+  return out.slice(0, 4);
+}
+
 async function callGroq(gKey, msgs){
-  // Groq (مجاني) — نص بـ llama-3.3-70b، وإذا الرسالة الأخيرة فيها صورة كيستعمل موديل الرؤية (Llama 4 Scout)
+  // Groq (مجاني) — نص بـ gpt-oss، وإذا الرسالة الأخيرة فيها صورة كنستعمل موديل رؤية متاح
   const recent = msgs.slice(-14);
   const last = recent[recent.length-1] || {};
   const hasImg = last.role === 'user' && (last.image || (last.images && last.images.length));
@@ -2957,15 +2983,24 @@ async function callGroq(gKey, msgs){
       gMessages.push({role:'assistant', content: m.text || ''});
     }
   });
-  const run = (model, ms)=> _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gKey, {
-    model, messages: ms, temperature: 0.7, max_tokens: 1536
-  }, 'Groq');
-  try{ return await run(hasImg ? GROQ_VISION_MODEL : GROQ_MODEL, gMessages); }
-  catch(e){
-    // حد الموديل الكبير (طلبات/توكنات فالدقيقة أو اليوم) — نجربو الموديل الخفيف (حدوده منفصلة وأوسع) بتاريخ أقصر
-    if(e.message === 'QUOTA' && !hasImg){ return await run('llama-3.1-8b-instant', [gMessages[0]].concat(gMessages.slice(-6))); }
-    throw e;
+  const run = (model, ms)=>{
+    const body = { model, messages: ms, temperature: 0.7, max_completion_tokens: 2048 };
+    if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
+    return _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gKey, body, 'Groq');
+  };
+  const cands = await groqModelCandidates(gKey, !!hasImg);
+  if(!cands.length){ const e = new Error('NETWORK'); e.detail = 'ما لقيت حتى موديل ' + (hasImg ? 'رؤية' : 'نص') + ' متاح فـ Groq.'; throw e; }
+  let lastErr = null;
+  for(let i = 0; i < cands.length; i++){
+    try{
+      // الموديلات الاحتياطية كتاخد تاريخ أقصر باش تدوز حتى مع الحدود الصغيرة
+      return await run(cands[i], i === 0 ? gMessages : [gMessages[0]].concat(gMessages.slice(-6)));
+    }catch(e){
+      if(e.message === 'AUTH') throw e;
+      lastErr = e; e.detail = (cands[i] + ': ' + (e.detail || e.message)).slice(0, 160);
+    }
   }
+  throw lastErr;
 }
 
 async function callCerebras(cKey, msgs){
@@ -3085,15 +3120,78 @@ function applyAllAppData(data){
   });
 }
 
-async function cloudPush(onStatus){
+// عدد العناصر فاللوائح (فواتير، أجراء، عمليات...) — كنستعملوه باش ما نرفعوش أبدًا بيانات فارغة/ناقصة فوق النسخة السحابية
+function dataScore(obj){
+  let n = 0;
+  Object.keys(obj || {}).forEach(k=>{
+    if(!k.startsWith('alioua_btp_') || k === HISTORY_KEY) return;
+    try{ const v = JSON.parse(obj[k]); if(Array.isArray(v)) n += v.length; }catch(e){}
+  });
+  return n;
+}
+async function cloudSnapshot(dbUrl, code, body){
+  // نسخة يومية فالسحابة (آخر 14 يوم) — حتى إلا تخربات النسخة الحالية، النسخ القديمة كتبقى
+  const last = Number(LS.getItem('alioua_btp_last_snapshot') || 0);
+  if(Date.now() - last < 6*3600*1000) return;
+  const id = await sha256('yunes-sync-v2|' + code);
+  const d = new Date(); const day = d.getFullYear() + p2(d.getMonth()+1) + p2(d.getDate());
+  const r = await fetch(`${dbUrl}/yunes_hist_v2/${id}/${day}.json`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if(!r.ok) return;
+  safeSetItem('alioua_btp_last_snapshot', String(Date.now()));
+  const k = await (await fetch(`${dbUrl}/yunes_hist_v2/${id}.json?shallow=true`)).json();
+  const days = Object.keys(k || {}).sort();
+  for(const old of days.slice(0, Math.max(0, days.length - 14))){
+    await fetch(`${dbUrl}/yunes_hist_v2/${id}/${old}.json`, {method:'DELETE'});
+  }
+}
+async function cloudListSnapshots(){
+  const id = await sha256('yunes-sync-v2|' + getSyncCode());
+  const k = await (await fetch(`${getFirebaseDbUrl()}/yunes_hist_v2/${id}.json?shallow=true`)).json();
+  return Object.keys(k || {}).sort().reverse();
+}
+async function cloudRestoreSnapshot(day, onStatus){
+  try{
+    const id = await sha256('yunes-sync-v2|' + getSyncCode());
+    const rec = await (await fetch(`${getFirebaseDbUrl()}/yunes_hist_v2/${id}/${day}.json`)).json();
+    if(!rec || !rec.ct){ onStatus('fail', 'النسخة ما لقيتهاش.'); return; }
+    let data;
+    try{ data = await syncDecrypt(rec, getSyncCode()); }catch(e){ onStatus('fail', 'ما قدرتش نفك التشفير (رمز المزامنة خاطئ؟).'); return; }
+    try{ downloadBackupFile('yunes-avant-restauration'); }catch(e){}   // نسخة أمان من الحالة الحالية قبل ما نبدلوها
+    applyCloudData(data);
+    cloudHasUnsyncedChanges = true;
+    cloudPush(()=>{}, {force:true});
+    onStatus('ok');
+  }catch(e){ onStatus('fail', 'خطأ فالاتصال بالإنترنت'); }
+}
+
+async function cloudPush(onStatus, opts){
+  opts = opts || {};
   if(!cloudConfigured()){ if(onStatus) onStatus('fail', (getFirebaseDbUrl() && !syncCodeStrong(getSyncCode())) ? SYNC_WEAK_MSG : 'خصك تعمري: رابط Database URL ورمز المزامنة أولاً.'); return; }
   const dbUrl = getFirebaseDbUrl();
   const syncCode = getSyncCode();
   if(!syncCodeStrong(syncCode)){ if(onStatus) onStatus('fail', SYNC_WEAK_MSG); return; }
   const payload = collectAllAppData();
   payload.updatedAt = new Date().toISOString();
+  const localScore = dataScore(payload);
+  if(localScore === 0){ if(onStatus) onStatus('blocked', 'البيانات المحلية فارغة، ما غنرفعها أبدًا باش ما تتمسحش النسخة السحابية. دير "استرجاع من السحابة" أولاً.'); return; }
   try{
     const url = `${dbUrl}/${await syncPath(syncCode)}.json`;
+    if(!opts.force){
+      try{
+        const rr = await fetch(url);
+        if(rr.ok){
+          const rec = await rr.json();
+          if(rec && rec.ct){
+            let remote = null; try{ remote = await syncDecrypt(rec, syncCode); }catch(e){}
+            const rs = remote ? dataScore(remote) : 0;
+            if(rs > 0 && localScore < rs * 0.5 && rs - localScore >= 5){
+              if(onStatus) onStatus('blocked', `البيانات المحلية (${localScore} عنصر) أقل بكثير من السحابية (${rs} عنصر)، وقفت الرفع باش ما نضيعوش بيانات. دير "استرجاع من السحابة" أولاً.`);
+              return;
+            }
+          }
+        }
+      }catch(e){}
+    }
     const body = await syncEncrypt(payload, syncCode);
     body.updatedAt = payload.updatedAt;
     const res = await fetch(url, {
@@ -3108,6 +3206,7 @@ async function cloudPush(onStatus){
     }
     safeSetItem('alioua_btp_last_sync', new Date().toISOString());
     updateLastSyncDisplay();
+    try{ await cloudSnapshot(dbUrl, syncCode, body); }catch(e){}
     if(onStatus) onStatus('ok');
   }catch(e){
     if(onStatus) onStatus('fail', 'خطأ فالاتصال بالإنترنت');
@@ -3169,6 +3268,13 @@ function attemptCloudPush(){
       clearTimeout(cloudPushRetryTimer);
       cloudPushRetryTimer = null;
       updateSyncStatusBadge('ok');
+    }else if(status === 'blocked'){
+      updateSyncStatusBadge('fail');
+      clearTimeout(cloudPushRetryTimer); cloudPushRetryTimer = null;
+      if(!window._cloudBlockedShown){
+        window._cloudBlockedShown = true;
+        try{ messages.push({role:'model', text:'🛡️ ' + detail, time:Date.now()}); renderMessages(); saveHistory(); }catch(e){}
+      }
     }else{
       cloudPushFailStreak++;
       updateSyncStatusBadge('fail');
@@ -3207,40 +3313,7 @@ function flushPendingCloudSync(){
   }
 }
 
-async function cloudPull(onStatus){
-  if(!cloudConfigured()){ if(onStatus) onStatus('fail', (getFirebaseDbUrl() && !syncCodeStrong(getSyncCode())) ? SYNC_WEAK_MSG : 'خصك تعمري: رابط Database URL ورمز المزامنة أولاً.'); return; }
-
-  // حماية جوهرية: إذا كاين تعديلات محلية معلقة لسه ماتأكدش رفعها بنجاح، نحاولو نرفعوها أولاً.
-  // إذا فشل الرفع، نرفضو السحب كليًا — بلا هاد الفحص، السحب غادي يمحي التعديلات المحلية
-  // بلا ما توصل للسحابة أصلاً (هذا كان سبب اختفاء البيانات).
-  if(cloudHasUnsyncedChanges){
-    const pushSucceeded = await new Promise(resolve=>{
-      cloudPush((status)=>{ if(status === 'ok') cloudHasUnsyncedChanges = false; resolve(status === 'ok'); });
-    });
-    if(!pushSucceeded){
-      if(onStatus) onStatus('fail', 'كاين تعديلات محلية معلقة ماقدرناش نرفعوها للسحابة، تجاوزنا السحب حماية لبياناتك');
-      return;
-    }
-  }
-
-  const dbUrl = getFirebaseDbUrl();
-  const syncCode = getSyncCode();
-  if(!syncCodeStrong(syncCode)){ if(onStatus) onStatus('fail', SYNC_WEAK_MSG); return; }
-  try{
-    const url = `${dbUrl}/${await syncPath(syncCode)}.json`;
-    const res = await fetch(url);
-    if(!res.ok){
-      const errData = await res.json().catch(()=>({}));
-      if(onStatus) onStatus('fail', errData?.error || ('رمز الخطأ: '+res.status));
-      return;
-    }
-    let data = await res.json();
-    if(data && data.ct){
-      try{ data = await syncDecrypt(data, syncCode); }
-      catch(e){ if(onStatus) onStatus('fail', 'ما قدرتش نفك التشفير: رمز المزامنة غير صحيح أو البيانات تالفة.'); return; }
-    }else if(data){ data = null; }
-    if(!data){ if(onStatus) onStatus('fail', 'ما لقيتش بيانات بهاد الرمز — يمكن أول مرة كتربطي، ديري "مزامنة الآن" أولاً.'); return; }
-
+function applyCloudData(data){
     // الصيغة الجديدة: كل مفاتيح alioua_btp_* مباشرة
     applyAllAppData(data);
 
@@ -3280,6 +3353,43 @@ async function cloudPull(onStatus){
     if(typeof renderSuppliers === 'function') renderSuppliers();
     if(typeof renderWorkers === 'function') renderWorkers();
     if(typeof renderProjects === 'function') renderProjects();
+}
+
+async function cloudPull(onStatus){
+  if(!cloudConfigured()){ if(onStatus) onStatus('fail', (getFirebaseDbUrl() && !syncCodeStrong(getSyncCode())) ? SYNC_WEAK_MSG : 'خصك تعمري: رابط Database URL ورمز المزامنة أولاً.'); return; }
+
+  // حماية جوهرية: إذا كاين تعديلات محلية معلقة لسه ماتأكدش رفعها بنجاح، نحاولو نرفعوها أولاً.
+  // إذا فشل الرفع، نرفضو السحب كليًا — بلا هاد الفحص، السحب غادي يمحي التعديلات المحلية
+  // بلا ما توصل للسحابة أصلاً (هذا كان سبب اختفاء البيانات).
+  if(cloudHasUnsyncedChanges){
+    const pushSucceeded = await new Promise(resolve=>{
+      cloudPush((status)=>{ if(status === 'ok') cloudHasUnsyncedChanges = false; resolve(status === 'ok'); });
+    });
+    if(!pushSucceeded){
+      if(onStatus) onStatus('fail', 'كاين تعديلات محلية معلقة ماقدرناش نرفعوها للسحابة، تجاوزنا السحب حماية لبياناتك');
+      return;
+    }
+  }
+
+  const dbUrl = getFirebaseDbUrl();
+  const syncCode = getSyncCode();
+  if(!syncCodeStrong(syncCode)){ if(onStatus) onStatus('fail', SYNC_WEAK_MSG); return; }
+  try{
+    const url = `${dbUrl}/${await syncPath(syncCode)}.json`;
+    const res = await fetch(url);
+    if(!res.ok){
+      const errData = await res.json().catch(()=>({}));
+      if(onStatus) onStatus('fail', errData?.error || ('رمز الخطأ: '+res.status));
+      return;
+    }
+    let data = await res.json();
+    if(data && data.ct){
+      try{ data = await syncDecrypt(data, syncCode); }
+      catch(e){ if(onStatus) onStatus('fail', 'ما قدرتش نفك التشفير: رمز المزامنة غير صحيح أو البيانات تالفة.'); return; }
+    }else if(data){ data = null; }
+    if(!data){ if(onStatus) onStatus('fail', 'ما لقيتش بيانات بهاد الرمز — يمكن أول مرة كتربطي، ديري "مزامنة الآن" أولاً.'); return; }
+
+    applyCloudData(data);
     if(onStatus) onStatus('ok');
   }catch(e){
     if(onStatus) onStatus('fail', 'خطأ فالاتصال بالإنترنت');
@@ -3292,15 +3402,38 @@ document.getElementById('cloudPushBtn')?.addEventListener('click', ()=>{
   const resultEl = document.getElementById('cloudSyncResult');
   resultEl.textContent = '⏳ كنزامن...';
   resultEl.style.color = 'var(--ink-soft)';
-  cloudPush((status, detail)=>{
+  const cb = (status, detail)=>{
     if(status === 'ok'){
       resultEl.textContent = '✅ تزامنت البيانات مع السحابة بنجاح!';
       resultEl.style.color = '#2e7d32';
+    }else if(status === 'blocked'){
+      resultEl.textContent = '🛡️ ' + detail; resultEl.style.color = '#b45309';
+      if(!/فارغة/.test(detail) && confirm(detail + '\n\nواش متأكد بغيتي تفرض الرفع وتبدل النسخة السحابية؟')) cloudPush(cb, {force:true});
     }else{
       resultEl.textContent = '❌ ما تزامنتش: ' + (detail || 'خطأ غير معروف');
       resultEl.style.color = '#b91c1c';
     }
-  });
+  };
+  cloudPush(cb);
+});
+document.getElementById('cloudHistBtn')?.addEventListener('click', async ()=>{
+  setFirebaseDbUrl(document.getElementById('fbDbUrlInput').value.trim());
+  setSyncCode(document.getElementById('syncCodeInput').value.trim());
+  const resultEl = document.getElementById('cloudSyncResult');
+  resultEl.style.color = 'var(--ink-soft)'; resultEl.textContent = '⏳ كنقلب على النسخ السابقة...';
+  try{
+    const days = await cloudListSnapshots();
+    if(!days.length){ resultEl.textContent = 'ما كاين حتى نسخة سابقة فالسحابة بعد (كتتسجل نسخة يومية تلقائيًا من دابا).'; return; }
+    const fmt = d=> d.slice(0,4) + '-' + d.slice(4,6) + '-' + d.slice(6,8);
+    const pick = prompt('اختار النسخة (كتب الرقم):\n' + days.map((d,i)=> (i+1) + ') ' + fmt(d)).join('\n'));
+    const i = parseInt(pick, 10) - 1;
+    if(!(i >= 0 && i < days.length)){ resultEl.textContent = ''; return; }
+    if(!confirm('غادي نبدل البيانات الحالية بنسخة ' + fmt(days[i]) + '. غادي نحمّل نسخة احتياطية من الحالة الحالية قبل. نكمل؟')){ resultEl.textContent = ''; return; }
+    cloudRestoreSnapshot(days[i], (st, d)=>{
+      resultEl.textContent = st === 'ok' ? '✅ تسترجعات نسخة ' + fmt(days[i]) : '❌ ' + (d || 'خطأ');
+      resultEl.style.color = st === 'ok' ? '#2e7d32' : '#b91c1c';
+    });
+  }catch(e){ resultEl.textContent = '❌ خطأ فالاتصال بالإنترنت'; resultEl.style.color = '#b91c1c'; }
 });
 document.getElementById('cloudPullBtn')?.addEventListener('click', ()=>{
   setFirebaseDbUrl(document.getElementById('fbDbUrlInput').value.trim());
@@ -4771,7 +4904,7 @@ pinPad.addEventListener('click', (e)=>{
   if(k === 'back'){ pinBuffer = pinBuffer.slice(0,-1); updatePinDots(); return; }
   if(k === 'reset'){
     if(LS.secureOn()){
-      if(confirm('⚠️ البيانات المحلية مشفّرة بالرمز. نسيتي الرمز = غادي تتمسح البيانات المحلية نهائيًا (تقدر ترجعها من المزامنة السحابية أو نسخة احتياطية). تمسح وتبدا من جديد؟')){
+      if((prompt('⚠️ خطر: البيانات المحلية مشفّرة بالرمز. نسيتي الرمز = غادي تتمسح كل بيانات هاد الجهاز نهائيًا (حسابات، فواتير، أجراء، محادثات). ما تكمّل إلا إذا عندك نسخة احتياطية.\n\nباش تأكد، كتب كلمة: مسح') || '').trim() === 'مسح'){
         LS.wipe().then(()=>{ setStage('create'); });
       }
     }else if(confirm('هذا رح يمسح رمز الدخول الحالي وتضطر تسوي رمز جديد. متأكد؟')){
