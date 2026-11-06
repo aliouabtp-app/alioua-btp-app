@@ -1691,6 +1691,16 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
     </div>
 
     <div style="margin-top:18px; border-top:1px solid var(--line); padding-top:16px;">
+      <p class="mini-title" style="margin-bottom:8px;">🔒 قفل الشهور وسجل التغييرات</p>
+      <p style="font-size:11px; color:var(--ink-soft); margin-bottom:8px; line-height:1.5;">الشهر المقفول ما كيتزادش فيه، ما كيتعدلش، وما كيتمسحش فيه والو (فواتير، عمليات، أداءات...). كل تعديل كيتسجل، والمحذوف كيمشي لسلة وتقدر ترجعو.</p>
+      <div style="display:flex; gap:8px;"><input type="month" id="lockMonthInput" style="flex:1;"><button class="btn-ghost" id="lockMonthBtn">🔒 قفل</button></div>
+      <div id="lockedMonthsList" style="margin-top:8px;"></div>
+      <button class="btn-ghost" id="auditShowBtn" style="width:100%; margin-top:8px;">📜 سجل التغييرات</button>
+      <button class="btn-ghost" id="trashShowBtn" style="width:100%; margin-top:8px;">🗑 سلة المحذوفات</button>
+      <div id="auditPanel" style="margin-top:8px; font-size:12px;"></div>
+    </div>
+
+    <div style="margin-top:18px; border-top:1px solid var(--line); padding-top:16px;">
       <p class="mini-title" style="margin-bottom:8px;">🗂️ نسخة احتياطية كاملة</p>
       <p style="font-size:11px; color:var(--ink-soft); margin-bottom:8px; line-height:1.5;">صدّري كل شيء لملف واحد: المفاتيح، الفواتير، العملاء، الموردين، المواد، المواعيد، وسجل المحادثة. إذا تمسحت بيانات المتصفح، رجّعي كل شيء بضغطة وحدة.</p>
       <div style="display:flex; gap:8px;">
@@ -1835,6 +1845,93 @@ function makeIdbStore(){
   };
 }
 const LS = makeSecureLS(window.localStorage, makeIdbStore());
+
+/* ===== قفل الشهور + سجل التغييرات + سلة المحذوفات =====
+   كل كتابة فالمجموعات المالية كتدوز من هنا: نقارنو القديم بالجديد، نسجلو، نحميو الشهور المقفولة، ونحطو المحذوف فالسلة. */
+const AUDIT_KEY = 'alioua_btp_audit', TRASH_KEY = 'alioua_btp_trash', CLOSED_KEY = 'alioua_btp_closed_months', AUDIT_CAISSE = 'alioua_btp_caisse';
+const AUDIT = (function(){
+  const WATCH = {
+    'alioua_btp_transactions': {n:'عملية'}, 'alioua_btp_pdf_invoices': {n:'فاتورة PDF'}, 'alioua_btp_invoices': {n:'فاتورة مقدّم خدمة'},
+    'alioua_btp_purchases': {n:'مشتريات'}, 'alioua_btp_supplier_payments': {n:'دفعة مورد'}, 'alioua_btp_client_payments': {n:'دفعة مقدّم خدمة'},
+    'alioua_btp_customer_payments': {n:'مقبوض عميل'}, 'alioua_btp_worker_payments': {n:'أداء أجير'}, 'alioua_btp_worker_extras': {n:'إضافي أجير'},
+    'alioua_btp_attendance': {n:'حضور', nolog:true}, 'alioua_btp_clients': {n:'مقدّم خدمة'}, 'alioua_btp_customers': {n:'عميل'},
+    'alioua_btp_suppliers': {n:'مورد'}, 'alioua_btp_workers': {n:'أجير'}, 'alioua_btp_projects': {n:'مشروع'},
+    'alioua_btp_caisse': {n:'الصندوق', sub:{fundings:'تمويل صندوق', bons:'بون صندوق'}}
+  };
+  let bypass = 0, lastAlert = 0;
+  const parse = (str, d)=>{ try{ const v = JSON.parse(str); return v == null ? d : v; }catch(e){ return d; } };
+  const lists = (k, v)=> k === AUDIT_CAISSE ? {fundings: (v && v.fundings) || [], bons: (v && v.bons) || []} : {'': Array.isArray(v) ? v : []};
+  const idOf = it => it && typeof it === 'object' ? (it.id || (it.workerId && it.date ? it.workerId + '|' + it.date : null)) : null;
+  const monthOf = it => { const d = it && (it.date || it.invDate || it.paidAt); return typeof d === 'string' && /^\d{4}-\d{2}/.test(d) ? d.slice(0,7) : null; };
+  const labelOf = it => String(it.name || it.invNumber || it.desc || it.description || it.label || it.title || it.note || idOf(it) || '').slice(0, 40);
+  const amountOf = it => (typeof it.amount === 'number' ? it.amount : (typeof it.total === 'number' ? it.total : null));
+  const closed = ()=> parse(LS.getItem(CLOSED_KEY), []);
+  const put = (k, v)=> LS.setItem(k, JSON.stringify(v));
+  function addLog(entries){
+    const log = parse(LS.getItem(AUDIT_KEY), []); entries.forEach(e=> log.push(e)); put(AUDIT_KEY, log.slice(-400));
+  }
+  function notify(msg){
+    if(Date.now() - lastAlert < 3000) return; lastAlert = Date.now();
+    try{ alert(msg); }catch(e){}
+  }
+  function handle(k, newStr){
+    const w = WATCH[k]; if(!w || bypass || LS.locked) return true;
+    const emptyV = k === AUDIT_CAISSE ? {} : [];
+    const lo = lists(k, parse(LS.getItem(k), emptyV)), ln = lists(k, parse(newStr, emptyV));
+    const events = [];
+    Object.keys(ln).forEach(name=>{
+      const om = new Map(), nm = new Map();
+      (lo[name] || []).forEach(it=>{ const id = idOf(it); if(id != null) om.set(id, it); });
+      ln[name].forEach(it=>{ const id = idOf(it); if(id != null) nm.set(id, it); });
+      nm.forEach((it, id)=>{
+        const o = om.get(id);
+        if(!o) events.push({a:'add', it, name});
+        else if(JSON.stringify(o) !== JSON.stringify(it)) events.push({a:'edit', it, o, name});
+      });
+      om.forEach((o, id)=>{ if(!nm.has(id)) events.push({a:'del', it:o, name}); });
+    });
+    if(!events.length) return true;
+    const cl = closed();
+    if(cl.length){
+      for(const e of events){
+        const hit = [monthOf(e.it), e.o ? monthOf(e.o) : null].find(m => m && cl.includes(m));
+        if(hit){ notify('🔒 الشهر ' + hit + ' مقفول: ما يمكنش تزيد، تعدل، أو تمسح فيه. إلا بغيتي، افتحو من الإعدادات ⚙️ ← قفل الشهور.'); return false; }
+      }
+    }
+    const now = Date.now(), logs = [], trash = [];
+    events.forEach(e=>{
+      const kind = w.n + (e.name && w.sub ? ' — ' + w.sub[e.name] : '');
+      if(!w.nolog){
+        const entry = {t: now, k: kind, a: e.a, l: labelOf(e.it)}; const am = amountOf(e.it); if(am != null) entry.x = am;
+        if(e.a === 'edit'){ entry.f = Object.keys(Object.assign({}, e.o, e.it)).filter(f=> JSON.stringify(e.o[f]) !== JSON.stringify(e.it[f])).slice(0, 4); }
+        logs.push(entry);
+      }
+      if(e.a === 'del' && !w.nolog) trash.push({id: 'tr' + now + Math.random().toString(36).slice(2, 7), t: now, key: k, list: e.name, kind, item: e.it, l: labelOf(e.it)});
+    });
+    if(logs.length) addLog(logs);
+    if(trash.length){ const tr = parse(LS.getItem(TRASH_KEY), []).concat(trash); put(TRASH_KEY, tr.slice(-100)); }
+    return true;
+  }
+  return {
+    handle, WATCH, closed, addLog, parse, put,
+    get bypassing(){ return bypass > 0; },
+    withBypass(fn){ bypass++; try{ return fn(); }finally{ bypass--; } },
+    restore(trId){
+      const tr = parse(LS.getItem(TRASH_KEY), []); const e = tr.find(x=> x.id === trId); if(!e) return false;
+      const cur = parse(LS.getItem(e.key), e.key === AUDIT_CAISSE ? {} : []);
+      if(e.key === AUDIT_CAISSE){ cur[e.list] = (cur[e.list] || []).concat([e.item]); } else { cur.push(e.item); }
+      const before = LS.getItem(e.key); LS.setItem(e.key, JSON.stringify(cur));
+      if(LS.getItem(e.key) === before) return false;   // محبوس بسبب شهر مقفول
+      put(TRASH_KEY, tr.filter(x=> x.id !== trId)); return true;
+    },
+    setLocked(month, lock){
+      let cl = closed().filter(m=> m !== month); if(lock) cl.push(month); cl.sort();
+      put(CLOSED_KEY, cl); addLog([{t: Date.now(), k: 'قفل الشهور', a: lock ? 'lock' : 'unlock', l: month}]);
+    }
+  };
+})();
+const _lsSetItem = LS.setItem.bind(LS);
+LS.setItem = function(k, v){ if(AUDIT.handle(k, v) === false) return; _lsSetItem(k, v); };
 
 
 const STORAGE_KEY = 'alioua_btp_api_key';
@@ -3022,6 +3119,7 @@ async function callCerebras(cKey, msgs){
 function openModal(isFirstRun){
   if(typeof updateLastSyncDisplay === 'function') updateLastSyncDisplay();
   if(typeof updateStorageUsageUI === 'function') updateStorageUsageUI();
+  try{ renderAuditUI(); }catch(e){}
   apiKeyInput.value = getApiKey();
   groqKeyInput.value = getGroqKey();
   cerebrasKeyInput.value = getCerebrasKey();
@@ -3111,7 +3209,8 @@ function collectAllAppData(){
   }
   return data;
 }
-function applyAllAppData(data){
+function applyAllAppData(data){ return AUDIT.withBypass(()=> _applyAllAppData(data)); }
+function _applyAllAppData(data){
   if(!data || typeof data !== 'object') return;
   Object.keys(data).forEach(key=>{
     if(key.startsWith('alioua_btp_') && !CLOUD_SYNC_EXCLUDE.includes(key) && data[key] !== null && data[key] !== undefined){
@@ -3124,7 +3223,7 @@ function applyAllAppData(data){
 function dataScore(obj){
   let n = 0;
   Object.keys(obj || {}).forEach(k=>{
-    if(!k.startsWith('alioua_btp_') || k === HISTORY_KEY) return;
+    if(!k.startsWith('alioua_btp_') || k === HISTORY_KEY || k === AUDIT_KEY || k === TRASH_KEY || k === CLOSED_KEY) return;
     try{ const v = JSON.parse(obj[k]); if(Array.isArray(v)) n += v.length; }catch(e){}
   });
   return n;
@@ -3313,7 +3412,8 @@ function flushPendingCloudSync(){
   }
 }
 
-function applyCloudData(data){
+function applyCloudData(data){ return AUDIT.withBypass(()=> _applyCloudData(data)); }
+function _applyCloudData(data){
     // الصيغة الجديدة: كل مفاتيح alioua_btp_* مباشرة
     applyAllAppData(data);
 
@@ -3915,45 +4015,85 @@ const VC = (function(){
     });
   }
   // التفريغ الصوتي: Groq Whisper أولاً (مجاني وحدّه واسع)، وGemini كاحتياطي فقط
-  async function transcribeGroq(blob, gk){
-    const fd = new FormData();
-    fd.append('file', blob, 'audio.wav');
-    fd.append('model', 'whisper-large-v3-turbo');
-    fd.append('language', 'ar');
-    fd.append('temperature', '0');
-    fd.append('response_format', 'json');
-    fd.append('prompt', 'تسجيل بالعربية أو الدارجة المغربية، وقد تأتي كلمات فرنسية.');
-    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method:'POST', headers:{ 'Authorization':'Bearer ' + gk }, body: fd });
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const j = await res.json();
-    const t = String(j.text || '').trim();
-    if(!t || /اشتركوا|ترجمة|subscribe/i.test(t)) return '';
-    return t;
-  }
-  async function transcribe(blob, maxTok){
-    const gk = getGroqKey();
-    if(gk){
-      try{ return await transcribeGroq(blob, gk); }
-      catch(e){ if(!getApiKey()) throw e; }
+  /* ===== التفريغ الصوتي بالدارجة المغربية =====
+     السلسلة: Gemini (أفهم للدارجة؛ كنجربو عدة موديلات كل واحد عندو حصتو) ← Groq Whisper large-v3 ← Whisper turbo.
+     كل نتيجة كتتفحص: إلا ماشي عربية (هلوسة بلغة أخرى) كنرفضوها ونعاودو بالموديل الموالي. الموديل اللي وصل لحدو كيتحيد مؤقتًا. */
+  const _cool = {};
+  const _isCool = id => (_cool[id] || 0) > Date.now();
+  const _setCool = (id, min) => { _cool[id] = Date.now() + min * 60000; };
+  const _AR = /[\u0600-\u06FF]/g, _LAT = /[A-Za-z\u00C0-\u024F]/g;
+  const _looksArabic = t => { const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length; return a >= 2 && a >= l; };
+  const _noise = t => !t || /اشتركوا|ترجمة نانسي|subscribe|^EMPTY\b/i.test(t);
+  const DARIJA_HINT = 'مرحبا يونس، بغيت نسجل فاتورة جديدة. شحال خلصنا للأجير فالورشة؟ دير ليا الحساب ديال السيمة والحديد، واش كاين شي كريدي؟ مسح هاد العملية وزيد وحدة أخرى، فين وصلنا دابا؟';
+  let _gModels = null, _gModelsAt = 0;
+  async function geminiAudioModels(key){
+    if(!_gModels || Date.now() - _gModelsAt > 6*3600*1000){
+      try{
+        const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + key);
+        const j = await r.json();
+        _gModels = (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+          .map(m => m.name.replace('models/', '')).filter(n => /flash/.test(n) && !/image|tts|live|embed|native-audio|robotics|computer|thinking|exp/.test(n));
+        _gModelsAt = Date.now();
+      }catch(e){ _gModels = _gModels || []; }
     }
-    const key = getApiKey(); if(!key) throw new Error('NOKEY');
-    const b64 = await blobToB64(blob);
-    const body = JSON.stringify({
-      contents:[{ role:'user', parts:[
-        { inlineData:{ mimeType:'audio/wav', data:b64 } },
-        { text:'هذا تسجيل صوتي لشخص يتكلم بالعربية أو الدارجة المغربية (وقد يخلط بعض الكلمات الفرنسية). اكتب ما قاله حرفياً فقط، بدون أي شرح أو إضافة أو علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY' }
-      ] }],
-      generationConfig:{ temperature:0, maxOutputTokens:(maxTok || 1024) }
+    const lite = _gModels.filter(n => /lite/.test(n)).sort().reverse(), rest = _gModels.filter(n => !/lite/.test(n)).sort().reverse();
+    const order = lite.concat(rest); if(typeof MODEL === 'string' && !order.includes(MODEL)) order.push(MODEL);
+    return order.filter(m => !_isCool(m)).slice(0, 4);
+  }
+  async function geminiTranscribe(m, key, b64, maxTok){
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        contents:[{ role:'user', parts:[
+          { inlineData:{ mimeType:'audio/wav', data:b64 } },
+          { text:'هذا تسجيل صوتي لشخص مغربي يتكلم بالدارجة المغربية (وقد يخلط كلمات فرنسية). اكتب ما قاله حرفياً بالحروف العربية كما يُنطق (مثل: بغيت، دابا، واش، كيفاش، فين، شحال، ديرلي، علاش)، والكلمات الفرنسية الشائعة (facture, chantier, ciment...) اكتبها بحروفها اللاتينية. بدون أي شرح أو إضافة أو علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY' }
+        ] }],
+        generationConfig:{ temperature:0, maxOutputTokens:(maxTok || 1024) }
+      })
     });
-    const call = (m)=> fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, { method:'POST', headers:{ 'Content-Type':'application/json' }, body });
-    let res = await call(MODEL);
-    if(res.status === 404 && MODEL !== FALLBACK_MODEL) res = await call(FALLBACK_MODEL);
+    if(res.status === 429){ const tx = await res.text(); _setCool(m, /PerDay/i.test(tx) ? 360 : 5); throw new Error('HTTP 429'); }
+    if(res.status === 404 || res.status === 400){ _setCool(m, 720); throw new Error('HTTP ' + res.status); }
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
     const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
-    let t = parts.map(p => p.text || '').join('').trim();
-    if(!t || /^EMPTY\b/i.test(t)) return '';
-    return t.replace(/^["«“]+|["»”]+$/g, '').trim();
+    return parts.map(p => p.text || '').join('').trim().replace(/^["«“]+|["»”]+$/g, '').trim();
+  }
+  async function transcribeGroq(blob, gk, model){
+    const fd = new FormData();
+    fd.append('file', blob, 'audio.wav');
+    fd.append('model', model);
+    fd.append('language', 'ar');
+    fd.append('temperature', '0');
+    fd.append('response_format', 'json');
+    fd.append('prompt', DARIJA_HINT);
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method:'POST', headers:{ 'Authorization':'Bearer ' + gk }, body: fd });
+    if(res.status === 429){ _setCool('groq:' + model, 3); throw new Error('HTTP 429'); }
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    return String((await res.json()).text || '').trim();
+  }
+  async function transcribe(blob, maxTok){
+    const gk = getGroqKey(), key = getApiKey();
+    if(!gk && !key) throw new Error('NOKEY');
+    let lastErr = null, sawText = false;
+    const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
+    if(key){
+      let b64 = null;
+      let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
+      for(const m of ms){
+        try{
+          b64 = b64 || await blobToB64(blob);
+          const r = accept(await geminiTranscribe(m, key, b64, maxTok)); if(r) return r;
+        }catch(e){ lastErr = e; }
+      }
+    }
+    if(gk){
+      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
+        if(_isCool('groq:' + m)) continue;
+        try{ const r = accept(await transcribeGroq(blob, gk, m)); if(r) return r; }catch(e){ lastErr = e; }
+      }
+    }
+    if(!sawText && lastErr) throw lastErr;   // كل المزودين فشلو (حد/شبكة) ماشي صمت
+    return '';                               // ما فهمناش الكلام: كنرجعو خاوي بدل نص مهلوس
   }
   function endUtterance(){
     const buf = S.buf, voiced = S.voiced;
@@ -4406,7 +4546,7 @@ let errorAlreadyShown = false;
 
 if(SpeechRecognitionAPI){
   recognition = new SpeechRecognitionAPI();
-  recognition.lang = 'ar-SA';
+  recognition.lang = 'ar-MA';
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
@@ -6209,6 +6349,42 @@ function renderCustomers(){
   el.querySelectorAll('[data-cpaydel]').forEach(b=> b.onclick = ()=>{ saveCustPayments(loadCustPayments().filter(p=>p.id!==b.dataset.cpaydel)); renderCustomers(); });
 }
 
+
+/* ---------- واجهة قفل الشهور / السجل / السلة ---------- */
+let auditView = null;
+function renderAuditUI(){
+  const inp = document.getElementById('lockMonthInput'); if(!inp) return;
+  if(!inp.value){ const d = new Date(); d.setMonth(d.getMonth() - 1); inp.value = d.getFullYear() + '-' + p2(d.getMonth()+1); }
+  const cl = AUDIT.closed();
+  document.getElementById('lockedMonthsList').innerHTML = cl.length
+    ? cl.slice().reverse().map(m=>`<div class="lc-row" style="margin-top:4px;"><div class="lc-body">🔒 ${m}</div><button class="lc-btn" data-unlock="${m}">🔓 فتح</button></div>`).join('')
+    : '<div style="font-size:11px; color:var(--ink-soft);">ما كاين حتى شهر مقفول.</div>';
+  document.querySelectorAll('[data-unlock]').forEach(b=> b.onclick = ()=>{
+    if(!confirm('تفتح الشهر ' + b.dataset.unlock + '؟ غادي يولي قابل للتعديل (وكيتسجل فالسجل).')) return;
+    AUDIT.setLocked(b.dataset.unlock, false); renderAuditUI();
+  });
+  const panel = document.getElementById('auditPanel'); const fmt = t=> new Date(t).toLocaleString('ar', {dateStyle:'short', timeStyle:'short'});
+  const ACT = {add:'➕ إضافة', edit:'✏️ تعديل', del:'🗑 حذف', lock:'🔒 قفل', unlock:'🔓 فتح'};
+  if(auditView === 'log'){
+    const log = AUDIT.parse(LS.getItem(AUDIT_KEY), []).slice(-60).reverse();
+    panel.innerHTML = log.length ? log.map(e=>`<div style="border-top:1px solid var(--line); padding:6px 0;"><b>${ACT[e.a]||e.a}</b> ${escapeHtml(e.k)} — <span dir="auto">${escapeHtml(e.l||'')}</span>${e.x != null ? ' — ' + Math.round(e.x).toLocaleString('ar') + ' Dh' : ''}${e.f && e.f.length ? '<br><span style="color:var(--ink-soft);">الحقول: ' + escapeHtml(e.f.join('، ')) + '</span>' : ''}<br><span style="color:var(--ink-soft);">${fmt(e.t)}</span></div>`).join('') : 'السجل خاوي.';
+  }else if(auditView === 'trash'){
+    const tr = AUDIT.parse(LS.getItem(TRASH_KEY), []).slice().reverse();
+    panel.innerHTML = tr.length ? tr.map(e=>`<div class="lc-row" style="border-top:1px solid var(--line); padding:6px 0;"><div class="lc-body"><b>${escapeHtml(e.kind)}</b> — <span dir="auto">${escapeHtml(e.l||'')}</span><br><span style="color:var(--ink-soft);">تمسح ${fmt(e.t)}</span></div><button class="lc-btn" data-restore="${e.id}">↩️ رجّع</button></div>`).join('') : 'السلة خاوية.';
+    panel.querySelectorAll('[data-restore]').forEach(b=> b.onclick = ()=>{
+      if(AUDIT.restore(b.dataset.restore)){ try{ refreshAllViews(); }catch(e){} renderAuditUI(); }
+      else alert('ما قدرتش نرجّعو (يمكن الشهر مقفول). افتح الشهر ثم عاود.');
+    });
+  }else{ panel.innerHTML = ''; }
+}
+document.getElementById('lockMonthBtn')?.addEventListener('click', ()=>{
+  const m = document.getElementById('lockMonthInput').value; if(!m) return;
+  if(!confirm('تقفل الشهر ' + m + '؟ ما غيتزادش ولا يتعدل ولا يتمسح فيه والو حتى تفتحو.')) return;
+  AUDIT.setLocked(m, true); renderAuditUI();
+});
+document.getElementById('auditShowBtn')?.addEventListener('click', ()=>{ auditView = auditView === 'log' ? null : 'log'; renderAuditUI(); });
+document.getElementById('trashShowBtn')?.addEventListener('click', ()=>{ auditView = auditView === 'trash' ? null : 'trash'; renderAuditUI(); });
+
 /* ---------- تنقل فرعي داخل تبويب المحاسبة ---------- */
 document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -7660,10 +7836,39 @@ function workerCalc(w, att, extras, monthlyFactor, requireActivity){
   const otAmt = otHours * (dayRate / DAY_HOURS) * OT_RATE;
   return {days, extraDays, otHours, base, extraDaysAmt, otAmt, total: Math.round((base + extraDaysAmt + otAmt)*100)/100};
 }
-function calcPeriod(w, pr){
-  const att = loadAttendance().filter(a=>a.workerId===w.id && a.date>=pr.from && a.date<=pr.to);
-  const ex = loadExtras().filter(x=>x.workerId===w.id && x.date>=pr.from && x.date<=pr.to);
-  return workerCalc(w, att, ex, 0.5, false);
+const _inR = (d, rs)=> rs.some(r=> d >= r[0] && d <= r[1]);
+function paidRanges(wid){ return loadWPayments().filter(x=>x.workerId===wid).map(x=>[x.from, x.to]); }
+function calcPeriod(w, pr, needActivity){
+  const rs = paidRanges(w.id);
+  const att = loadAttendance().filter(a=>a.workerId===w.id && a.date>=pr.from && a.date<=pr.to && !_inR(a.date, rs));
+  const ex = loadExtras().filter(x=>x.workerId===w.id && x.date>=pr.from && x.date<=pr.to && !_inR(x.date, rs));
+  const c = workerCalc(w, att, ex, 0.5, !!needActivity);
+  if(w.type === 'monthly' && _inR(pr.from, rs)){ c.base = 0; c.total = Math.round((c.extraDaysAmt + c.otAmt)*100)/100; }
+  return c;
+}
+function periodOf(d){
+  const [y, m, dd] = d.split('-').map(Number); const last = new Date(y, m, 0).getDate();
+  return dd <= 15 ? {from:`${y}-${p2(m)}-01`, to:`${y}-${p2(m)}-15`} : {from:`${y}-${p2(m)}-16`, to:`${y}-${p2(m)}-${p2(last)}`};
+}
+function dayAfter(d){ const t = new Date(Date.UTC(+d.slice(0,4), +d.slice(5,7)-1, +d.slice(8,10)) + 86400000); return t.getUTCFullYear() + '-' + p2(t.getUTCMonth()+1) + '-' + p2(t.getUTCDate()); }
+function todayStr(){ const d = new Date(); return d.getFullYear() + '-' + p2(d.getMonth()+1) + '-' + p2(d.getDate()); }
+// كل المستحقات غير المؤداة من أول يوم تسجل (حضور أو إضافي) حتى اليوم
+function calcAllUnpaid(w){
+  const dates = loadAttendance().filter(a=>a.workerId===w.id).map(a=>a.date)
+    .concat(loadExtras().filter(x=>x.workerId===w.id).map(x=>x.date)).filter(Boolean).sort();
+  if(!dates.length) return null;
+  const today = todayStr(); const rows = [];
+  let pr = periodOf(dates[0]);
+  while(pr.from <= today){
+    const c = calcPeriod(w, pr, true);
+    if(c.total > 0) rows.push({pr: {from: pr.from, to: pr.to < today ? pr.to : today}, c});
+    pr = periodOf(dayAfter(pr.to));
+  }
+  if(!rows.length) return null;
+  const sum = k => rows.reduce((t, r)=> t + r.c[k], 0);
+  return {rows, from: rows[0].pr.from, to: rows[rows.length-1].pr.to,
+    days: sum('days'), base: sum('base'), extraDays: sum('extraDays'), extraDaysAmt: sum('extraDaysAmt'), otHours: sum('otHours'), otAmt: sum('otAmt'),
+    total: Math.round(sum('total')*100)/100};
 }
 
 const wUi = {}; // workerId -> 'pay' | 'log' | 'extraday' | 'extrahours'
@@ -7686,26 +7891,36 @@ function renderWorkers(){
 
     if(mode === 'pay'){
       const periods = recentPeriods(4);
-      const paid = loadWPayments().filter(x=>x.workerId===w.id);
+      const dm = d=> d.split('-').reverse().slice(0,2).join('/');
       host.innerHTML = `
         <select id="wpPer_${w.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:10px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink);">
-          ${periods.map((pr,i)=>`<option value="${i}">${fmtPeriod(pr)}${paid.some(x=>x.from===pr.from)?' ✓ مؤدّى':''}</option>`).join('')}
+          <option value="all">📆 كل المستحقات غير المؤداة (من الأول حتى اليوم)</option>
+          ${periods.map((pr,i)=>`<option value="${i}">${fmtPeriod(pr)}</option>`).join('')}
         </select>
         <div id="wpBox_${w.id}" style="margin-top:8px; font-size:12.5px; line-height:1.9;"></div>
         <button class="btn-primary" id="wpConfirm_${w.id}" style="margin-top:8px;">✅ تأكيد الأداء وتسجيله</button>`;
       const draw = ()=>{
-        const pr = periods[+host.querySelector('#wpPer_'+w.id).value]; const c = calcPeriod(w, pr);
-        host.querySelector('#wpBox_'+w.id).innerHTML =
+        const v = host.querySelector('#wpPer_'+w.id).value; const box = host.querySelector('#wpBox_'+w.id);
+        let pr, c, rows = null;
+        if(v === 'all'){
+          const all = calcAllUnpaid(w);
+          if(!all){ box.innerHTML = '<span style="color:var(--ink-soft);">ما كاين حتى يوم غير مؤدّى (ما سجلتي حتى حضور أو إضافي).</span>'; return null; }
+          pr = {from: all.from, to: all.to}; c = all; rows = all.rows;
+        }else{
+          pr = periods[+v]; c = calcPeriod(w, pr);
+          const today = todayStr(); if(pr.to > today) pr = {from: pr.from, to: today};
+        }
+        box.innerHTML =
+          (rows ? `<div style="max-height:150px; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:6px 10px; margin-bottom:6px; font-size:12px;">${rows.map(r=>`<div dir="ltr" style="display:flex; justify-content:space-between;"><span>${dm(r.pr.from)} → ${dm(r.pr.to)}</span><b>${money(r.c.total)}</b></div>`).join('')}</div>` : '') +
           `أيام الحضور: <b>${c.days}</b> ← ${money(c.base)}<br>أيام إضافية: <b>${c.extraDays}</b> ← ${money(c.extraDaysAmt)}<br>ساعات إضافية: <b>${c.otHours}</b> ← ${money(c.otAmt)}<br><span style="font-size:14px; color:#2e7d32;">المجموع: <b>${money(c.total)}</b></span>`;
-        return {pr, c};
+        return {pr, c, rows};
       };
       host.querySelector('#wpPer_'+w.id).onchange = draw; draw();
       host.querySelector('#wpConfirm_'+w.id).onclick = ()=>{
-        const {pr, c} = draw();
-        if(c.total <= 0){ alert('المجموع 0 — ما كاين ما يتأدى فهاد الفترة.'); return; }
-        if(paid.some(x=>x.from===pr.from) && !confirm('هاد الفترة تسجلات كمؤدّاة من قبل. تسجّل أداء مرة أخرى؟')) return;
+        const d = draw(); if(!d) return; const {pr, c, rows} = d;
+        if(c.total <= 0){ alert('المجموع 0 — ما كاين ما يتأدى فهاد الفترة (يمكن تأدات من قبل).'); return; }
         const l = loadWPayments();
-        l.push({id:'wp'+Date.now(), workerId:w.id, from:pr.from, to:pr.to, days:c.days, base:c.base, extraDays:c.extraDays, extraDaysAmt:c.extraDaysAmt, otHours:c.otHours, otAmt:c.otAmt, total:c.total, paidAt:today});
+        l.push({id:'wp'+Date.now(), workerId:w.id, from:pr.from, to:pr.to, days:c.days, base:c.base, extraDays:c.extraDays, extraDaysAmt:c.extraDaysAmt, otHours:c.otHours, otAmt:c.otAmt, total:c.total, paidAt:today, periods: rows ? rows.length : 0});
         saveWPayments(l); wUi[w.id] = 'log'; renderWorkers();
       };
     }else if(mode === 'log'){
@@ -7713,7 +7928,7 @@ function renderWorkers(){
       const exs = loadExtras().filter(x=>x.workerId===w.id).sort((a,b)=> b.date.localeCompare(a.date));
       const dm = d=> d.split('-').reverse().join('/');
       host.innerHTML = `<div style="font-size:12px; font-weight:700; margin-bottom:4px;">📜 الأداءات (المجموع: ${money(pays.reduce((s,x)=>s+x.total,0))})</div>` +
-        (pays.length ? pays.map(x=>`<div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><div class="lc-body"><span dir="ltr" style="display:block;text-align:right;">${dm(x.from)} → ${dm(x.to)} — <b>${money(x.total)}</b></span><span style="font-size:11px;color:var(--ink-soft);">أدّيت ${dm(x.paidAt)} · حضور ${x.days} · إضافي ${x.extraDays} يوم + ${x.otHours} س</span></div><button class="lc-del" data-wpdel="${x.id}">🗑</button></div>`).join('') : '<div class="empty-hint" style="padding:6px;">ما كاين حتى أداء مسجل.</div>') +
+        (pays.length ? pays.map(x=>`<div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><div class="lc-body"><span dir="ltr" style="display:block;text-align:right;">${dm(x.from)} → ${dm(x.to)} — <b>${money(x.total)}</b></span><span style="font-size:11px;color:var(--ink-soft);">أدّيت ${dm(x.paidAt)} · حضور ${x.days} · إضافي ${x.extraDays} يوم + ${x.otHours} س${x.periods ? ' · ' + x.periods + ' فترة' : ''}</span></div><button class="lc-del" data-wpdel="${x.id}">🗑</button></div>`).join('') : '<div class="empty-hint" style="padding:6px;">ما كاين حتى أداء مسجل.</div>') +
         `<div style="font-size:12px; font-weight:700; margin:12px 0 4px;">⏱ الأيام والساعات الإضافية</div>` +
         (exs.length ? exs.map(x=>`<div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><div class="lc-body"><span dir="ltr" style="display:block;text-align:right;">${dm(x.date)} — ${x.kind==='day'?x.qty+' يوم إضافي':x.qty+' ساعة إضافية'}${x.note?' — '+escapeHtml(x.note):''}</span></div><button class="lc-del" data-exdel="${x.id}">🗑</button></div>`).join('') : '<div class="empty-hint" style="padding:6px;">ما كاين إضافي مسجل.</div>');
       host.querySelectorAll('[data-wpdel]').forEach(b=> b.onclick = ()=>{ if(!confirm('مسح هاد الأداء من السجل؟')) return; saveWPayments(loadWPayments().filter(x=>x.id!==b.dataset.wpdel)); renderWorkers(); });
@@ -8230,14 +8445,17 @@ try{
 }
 }
 
+function refreshAllViews(){
+  const calls = [renderMessages, renderAppts, renderAccounting, renderOverdueAlerts, renderInvoicesList, renderCaisse, renderClients, renderCustomers, renderSuppliers, renderWorkers, renderProjects];
+  calls.forEach(fn=>{ try{ fn(); }catch(e){ console.error(fn.name, e); } });
+}
 function bootAfterUnlock(){
   // البيانات كتفتح فقط بعد الـPIN، فنعاودو نقراو كلشي ونرسمو الشاشات
   try{ voiceReplyOn = LS.getItem(VOICE_KEY) === '1'; }catch(e){}
   try{ loadGcalToken(); }catch(e){}
-  try{ if(typeof cleanupLegacyOrphanedTx === 'function') cleanupLegacyOrphanedTx(); }catch(e){ console.error(e); }
+  try{ if(typeof cleanupLegacyOrphanedTx === 'function') AUDIT.withBypass(cleanupLegacyOrphanedTx); }catch(e){ console.error(e); }
   try{ messages = loadHistory(); }catch(e){ messages = []; }
-  const calls = [renderMessages, renderAppts, renderAccounting, renderOverdueAlerts, renderInvoicesList, renderCaisse, renderClients, renderCustomers, renderSuppliers, renderWorkers, renderProjects];
-  calls.forEach(fn=>{ try{ fn(); }catch(e){ console.error(fn.name, e); } });
+  refreshAllViews();
   startupSequence();
 }
 </script>
