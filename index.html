@@ -1720,7 +1720,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
    - الكود كله كيقرا ويكتب عبر LS (نفس واجهة localStorage) باش ما يتبدل حتى شي شي.
    - البيانات كتعيش مفكوكة فقط فالذاكرة بعد إدخال الـPIN الصحيح، وفـ IndexedDB كتبقى مشفّرة. */
 const SECURE_FLAG = 'alioua_btp_secure_on';
-const SECURE_PLAIN = ['alioua_btp_pin_hash','alioua_btp_secure_on','alioua_btp_last_sync','alioua_btp_last_auto_backup'];
+const SECURE_PLAIN = ['alioua_btp_sync_vault','alioua_btp_pin_hash','alioua_btp_secure_on','alioua_btp_last_sync','alioua_btp_last_auto_backup'];
 function makeSecureLS(N, S){
   const mem = new Map();
   let unlocked = false, key = null, q = Promise.resolve();
@@ -3168,9 +3168,57 @@ const SYNC_CODE_KEY = 'alioua_btp_sync_code';
 const DEFAULT_FB_DBURL = 'https://yunes-app-f2fde-default-rtdb.europe-west1.firebasedatabase.app';
 const DEFAULT_SYNC_CODE = 'يونس';
 function getFirebaseDbUrl(){ return (LS.getItem(FB_DBURL_KEY) || DEFAULT_FB_DBURL).replace(/\/$/, ''); }
-function setFirebaseDbUrl(v){ safeSetItem(FB_DBURL_KEY, v.replace(/\/$/, '')); }
+function setFirebaseDbUrl(v){ safeSetItem(FB_DBURL_KEY, v.replace(/\/$/, '')); if(SESSION_PIN) vaultSave(SESSION_PIN); }
 function getSyncCode(){ return LS.getItem(SYNC_CODE_KEY) || DEFAULT_SYNC_CODE; }
-function setSyncCode(v){ safeSetItem(SYNC_CODE_KEY, v); }
+function setSyncCode(v){ safeSetItem(SYNC_CODE_KEY, v); if(SESSION_PIN) vaultSave(SESSION_PIN); }
+
+/* ===== خزنة رمز المزامنة (نسخة مشفّرة بالـPIN فـ localStorage العادي) =====
+   المشكل: رمز المزامنة كان كيتخزن غير داخل IndexedDB. ملي المتصفح كيمسح IndexedDB كيضيع الرمز
+   ومبقاش التطبيق يقدر يسحب من السحابة. دابا كنخبّيو نسخة منو مشفّرة AES-GCM بمفتاح مشتق من الـPIN
+   (PBKDF2 310000) فمكان مستقل، وملي كنلقاو المخزن فارغ كنسحبو من السحابة تلقائيًا. */
+const VAULT_KEY = 'alioua_btp_sync_vault';
+let SESSION_PIN = null;
+async function _vaultDerive(pin, salt){
+  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode('vault|'+String(pin)), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:310000, hash:'SHA-256'}, km, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+}
+async function vaultSave(pin){
+  try{
+    const code = LS.getItem(SYNC_CODE_KEY);
+    if(!syncCodeStrong(code)) return;
+    const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+    const k = await _vaultDerive(pin, salt);
+    const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, k, new TextEncoder().encode(JSON.stringify({code, url: getFirebaseDbUrl()}))));
+    window.localStorage.setItem(VAULT_KEY, JSON.stringify({s:_b64(salt), iv:_b64(iv), ct:_b64(ct)}));
+  }catch(e){ console.error('vaultSave', e); }
+}
+async function vaultLoad(pin){
+  try{
+    const raw = window.localStorage.getItem(VAULT_KEY); if(!raw) return null;
+    const r = JSON.parse(raw);
+    const k = await _vaultDerive(pin, _unb64(r.s));
+    const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv:_unb64(r.iv)}, k, _unb64(r.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }catch(e){ return null; }
+}
+// استرجاع تلقائي من السحابة ملي المخزن المحلي يكون فارغ
+async function autoRestoreFromCloud(pin){
+  try{
+    if(!syncCodeStrong(getSyncCode())){
+      const v = await vaultLoad(pin);
+      if(v && syncCodeStrong(v.code)){ safeSetItem(SYNC_CODE_KEY, v.code); if(v.url) safeSetItem(FB_DBURL_KEY, v.url); }
+    }
+    if(!syncCodeStrong(getSyncCode())){
+      const c = (prompt('☁️ المخزن المحلي فارغ. دخل رمز المزامنة (مرة وحدة فقط) باش نسترجع بياناتك من السحابة تلقائيًا.\n\nإلا هادا أول استعمال، خليه فارغ وكمّل.') || '').trim();
+      if(!syncCodeStrong(c)) return;
+      safeSetItem(SYNC_CODE_KEY, c);
+    }
+    await cloudPull((status, detail)=>{
+      if(status === 'ok'){ vaultSave(pin); alert('✅ تم استرجاع بياناتك من السحابة تلقائيًا.'); }
+      else{ alert('❌ ما قدرتش نسترجع تلقائيًا: ' + (detail || '') + '\nجرب من ⚙️ ← المزامنة ← استرجاع من السحابة.'); }
+    });
+  }catch(e){ console.error('autoRestoreFromCloud', e); }
+}
 
 // رمز المزامنة هو السر الوحيد: المسار = SHA-256(الرمز) والتشفير بمفتاح مشتق من الرمز. الرمز الافتراضي/القصير ممنوع.
 function syncCodeStrong(code){ return !!code && code !== DEFAULT_SYNC_CODE && code.length >= 12; }
@@ -4968,7 +5016,7 @@ async function tryUnlock(pin){
   lockSubtitle.textContent = '⏳ جارٍ فتح/تشفير البيانات...';
   try{
     const st = await LS.unlock(pin);
-    if(st === 'empty'){ alert('⚠️ ما لقيتش البيانات المشفّرة فهاد المتصفح (يمكن تمسحات). استرجعها من المزامنة السحابية أو من نسخة احتياطية.'); }
+    SESSION_PIN = pin; unlockStatus = st;
   }catch(e){
     lockSubtitle.textContent = sub;
     if(e && e.message === 'BADPIN') return false;
@@ -4977,8 +5025,15 @@ async function tryUnlock(pin){
   }
   lockSubtitle.textContent = sub;
   unlockApp();
+  if(SESSION_PIN){
+    try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}
+    let empty = false; try{ empty = dataScore(collectAllAppData()) === 0; }catch(e){}
+    if(unlockStatus === 'empty' || empty){ await autoRestoreFromCloud(SESSION_PIN); }
+    else{ vaultSave(SESSION_PIN); }
+  }
   return true;
 }
+let unlockStatus = 'ok';
 
 async function handlePinComplete(){
   const pin = pinBuffer;
@@ -5020,7 +5075,7 @@ async function handlePinComplete(){
   else if(pinStage === 'changeConfirm'){
     if(pinBuffer === firstPinEntry){
       try{
-        if(LS.active){ await LS.rekey(pin); } else { safeSetItem(PIN_KEY, hash); }
+        if(LS.active){ await LS.rekey(pin); SESSION_PIN = pin; vaultSave(pin); } else { safeSetItem(PIN_KEY, hash); }
       }catch(e){ console.error(e); alert('⚠️ تعذّر تغيير الرمز، الرمز القديم بقى ساري.'); }
       lockScreen.classList.add('hidden');
       closeModal();
