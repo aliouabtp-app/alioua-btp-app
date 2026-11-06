@@ -5545,7 +5545,7 @@ document.getElementById('txAddBtn').addEventListener('click', ()=>{
   renderAccounting();
 });
 
-function renderOverdueAlerts(){
+function renderOverdueAlertsBase(){
   const banner = document.getElementById('overdueAlertsBanner');
   if(!banner) return;
   const OVERDUE_DAYS = 30;
@@ -5599,7 +5599,7 @@ function renderOverdueAlerts(){
   `;
 }
 
-function renderAccounting(){
+function renderAccountingBase(){
   // ===== نحسبو كل قسم مباشرة من مصدره الأصلي (بلا نسخ وسيطة) — هكذا كل البيانات
   // (القديمة والجديدة) كتبان دايمًا بلا أي احتمال تأخر أو نسيان =====
 
@@ -6247,7 +6247,7 @@ function loadInvoiceIntoForm(id){
   document.getElementById('invClientIce').value = inv.clientIce || '';
   document.getElementById('invSectionTitle').value = inv.sectionTitle || '';
   document.getElementById('invTvaRate').value = inv.tvaRate;
-  fillProjectSelect(document.getElementById('invProject'), inv.projectId);
+  fillProjectSelect(document.getElementById('invProject'), inv.projectId, true);
   fillCustomerSelect(inv.customerId);
   invItems = inv.items.map(it=>({...it}));
   renderInvItems();
@@ -6263,6 +6263,7 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
   const invDate = document.getElementById('invDate').value || new Date().toISOString().slice(0,10);
   const sectionTitle = document.getElementById('invSectionTitle').value.trim();
   const projectId = document.getElementById('invProject').value;
+  if(!projectId){ alert('⚠️ اختار المشروع (أو "مصاريف إدارية عامة") قبل الحفظ — الربط بالمشروع إلزامي.'); return; }
   const customerId = document.getElementById('invCustomer')?.value || '';
   const tvaRate = parseFloat(document.getElementById('invTvaRate').value) || 0;
   const items = invItems.map(it=>({...it}));
@@ -6290,7 +6291,7 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
 
 document.querySelector('.sub-nav-btn[data-sub="subInvoices"]')?.addEventListener('click', ()=>{
   fillCompanyForm();
-  fillProjectSelect(document.getElementById('invProject'));
+  fillProjectSelect(document.getElementById('invProject'), '', true);
   fillCustomerSelect();
   if(!document.getElementById('invNumber').value){
     document.getElementById('invNumber').value = 'ABTP-' + new Date().getFullYear().toString().slice(-2) + '-' + String(Date.now()).slice(-4);
@@ -7120,7 +7121,7 @@ function renderSuppliers(){
         </select>
         <button class="btn-primary" id="pSave_${sup.id}">💾 ${editingPurchase ? 'حفظ التعديل' : 'حفظ الشراء'}</button>
       `;
-      fillProjectSelect(pHost.querySelector('#pProject_'+sup.id), editingPurchase ? editingPurchase.projectId : '');
+      fillProjectSelect(pHost.querySelector('#pProject_'+sup.id), editingPurchase ? editingPurchase.projectId : '', true);
       const rowsHost = pHost.querySelector('#pRows_'+sup.id);
       function addPRow(it){
         it = it || {};
@@ -7165,6 +7166,7 @@ function renderSuppliers(){
         if(items.length === 0) return;
         const date = items[items.length-1].date;
         const projectId = pHost.querySelector('#pProject_'+sup.id).value;
+        if(!projectId){ alert('⚠️ اختار المشروع (أو "مصاريف إدارية عامة") قبل الحفظ — الربط بالمشروع إلزامي.'); return; }
         const all = loadPurchases();
         let purchase;
         if(editingPurchase){
@@ -7504,14 +7506,15 @@ const PROJECTS_KEY = 'alioua_btp_projects';
 function loadProjects(){ try{ return JSON.parse(LS.getItem(PROJECTS_KEY)||'[]'); }catch(e){ return []; } }
 function saveProjects(l){ safeSetItem(PROJECTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 
-function fillProjectSelect(selectEl, selectedId){
+function fillProjectSelect(selectEl, selectedId, required){
   if(!selectEl) return;
   const projects = loadProjects();
-  selectEl.innerHTML = '<option value="">بلا مشروع محدد</option>' +
+  selectEl.innerHTML = (required ? '<option value="">— اختر المشروع (إلزامي) —</option><option value="__admin" '+(selectedId==='__admin'?'selected':'')+'>🏢 مصاريف إدارية عامة</option>' : '<option value="">بلا مشروع محدد</option>') +
     projects.map(p=>`<option value="${p.id}" ${p.id===selectedId?'selected':''}>${escapeHtml(p.name)}</option>`).join('');
 }
 function projectNameById(id){
   if(!id) return '';
+  if(id === '__admin') return 'مصاريف إدارية عامة';
   const p = loadProjects().find(x=>x.id===id);
   return p ? p.name : '';
 }
@@ -7935,7 +7938,7 @@ function renderWorkers(){
     const card = btn.closest('.list-card'); if(!card) return;
     const bar = document.createElement('div'); bar.className = 'lc-actions'; bar.style.marginTop = '6px';
     const mk = (k, label)=> `<button class="lc-btn" data-wui="${k}" style="${wUi[w.id]===k?'background:#d1fae5;':''}">${label}</button>`;
-    bar.innerHTML = mk('pay','💸 أداء 15 يوم') + mk('log','📜 سجل الأداءات') + mk('extraday','➕ يوم إضافي') + mk('extrahours','⏱ ساعات إضافية');
+    const _du = calcAllUnpaid(w); bar.innerHTML = mk('pay','💸 أداء 15 يوم' + (_du ? ' (' + _du.rows.length + ')' : '')) + mk('log','📜 سجل الأداءات') + mk('extraday','➕ يوم إضافي') + mk('extrahours','⏱ ساعات إضافية');
     const host = document.createElement('div');
     card.appendChild(bar); card.appendChild(host);
     bar.querySelectorAll('[data-wui]').forEach(b=> b.onclick = ()=>{ wUi[w.id] = (wUi[w.id]===b.dataset.wui) ? null : b.dataset.wui; renderWorkers(); });
@@ -7945,39 +7948,25 @@ function renderWorkers(){
     const money = n=> Math.round(n).toLocaleString('ar') + ' درهم';
 
     if(mode === 'pay'){
-      const periods = recentPeriods(4);
+      const all = calcAllUnpaid(w);
       const dm = d=> d.split('-').reverse().slice(0,2).join('/');
-      host.innerHTML = `
-        <select id="wpPer_${w.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:10px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink);">
-          <option value="all">📆 كل المستحقات غير المؤداة (من الأول حتى اليوم)</option>
-          ${periods.map((pr,i)=>`<option value="${i}">${fmtPeriod(pr)}</option>`).join('')}
-        </select>
-        <div id="wpBox_${w.id}" style="margin-top:8px; font-size:12.5px; line-height:1.9;"></div>
-        <button class="btn-primary" id="wpConfirm_${w.id}" style="margin-top:8px;">✅ تأكيد الأداء وتسجيله</button>`;
-      const draw = ()=>{
-        const v = host.querySelector('#wpPer_'+w.id).value; const box = host.querySelector('#wpBox_'+w.id);
-        let pr, c, rows = null;
-        if(v === 'all'){
-          const all = calcAllUnpaid(w);
-          if(!all){ box.innerHTML = '<span style="color:var(--ink-soft);">ما كاين حتى يوم غير مؤدّى (ما سجلتي حتى حضور أو إضافي).</span>'; return null; }
-          pr = {from: all.from, to: all.to}; c = all; rows = all.rows;
-        }else{
-          pr = periods[+v]; c = calcPeriod(w, pr);
-          const today = todayStr(); if(pr.to > today) pr = {from: pr.from, to: today};
-        }
-        box.innerHTML =
-          (rows ? `<div style="max-height:150px; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:6px 10px; margin-bottom:6px; font-size:12px;">${rows.map(r=>`<div dir="ltr" style="display:flex; justify-content:space-between;"><span>${dm(r.pr.from)} → ${dm(r.pr.to)}</span><b>${money(r.c.total)}</b></div>`).join('')}</div>` : '') +
-          `أيام الحضور: <b>${c.days}</b> ← ${money(c.base)}<br>أيام إضافية: <b>${c.extraDays}</b> ← ${money(c.extraDaysAmt)}<br>ساعات إضافية: <b>${c.otHours}</b> ← ${money(c.otAmt)}<br><span style="font-size:14px; color:#2e7d32;">المجموع: <b>${money(c.total)}</b></span>`;
-        return {pr, c, rows};
-      };
-      host.querySelector('#wpPer_'+w.id).onchange = draw; draw();
-      host.querySelector('#wpConfirm_'+w.id).onclick = ()=>{
-        const d = draw(); if(!d) return; const {pr, c, rows} = d;
-        if(c.total <= 0){ alert('المجموع 0 — ما كاين ما يتأدى فهاد الفترة (يمكن تأدات من قبل).'); return; }
-        const l = loadWPayments();
-        l.push({id:'wp'+Date.now(), workerId:w.id, from:pr.from, to:pr.to, days:c.days, base:c.base, extraDays:c.extraDays, extraDaysAmt:c.extraDaysAmt, otHours:c.otHours, otAmt:c.otAmt, total:c.total, paidAt:today, periods: rows ? rows.length : 0});
-        saveWPayments(l); wUi[w.id] = 'log'; renderWorkers();
-      };
+      if(!all){ host.innerHTML = '<span style="color:var(--ink-soft); font-size:12.5px;">✅ ما كاين حتى فترة غير مؤدّاة (ما سجلتي حتى حضور أو إضافي).</span>'; }
+      else{
+        const cur = todayStr();
+        host.innerHTML = all.rows.map((r,i)=>`<div class="lc-row" style="border-top:${i?'1px solid var(--line)':'0'}; padding:8px 0; align-items:center;"><div class="lc-body" style="font-size:12.5px; line-height:1.7;"><b dir="ltr" style="display:block;text-align:right;">📅 ${dm(r.pr.from)} → ${dm(r.pr.to)}${r.pr.to >= cur ? ' (جارية)' : ''}</b><span style="font-size:11.5px; color:var(--ink-soft);">حضور ${r.c.days} · إضافي ${r.c.extraDays} يوم + ${r.c.otHours} س</span></div><button class="btn-primary" data-payrow="${i}" style="flex:0 0 auto; width:auto; padding:9px 12px; font-size:12.5px;">💸 أدّي ${money(r.c.total)}</button></div>`).join('') +
+          (all.rows.length > 1 ? `<button class="btn-ghost" id="wpAll_${w.id}" style="margin-top:8px; width:100%;">📆 أدّي كل الفترات دفعة وحدة (${money(all.total)})</button>` : '');
+        const rec = (pr, c, n)=>({id:'wp'+Date.now()+'_'+n, workerId:w.id, projectId:w.projectId||'', from:pr.from, to:pr.to, days:c.days, base:c.base, extraDays:c.extraDays, extraDaysAmt:c.extraDaysAmt, otHours:c.otHours, otAmt:c.otAmt, total:c.total, paidAt:today, periods:1});
+        host.querySelectorAll('[data-payrow]').forEach(b=> b.onclick = ()=>{
+          const r = all.rows[+b.dataset.payrow];
+          if(!confirm('تأكيد أداء ' + w.name + ' عن ' + dm(r.pr.from) + ' → ' + dm(r.pr.to) + ' : ' + money(r.c.total) + ' ؟')) return;
+          const l = loadWPayments(); l.push(rec(r.pr, r.c, 0)); saveWPayments(l); renderWorkers();
+        });
+        const allBtn = host.querySelector('#wpAll_'+w.id);
+        if(allBtn) allBtn.onclick = ()=>{
+          if(!confirm('تأكيد أداء ' + all.rows.length + ' فترات: ' + money(all.total) + ' ؟')) return;
+          const l = loadWPayments(); all.rows.forEach((r,i)=> l.push(rec(r.pr, r.c, i))); saveWPayments(l); renderWorkers();
+        };
+      }
     }else if(mode === 'log'){
       const pays = loadWPayments().filter(x=>x.workerId===w.id).sort((a,b)=> b.paidAt.localeCompare(a.paidAt) || b.from.localeCompare(a.from));
       const exs = loadExtras().filter(x=>x.workerId===w.id).sort((a,b)=> b.date.localeCompare(a.date));
@@ -8130,7 +8119,7 @@ document.getElementById('caisseShowBonBtn').addEventListener('click', ()=>{
     const data = loadCaisseData();
     document.getElementById('bonNumber').value = 'B' + (data.bons.length + 1);
     document.getElementById('bonCategory').value = CAISSE_CATEGORIES[0];
-    fillProjectSelect(document.getElementById('bonProject'));
+    fillProjectSelect(document.getElementById('bonProject'), '', true);
     bonItems = [{desc:'', qty:1, price:0}];
     renderBonItems();
     updateBonTotalPreview();
@@ -8159,6 +8148,7 @@ document.getElementById('bonSaveBtn').addEventListener('click', ()=>{
   const date = document.getElementById('bonDate').value || new Date().toISOString().slice(0,10);
   const category = document.getElementById('bonCategory').value;
   const projectId = document.getElementById('bonProject').value;
+  if(!projectId){ alert('⚠️ اختار المشروع (أو "مصاريف إدارية عامة") قبل الحفظ — الربط بالمشروع إلزامي.'); return; }
   const items = bonItems.filter(it=> it.desc.trim() || it.qty || it.price).map(it=>({...it}));
   if(!items.length) return;
   const data = loadCaisseData();
@@ -8196,7 +8186,7 @@ function editBon(id){
   document.getElementById('bonNumber').value = b.bonNumber;
   document.getElementById('bonDate').value = b.date;
   document.getElementById('bonCategory').value = b.category;
-  fillProjectSelect(document.getElementById('bonProject'), b.projectId);
+  fillProjectSelect(document.getElementById('bonProject'), b.projectId, true);
   bonItems = b.items.map(it=>({...it}));
   renderBonItems();
   updateBonTotalPreview();
@@ -8504,6 +8494,129 @@ function refreshAllViews(){
   const calls = [renderMessages, renderAppts, renderAccounting, renderOverdueAlerts, renderInvoicesList, renderCaisse, renderClients, renderCustomers, renderSuppliers, renderWorkers, renderProjects];
   calls.forEach(fn=>{ try{ fn(); }catch(e){ console.error(fn.name, e); } });
 }
+
+/* ===== لوحة مراقبة المحاسبة: مصاريف غير مرتبطة، مستحقات، توزيع إداري، ميزانية، مراجعة شهرية ===== */
+const PAY_TERMS_KEY = 'alioua_btp_pay_terms', REVIEW_KEY = 'alioua_btp_review_done', ADMIN_ID = '__admin';
+const cpOpen = {};
+function payTerms(){ const n = parseInt(LS.getItem(PAY_TERMS_KEY)); return n > 0 ? n : 30; }
+function cpMoney(n){ return Math.round(n).toLocaleString('ar') + ' درهم'; }
+function firstFriday(y, m){ const d = new Date(y, m, 1); return new Date(y, m, 1 + (5 - d.getDay() + 7) % 7); }
+function reviewDue(){ const t = new Date(); return t >= firstFriday(t.getFullYear(), t.getMonth()) && LS.getItem(REVIEW_KEY) !== curMonthPrefix(); }
+function computeDues(){
+  const DAY = 86400000, now = Date.now(), terms = payTerms(), out = [];
+  const purchases = loadPurchases(), pays = loadSupplierPayments();
+  loadSuppliers().forEach(sup=>{
+    const ps = purchases.filter(p=>p.supplierId === sup.id); if(!ps.length) return;
+    const rem = ps.reduce((s,p)=>s+purchaseTotal(p),0) - pays.filter(p=>p.supplierId===sup.id).reduce((s,p)=>s+p.amount,0);
+    if(rem <= 0) return;
+    const oldest = Math.min(...ps.map(p=> new Date(p.date).getTime()));
+    out.push({kind:'supplier', name: sup.name, amount: rem, due: oldest + terms*DAY});
+  });
+  const invs = loadPdfInvoices(), cp = loadCustPayments();
+  loadCustomers().forEach(c=>{
+    const is = invs.filter(i=>i.customerId === c.id); if(!is.length) return;
+    const rem = is.reduce((s,i)=>s+pdfInvTotalTTC(i),0) - cp.filter(p=>p.customerId===c.id).reduce((s,p)=>s+(p.amount||0),0);
+    if(rem <= 0.5) return;
+    const oldest = Math.min(...is.map(i=> new Date(i.invDate).getTime()));
+    out.push({kind:'customer', name: c.name, amount: rem, due: oldest + terms*DAY});
+  });
+  out.forEach(d=> d.left = Math.ceil((d.due - now)/DAY));
+  return out.sort((a,b)=> a.left - b.left);
+}
+function projectActuals(){
+  const projects = loadProjects(), purchases = loadPurchases(), bons = loadCaisseData().bons, clients = loadClients(), invs = loadInvoices(), workers = loadWorkers(), wp = loadWPayments();
+  const mp = curMonthPrefix();
+  const adminTotal = purchases.filter(p=>p.projectId===ADMIN_ID && (p.date||'').startsWith(mp)).reduce((s,p)=>s+purchaseTotal(p),0)
+    + bons.filter(b=>b.projectId===ADMIN_ID && (b.date||'').startsWith(mp)).reduce((s,b)=>s+bonTotal(b),0);
+  const rows = projects.map(pr=>{
+    const direct = purchases.filter(p=>p.projectId===pr.id).reduce((s,p)=>s+purchaseTotal(p),0)
+      + bons.filter(b=>b.projectId===pr.id).reduce((s,b)=>s+bonTotal(b),0)
+      + invs.filter(i=>{ const c = clients.find(x=>x.id===i.clientId); return c && c.projectId===pr.id; }).reduce((s,i)=>s+invoiceTotal(i),0)
+      + wp.filter(x=> (x.projectId || (workers.find(w=>w.id===x.workerId)||{}).projectId) === pr.id).reduce((s,x)=>s+x.total,0);
+    const share = adminTotal * (pr.adminPct||0) / 100;
+    return {pr, direct, share, actual: direct + share};
+  });
+  return {adminTotal, rows};
+}
+function dueLabel(d){ return d.left < 0 ? `<b style="color:#b91c1c;">متأخر ${-d.left} يوم</b>` : d.left <= 5 ? `<b style="color:#c2410c;">خلال ${d.left} يوم</b>` : `خلال ${d.left} يوم`; }
+function weeklyReportText(){
+  const ds = computeDues();
+  return '📋 تقرير المستحقات غير المدفوعة — ALIOUA BTP\n' + (ds.length ? ds.map(d=> (d.kind==='supplier'?'🚚 ':'🧑‍💼 ') + d.name + ' — ' + cpMoney(d.amount) + ' — ' + (d.left<0 ? 'متأخر '+(-d.left)+' يوم' : 'خلال '+d.left+' يوم')).join('\n') : 'ما كاين حتى مستحق.');
+}
+function renderControlPanel(){
+  const anchor = document.getElementById('accountingChartWrap'); if(!anchor) return;
+  let el = document.getElementById('controlPanel');
+  if(!el){ el = document.createElement('div'); el.id = 'controlPanel'; anchor.parentNode.insertBefore(el, anchor); }
+  const projects = loadProjects(), purchases = loadPurchases(), caisse = loadCaisseData(), pdfs = loadPdfInvoices(), sups = loadSuppliers();
+  const opts = sel => '<option value="">اختر المشروع...</option><option value="'+ADMIN_ID+'">🏢 مصاريف إدارية عامة</option>' + projects.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+  const box = 'border:1px solid var(--line); border-radius:14px; margin:0 0 10px; padding:10px 12px; background:var(--stone);';
+  const inp = 'width:100%; border:1.5px solid var(--line); border-radius:10px; padding:8px; font-size:12.5px; font-family:inherit; background:#fff; color:var(--ink); margin-top:4px;';
+  const sum = 'font-weight:800; font-size:13px; cursor:pointer;';
+
+  // 1) غير مرتبطة بمشروع
+  const un = [];
+  purchases.filter(p=>!p.projectId).forEach(p=> un.push({k:'p', id:p.id, icon:'🚚', label:(sups.find(s=>s.id===p.supplierId)||{}).name||'مورد', date:p.date, amount:purchaseTotal(p), note:p.unlinkedNote||''}));
+  caisse.bons.filter(b=>!b.projectId).forEach(b=> un.push({k:'b', id:b.id, icon:'🧾', label:'بون '+(b.bonNumber||''), date:b.date, amount:bonTotal(b), note:b.unlinkedNote||''}));
+  pdfs.filter(i=>!i.projectId).forEach(i=> un.push({k:'i', id:i.id, icon:'📄', label:'فاتورة '+(i.invNumber||'')+' — '+(i.clientName||''), date:i.invDate, amount:pdfInvTotalTTC(i), note:i.unlinkedNote||''}));
+  un.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  const sUn = `<details data-k="un" ${cpOpen.un?'open':''} style="${box}"><summary style="${sum}">🔗 مصاريف/فواتير غير مرتبطة بمشروع (${un.length})</summary>${un.length ? un.map(u=>`<div style="border-top:1px solid var(--line); padding:8px 0; margin-top:8px; font-size:12.5px;"><div style="display:flex; justify-content:space-between;"><span>${u.icon} ${escapeHtml(u.label)} · ${escapeHtml(u.date||'')}</span><b>${cpMoney(u.amount)}</b></div><select data-assign="${u.k}|${u.id}" style="${inp}">${opts()}</select><input type="text" dir="auto" data-note="${u.k}|${u.id}" value="${escapeHtml(u.note)}" placeholder="ملاحظة: علاش ما مرتبطش؟" style="${inp}"></div>`).join('') : '<div style="font-size:12px; color:#2e7d32; margin-top:6px;">✅ كلشي مرتبط بمشروع.</div>'}</details>`;
+
+  // 2) المستحقات
+  const dues = computeDues();
+  const sDue = `<details data-k="due" ${cpOpen.due?'open':''} style="${box}"><summary style="${sum}">⏰ المستحقات غير المدفوعة (${dues.length})</summary><div style="font-size:11.5px; color:var(--ink-soft); margin-top:6px;">أجل الأداء (يوم من أقدم فاتورة): <input type="number" id="cpTerms" value="${payTerms()}" min="1" inputmode="numeric" style="width:70px; border:1.5px solid var(--line); border-radius:8px; padding:4px;"></div>${dues.map(d=>`<div style="display:flex; justify-content:space-between; font-size:12.5px; border-top:1px solid var(--line); padding:6px 0; margin-top:6px;"><span>${d.kind==='supplier'?'🚚 أنا نؤدي':'🧑‍💼 كيؤدّو لي'} · ${escapeHtml(d.name)}<br><span style="font-size:11.5px;">${dueLabel(d)}</span></span><b>${cpMoney(d.amount)}</b></div>`).join('')}<button class="btn-ghost" id="cpShare" style="margin-top:8px; width:100%;">📤 مشاركة التقرير الأسبوعي</button></details>`;
+
+  // 3) توزيع إداري + 4) ميزانية
+  const act = projectActuals(), pctSum = projects.reduce((s,p)=>s+(+p.adminPct||0),0);
+  const sAdm = `<details data-k="adm" ${cpOpen.adm?'open':''} style="${box}"><summary style="${sum}">🏢 توزيع المصاريف الإدارية (هاد الشهر: ${cpMoney(act.adminTotal)})</summary>${act.rows.length ? act.rows.map(r=>`<div style="display:flex; gap:8px; align-items:center; font-size:12.5px; border-top:1px solid var(--line); padding:6px 0; margin-top:6px;"><span style="flex:1;">${escapeHtml(r.pr.name)}</span><input type="number" data-pct="${r.pr.id}" value="${r.pr.adminPct||''}" min="0" max="100" placeholder="%" inputmode="decimal" style="width:64px; border:1.5px solid var(--line); border-radius:8px; padding:4px;"><b style="width:90px; text-align:left;">${cpMoney(r.share)}</b></div>`).join('') + (Math.abs(pctSum-100) > 0.01 && pctSum > 0 ? `<div style="font-size:11.5px; color:#c2410c; margin-top:6px;">⚠️ مجموع النسب ${pctSum}% (المفروض 100%)</div>` : '') : '<div style="font-size:12px; color:var(--ink-soft); margin-top:6px;">زيد مشاريع أولاً.</div>'}</details>`;
+  const q = new Date(); const qStart = q.getDate() <= 10 && q.getMonth() % 3 === 0;
+  const sBud = `<details data-k="bud" ${cpOpen.bud?'open':''} style="${box}"><summary style="${sum}">💰 الميزانية مقابل الفعلي${qStart ? ' · 🔔 وقت المراجعة الفصلية' : ''}</summary>${act.rows.map(r=>{ const b = +r.pr.budget||0, pc = b ? Math.round(r.actual/b*100) : 0; return `<div style="border-top:1px solid var(--line); padding:6px 0; margin-top:6px; font-size:12.5px;"><div style="display:flex; justify-content:space-between;"><b>${escapeHtml(r.pr.name)}</b><span>الفعلي: ${cpMoney(r.actual)}</span></div><input type="number" data-budget="${r.pr.id}" value="${b||''}" placeholder="الميزانية المخططة (درهم)" inputmode="decimal" style="${inp}">${b ? `<div style="height:8px; background:#e5e7eb; border-radius:6px; margin-top:6px; overflow:hidden;"><div style="height:8px; width:${Math.min(pc,100)}%; background:${pc>100?'#b91c1c':pc>80?'#f59e0b':'#2e7d32'};"></div></div><div style="font-size:11.5px; margin-top:3px;">${pc}% من الميزانية${pc>100?' ⚠️ تجاوز بـ '+cpMoney(r.actual-b):''}</div>` : ''}</div>`; }).join('') || '<div style="font-size:12px; color:var(--ink-soft); margin-top:6px;">زيد مشاريع أولاً.</div>'}</details>`;
+
+  // 5) المراجعة الشهرية
+  const ff = firstFriday(new Date().getFullYear(), new Date().getMonth()), done = LS.getItem(REVIEW_KEY) === curMonthPrefix();
+  const sRev = `<div style="${box} display:flex; justify-content:space-between; align-items:center; gap:8px;"><div style="font-size:12.5px;"><b>📅 المراجعة الشهرية</b><br>جمعة ${ff.getDate()}/${ff.getMonth()+1} — ${done ? '<span style="color:#2e7d32;">✅ تمت هاد الشهر</span>' : (reviewDue() ? '<span style="color:#b91c1c;">⏳ ما تمتش بعد</span>' : 'ما جاتش بعد')}</div>${done ? '' : '<button class="btn-ghost" id="cpReview" style="flex:0 0 auto;">✅ تمت</button>'}</div>`;
+
+  el.style.cssText = 'margin:0 0 12px;';
+  el.innerHTML = '<div style="font-weight:800; font-size:14px; margin-bottom:8px;">🛡️ مراقبة المحاسبة</div>' + sRev + sUn + sDue + sAdm + sBud;
+
+  el.querySelectorAll('details').forEach(d=> d.ontoggle = ()=>{ cpOpen[d.dataset.k] = d.open; });
+  const refresh = ()=>{ try{ renderAccounting(); }catch(e){ renderControlPanel(); } };
+  el.querySelectorAll('[data-assign]').forEach(s=> s.onchange = ()=>{
+    if(!s.value) return; const [k, id] = s.dataset.assign.split('|');
+    if(k === 'p'){ const l = loadPurchases(); const x = l.find(y=>y.id===id); if(x){ x.projectId = s.value; savePurchases(l); } }
+    else if(k === 'b'){ const d = loadCaisseData(); const x = d.bons.find(y=>y.id===id); if(x){ x.projectId = s.value; saveCaisseData(d); } }
+    else{ const l = loadPdfInvoices(); const x = l.find(y=>y.id===id); if(x){ x.projectId = s.value; savePdfInvoices(l); } }
+    refresh();
+  });
+  el.querySelectorAll('[data-note]').forEach(s=> s.onchange = ()=>{
+    const [k, id] = s.dataset.note.split('|');
+    if(k === 'p'){ const l = loadPurchases(); const x = l.find(y=>y.id===id); if(x){ x.unlinkedNote = s.value; savePurchases(l); } }
+    else if(k === 'b'){ const d = loadCaisseData(); const x = d.bons.find(y=>y.id===id); if(x){ x.unlinkedNote = s.value; saveCaisseData(d); } }
+    else{ const l = loadPdfInvoices(); const x = l.find(y=>y.id===id); if(x){ x.unlinkedNote = s.value; savePdfInvoices(l); } }
+  });
+  const setProj = (id, f, v)=>{ const l = loadProjects(); const p = l.find(x=>x.id===id); if(p){ p[f] = v; saveProjects(l); } refresh(); };
+  el.querySelectorAll('[data-pct]').forEach(s=> s.onchange = ()=> setProj(s.dataset.pct, 'adminPct', Math.max(0, Math.min(100, parseFloat(s.value)||0))));
+  el.querySelectorAll('[data-budget]').forEach(s=> s.onchange = ()=> setProj(s.dataset.budget, 'budget', parseFloat(s.value)||0));
+  const t = el.querySelector('#cpTerms'); if(t) t.onchange = ()=>{ safeSetItem(PAY_TERMS_KEY, String(Math.max(1, parseInt(t.value)||30))); try{ renderOverdueAlerts(); }catch(e){} refresh(); };
+  const r = el.querySelector('#cpReview'); if(r) r.onclick = ()=>{ safeSetItem(REVIEW_KEY, curMonthPrefix()); try{ renderOverdueAlerts(); }catch(e){} refresh(); };
+  const sh = el.querySelector('#cpShare'); if(sh) sh.onclick = ()=>{
+    const txt = weeklyReportText();
+    if(navigator.share){ navigator.share({text: txt}).catch(()=>{}); }
+    else if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(()=> alert('تم نسخ التقرير.')); }
+    else alert(txt);
+  };
+}
+// تنبيه قبل 5 أيام من الاستحقاق + تذكير المراجعة الشهرية (كيتزادو لبانير التنبيهات)
+function renderOverdueAlerts(){
+  renderOverdueAlertsBase();
+  const banner = document.getElementById('overdueAlertsBanner'); if(!banner) return;
+  const soon = computeDues().filter(d=> d.left >= 0 && d.left <= 5);
+  let html = '';
+  if(soon.length) html += `<div style="background:#fff7ed; border:1px solid #fdba74; border-radius:14px; margin:0 16px 12px; padding:12px 14px;"><div style="font-weight:800; color:#c2410c; font-size:13px; margin-bottom:8px;">⏰ مستحقات كتحل خلال 5 أيام</div>${soon.map(d=>`<div style="font-size:12.5px; color:#7c2d12; padding:3px 0; display:flex; justify-content:space-between;"><span>${d.kind==='supplier'?'🚚':'🧑‍💼'} ${escapeHtml(d.name)} — ${d.left===0?'اليوم':'خلال '+d.left+' يوم'}</span><strong>${cpMoney(d.amount)}</strong></div>`).join('')}</div>`;
+  if(reviewDue()) html += `<div style="background:#eff6ff; border:1px solid #93c5fd; border-radius:14px; margin:0 16px 12px; padding:10px 14px; font-size:12.5px; color:#1e3a8a;">📅 وقت المراجعة الشهرية (مدير المشروع + المحاسب): تحقق من الفروقات وحدّث الحالة. تلقاها فـ المحاسبة ← 🛡️ مراقبة المحاسبة.</div>`;
+  if(html) banner.insertAdjacentHTML('beforeend', html);
+}
+function renderAccounting(){ renderAccountingBase(); try{ renderControlPanel(); }catch(e){ console.error('لوحة المراقبة:', e); } }
+
 function bootAfterUnlock(){
   // البيانات كتفتح فقط بعد الـPIN، فنعاودو نقراو كلشي ونرسمو الشاشات
   try{ voiceReplyOn = LS.getItem(VOICE_KEY) === '1'; }catch(e){}
