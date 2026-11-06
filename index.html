@@ -2682,7 +2682,7 @@ async function sendMessage(){
   const chain = buildProviderChain(hasImage);
 
   try{
-    let lastErr = null;
+    let lastErr = null; const errLog = [];
     for(let i=0; i<chain.length; i++){
       const {fn, key: provKey, name} = chain[i];
       try{
@@ -2700,6 +2700,7 @@ async function sendMessage(){
         break;
       }catch(err){
         lastErr = err;
+        errLog.push(name + ': ' + (err.message === 'QUOTA' ? 'حد الاستعمال' + (err.detail ? ' — ' + err.detail : '') : (err.detail || err.message)));
         // نكمل للمزود التالي بالسلسلة، أيًا كان نوع الخطأ
       }
     }
@@ -2721,6 +2722,7 @@ async function sendMessage(){
       }else{
         friendly = 'صار في خطأ بالاتصال.\n' + (lastErr.detail || 'تأكد من الإنترنت وحاول مرة ثانية.');
       }
+      if(errLog.length) friendly += '\n🔎 ' + errLog.join('\n🔎 ');
       messages.push({role:'model', text:friendly, time:Date.now()});
       renderMessages();
       saveHistory();
@@ -2916,8 +2918,11 @@ async function _openAiStyleCall(url, apiKey, body, providerName){
   }catch(e){
     const err = new Error('NETWORK'); err.detail = 'ما قدرنا نوصلو لـ ' + providerName + '.'; throw err;
   }
-  if(res.status === 401 || res.status === 403){ throw new Error('AUTH'); }
-  if(res.status === 429){ throw new Error('QUOTA'); }
+  if(res.status === 401 || res.status === 403){ const e = new Error('AUTH'); e.detail = 'مفتاح غير صالح'; throw e; }
+  if(res.status === 429 || res.status === 413){
+    let d = ''; try{ d = (await res.json())?.error?.message || ''; }catch(x){}
+    const e = new Error('QUOTA'); e.detail = d.slice(0,110); throw e;
+  }
   if(!res.ok){
     const err = new Error('NETWORK');
     try{ const d = await res.json(); err.detail = d?.error?.message || d?.message || ('رمز الخطأ: '+res.status); }
@@ -2952,12 +2957,15 @@ async function callGroq(gKey, msgs){
       gMessages.push({role:'assistant', content: m.text || ''});
     }
   });
-  return _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gKey, {
-    model: hasImg ? GROQ_VISION_MODEL : GROQ_MODEL,
-    messages: gMessages,
-    temperature: 0.7,
-    max_tokens: 2048
+  const run = (model, ms)=> _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gKey, {
+    model, messages: ms, temperature: 0.7, max_tokens: 1536
   }, 'Groq');
+  try{ return await run(hasImg ? GROQ_VISION_MODEL : GROQ_MODEL, gMessages); }
+  catch(e){
+    // حد الموديل الكبير (طلبات/توكنات فالدقيقة أو اليوم) — نجربو الموديل الخفيف (حدوده منفصلة وأوسع) بتاريخ أقصر
+    if(e.message === 'QUOTA' && !hasImg){ return await run('llama-3.1-8b-instant', [gMessages[0]].concat(gMessages.slice(-6))); }
+    throw e;
+  }
 }
 
 async function callCerebras(cKey, msgs){
@@ -3703,8 +3711,8 @@ const VC = (function(){
   async function switchToRec(msg){
     if(S.mode === 'rec') return;
     stopRecognizer();
-    if(!getApiKey()){
-      fatal('هذا المتصفح لا يدعم التعرّف على الصوت. أضف مفتاح Gemini من الإعدادات لاستعمال التسجيل بدلاً منه، أو افتح التطبيق في Chrome.');
+    if(!getApiKey() && !getGroqKey()){
+      fatal('هذا المتصفح لا يدعم التعرّف على الصوت. أضف مفتاح Groq من الإعدادات لاستعمال التسجيل بدلاً منه، أو افتح التطبيق في Chrome.');
       return;
     }
     S.mode = 'rec';
@@ -3773,7 +3781,28 @@ const VC = (function(){
       fr.readAsDataURL(blob);
     });
   }
+  // التفريغ الصوتي: Groq Whisper أولاً (مجاني وحدّه واسع)، وGemini كاحتياطي فقط
+  async function transcribeGroq(blob, gk){
+    const fd = new FormData();
+    fd.append('file', blob, 'audio.wav');
+    fd.append('model', 'whisper-large-v3-turbo');
+    fd.append('language', 'ar');
+    fd.append('temperature', '0');
+    fd.append('response_format', 'json');
+    fd.append('prompt', 'تسجيل بالعربية أو الدارجة المغربية، وقد تأتي كلمات فرنسية.');
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method:'POST', headers:{ 'Authorization':'Bearer ' + gk }, body: fd });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    const t = String(j.text || '').trim();
+    if(!t || /اشتركوا|ترجمة|subscribe/i.test(t)) return '';
+    return t;
+  }
   async function transcribe(blob, maxTok){
+    const gk = getGroqKey();
+    if(gk){
+      try{ return await transcribeGroq(blob, gk); }
+      catch(e){ if(!getApiKey()) throw e; }
+    }
     const key = getApiKey(); if(!key) throw new Error('NOKEY');
     const b64 = await blobToB64(blob);
     const body = JSON.stringify({
@@ -3811,7 +3840,7 @@ const VC = (function(){
       S.busy = false;
       if(!voiceChatActive || tok !== S.token) return;
       const m = String((err && err.message) || '');
-      const msg = m === 'NOKEY' ? 'مفتاح Gemini غير موجود.' : (/429/.test(m) ? 'تجاوزت حدّ الاستعمال المجاني لـ Gemini، انتظر قليلاً.' : 'تعذّر فهم الصوت (' + m + '). تأكد من الإنترنت.');
+      const msg = m === 'NOKEY' ? 'ما كاين حتى مفتاح للتفريغ الصوتي (Groq).' : (/429/.test(m) ? 'تجاوزت حدّ الاستعمال المجاني للتفريغ الصوتي، انتظر قليلاً.' : 'تعذّر فهم الصوت (' + m + '). تأكد من الإنترنت.');
       setState('thinking', msg);
       setTimeout(()=>{ if(voiceChatActive && tok === S.token) startListening(); }, 2200);
     });
@@ -3830,8 +3859,8 @@ const VC = (function(){
     let brave = false;
     try{ brave = !!(navigator.brave && await navigator.brave.isBrave()); }catch(e){}
     S.mode = (!SRClass() || brave || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
-    if(S.mode === 'rec' && !getApiKey()){
-      alert('في هذا المتصفح تحتاج المحادثة الصوتية إلى مفتاح Gemini (لتفريغ الصوت). أضفه من الإعدادات، أو افتح التطبيق في Chrome.');
+    if(S.mode === 'rec' && !getApiKey() && !getGroqKey()){
+      alert('في هذا المتصفح تحتاج المحادثة الصوتية إلى مفتاح Groq (لتفريغ الصوت). أضفه من الإعدادات، أو افتح التطبيق في Chrome.');
       return;
     }
     voiceChatActive = true; vcSessionId++;
@@ -4177,8 +4206,8 @@ const VN = (function(){
     try{ text = await VC.transcribe(wav, 4096); }
     catch(err){
       const m = String((err && err.message) || '');
-      fail(m === 'NOKEY' ? 'التفريغ الصوتي يحتاج مفتاح Gemini (أضفه من الإعدادات ⚙️).'
-          : /429/.test(m) ? 'تجاوزت حدّ الاستعمال المجاني لـ Gemini، انتظر قليلاً ثم أعد المحاولة.'
+      fail(m === 'NOKEY' ? 'التفريغ الصوتي يحتاج مفتاح Groq (أضفه من الإعدادات ⚙️).'
+          : /429/.test(m) ? 'تجاوزت حدّ الاستعمال المجاني للتفريغ الصوتي، انتظر قليلاً ثم أعد المحاولة.'
           : 'تعذّر تفريغ الصوت (' + m + '). تأكد من الإنترنت.');
       return;
     }
@@ -5376,8 +5405,14 @@ function renderAccounting(){
   });
   loadPurchases().forEach(p=> datedEntries.push({date: p.date, amount: purchaseTotal(p), type:'expense'}));
   loadCaisseData().bons.forEach(b=> datedEntries.push({date: b.date, amount: bonTotal(b), type:'expense'}));
+  const allWorkers = loadWorkers();
   const dailyWorkersMap = {}; allWorkers.filter(w=>w.type==='daily').forEach(w=> dailyWorkersMap[w.id]=w);
-  allAttendance.forEach(a=>{
+  loadExtras().forEach(x=>{
+    const w = allWorkers.find(k=>k.id===x.workerId); if(!w || !x.date) return;
+    const dayRate = w.type==='daily' ? w.wage : w.wage / MONTHLY_DAY_DIV;
+    datedEntries.push({date: x.date, amount: x.kind==='day' ? x.qty*dayRate : x.qty*(dayRate/DAY_HOURS)*OT_RATE, type:'expense'});
+  });
+  loadAttendance().forEach(a=>{
     const w = dailyWorkersMap[a.workerId];
     if(!w || a.status==='absent') return;
     const dayAmount = a.status==='half' ? w.wage/2 : w.wage;
