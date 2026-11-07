@@ -1713,6 +1713,10 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <button class="btn-ghost" id="exportSettingsBtn" style="flex:1;">⬇️ تصدير</button>
         <button class="btn-ghost" id="importSettingsBtn" style="flex:1;">⬆️ استيراد</button>
       </div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="btn-ghost" id="healthCheckBtn" style="flex:1;">🩺 فحص التخزين</button>
+      </div>
+      <div id="healthCheckResult" style="font-size:11.5px; margin-top:6px; line-height:1.8;"></div>
       <input type="file" id="importSettingsFile" accept="application/json" style="display:none;">
       <p id="importResult" style="font-size:11px; color:var(--ink-soft); margin-top:6px;"></p>
     </div>
@@ -1727,111 +1731,326 @@ var PAY_TERMS_KEY = 'alioua_btp_pay_terms', REVIEW_KEY = 'alioua_btp_review_done
 /* ===== تخزين مشفّر: AES-GCM (مفتاح مشتق من الـPIN بـ PBKDF2) داخل IndexedDB =====
    - الكود كله كيقرا ويكتب عبر LS (نفس واجهة localStorage) باش ما يتبدل حتى شي شي.
    - البيانات كتعيش مفكوكة فقط فالذاكرة بعد إدخال الـPIN الصحيح، وفـ IndexedDB كتبقى مشفّرة. */
+/* DurableStore v2 — تخزين ثلاثي النسخ + WAL + شفاء ذاتي */
 const SECURE_FLAG = 'alioua_btp_secure_on';
-const SECURE_PLAIN = ['alioua_btp_cloud_dirty','alioua_btp_sync_vault','alioua_btp_pin_hash','alioua_btp_secure_on','alioua_btp_last_sync','alioua_btp_last_auto_backup'];
-function makeSecureLS(N, S){
+const SECURE_PLAIN = ['alioua_btp_cloud_dirty','alioua_btp_sync_vault','alioua_btp_pin_hash','alioua_btp_secure_on','alioua_btp_last_sync','alioua_btp_last_auto_backup','alioua_btp_meta_v3'];
+
+const DurableStore = (function(){
+  const NLS = window.localStorage;
+  const MIRROR_PREFIX = 'alioua_btp_m_';
+  const WAL_PREFIX = 'alioua_btp_wal3_';
+  const MIRROR_MAX_BYTES = 250000;
   const mem = new Map();
-  let unlocked = false, key = null, q = Promise.resolve();
+  let unlocked = false, key = null;
   const enc = new TextEncoder(), dec = new TextDecoder();
   const isSecure = k => typeof k === 'string' && k.startsWith('alioua_btp_') && !SECURE_PLAIN.includes(k);
-  const secureOn = () => N.getItem(SECURE_FLAG) === '1';
-  async function derive(pin, salt){
+  const secureOn = () => NLS.getItem(SECURE_FLAG) === '1';
+  const b64 = u8 => { let s=''; u8.forEach(b=>s+=String.fromCharCode(b)); return btoa(s); };
+  const unb64 = t => Uint8Array.from(atob(t), c=>c.charCodeAt(0));
+
+  async function deriveKey(pin, salt){
     const km = await crypto.subtle.importKey('raw', enc.encode(String(pin)), 'PBKDF2', false, ['deriveKey']);
     return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:310000, hash:'SHA-256'}, km, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
   }
   async function seal(str, k){
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, k, enc.encode(str)));
-    return {iv, ct};
+    return {iv: b64(iv), ct: b64(ct)};
   }
-  async function unseal(rec, k){ return dec.decode(await crypto.subtle.decrypt({name:'AES-GCM', iv: rec.iv}, k, rec.ct)); }
-  function enqueue(fn, propagate){
-    const run = q.then(fn);
-    q = run.catch(e=>{ console.error('خطأ فالتخزين المشفّر:', e); if(!propagate && typeof notifyStorageFailure === 'function') notifyStorageFailure(e); });
-    return run;
+  async function unseal(rec, k){
+    return dec.decode(await crypto.subtle.decrypt({name:'AES-GCM', iv: unb64(rec.iv)}, k, unb64(rec.ct)));
   }
-  const api = {
+
+  const idb = (function(){
+    const DB='alioua_btp_secure'; let dbp=null;
+    const req = r => new Promise((res,rej)=>{ r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+    const open = () => dbp || (dbp = new Promise((res,rej)=>{
+      if(!window.indexedDB){ rej(new Error('NOIDB')); return; }
+      const r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = ()=>{ r.result.createObjectStore('kv',{keyPath:'k'}); r.result.createObjectStore('meta',{keyPath:'id'}); };
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+    }));
+    const tx = async (stores, fn) => { const d = await open(); return new Promise((res,rej)=>{ const t=d.transaction(stores,'readwrite'); t.oncomplete=()=>res(); t.onerror=t.onabort=()=>rej(t.error); fn(t); }); };
+    return {
+      async getAll(){ const d=await open(); return req(d.transaction('kv').objectStore('kv').getAll()); },
+      async put(rec){ await tx(['kv'], t=> t.objectStore('kv').put(rec)); },
+      async del(k){ await tx(['kv'], t=> t.objectStore('kv').delete(k)); },
+      async clear(){ await tx(['kv'], t=> t.objectStore('kv').clear()); },
+      async getMeta(){ const d=await open(); return req(d.transaction('meta').objectStore('meta').get('m')); },
+      async setMeta(m){ await tx(['meta'], t=> t.objectStore('meta').put({id:'m', ...m})); },
+      async wipe(){ try{ const d=await open(); d.close(); }catch(e){} dbp=null; await new Promise(res=>{ const r=indexedDB.deleteDatabase(DB); r.onsuccess=r.onerror=r.onblocked=()=>res(); }); }
+    };
+  })();
+
+  const mirror = {
+    put(k, sealed, seq){
+      try{
+        if((sealed.ct || '').length > MIRROR_MAX_BYTES) return false;
+        NLS.setItem(MIRROR_PREFIX + k, JSON.stringify({iv: sealed.iv, ct: sealed.ct, seq: seq || Date.now()}));
+        return true;
+      }catch(e){ return false; }
+    },
+    get(k){ try{ const r = NLS.getItem(MIRROR_PREFIX + k); return r ? JSON.parse(r) : null; }catch(e){ return null; } },
+    remove(k){ try{ NLS.removeItem(MIRROR_PREFIX + k); }catch(e){} },
+    keys(){ const o=[]; for(let i=0;i<NLS.length;i++){ const k=NLS.key(i); if(k && k.startsWith(MIRROR_PREFIX)) o.push(k.slice(MIRROR_PREFIX.length)); } return o; }
+  };
+
+  const WAL = {
+    add(k, v, seq){ try{ NLS.setItem(WAL_PREFIX + k, JSON.stringify({v, seq: seq || Date.now()})); }catch(e){ throw e; } },
+    remove(k){ try{ NLS.removeItem(WAL_PREFIX + k); }catch(e){} },
+    get(k){ try{ const r = NLS.getItem(WAL_PREFIX + k); return r ? JSON.parse(r) : null; }catch(e){ return null; } },
+    keys(){ const o=[]; for(let i=0;i<NLS.length;i++){ const k=NLS.key(i); if(k && k.startsWith(WAL_PREFIX)) o.push(k.slice(WAL_PREFIX.length)); } return o; },
+    clear(){ this.keys().forEach(k => NLS.removeItem(WAL_PREFIX + k)); }
+  };
+
+  async function replicate(k, v){
+    let sealed;
+    try{ sealed = await seal(v, key); }catch(e){ return {idb:false, mirror:false, error:'SEAL_FAILED'}; }
+    const seq = Date.now();
+    const [idbOk, mirrorOk] = await Promise.all([
+      (async()=>{ try{ await idb.put({k, ...sealed, seq}); return true; }catch(e){ console.error('IDB fail:', k, e); return false; } })(),
+      Promise.resolve(mirror.put(k, sealed, seq))
+    ]);
+    return {idb: idbOk, mirror: mirrorOk};
+  }
+
+  async function replicateDelete(k){
+    const [idbOk] = await Promise.all([
+      (async()=>{ try{ await idb.del(k); return true; }catch(e){ return false; } })()
+    ]);
+    mirror.remove(k);
+    return {idb: idbOk, mirror: true};
+  }
+
+  const META_BACKUP_KEY = 'alioua_btp_meta_v3';
+  function saveMetaBackup(meta){
+    try{ NLS.setItem(META_BACKUP_KEY, JSON.stringify(meta)); }catch(e){}
+  }
+  function loadMetaBackup(){
+    try{ const r = NLS.getItem(META_BACKUP_KEY); return r ? JSON.parse(r) : null; }catch(e){ return null; }
+  }
+  async function getMetaWithFallback(){
+    const m = await idb.getMeta();
+    if(m) return m;
+    return loadMetaBackup();
+  }
+
+  // كتابات وصلات والتطبيق مقفول (مؤقّت/callback): كنحبسوها هنا وكنطبقوها أوتوماتيكيًا بعد الفتح
+  const pendingWrites = new Map();
+  function flushPendingWrites(store){
+    if(!pendingWrites.size) return;
+    const entries = Array.from(pendingWrites);
+    pendingWrites.clear();
+    entries.forEach(([pk, pv])=>{ try{ store.setItem(pk, pv); }catch(e){ console.error('تعذّر تطبيق كتابة معلّقة:', pk, e); } });
+  }
+
+  return {
     secureOn,
     get active(){ return secureOn() && unlocked; },
     get locked(){ return secureOn() && !unlocked; },
+    _lastUnlockInfo: null,
+
     getItem(k){
-      if(isSecure(k) && secureOn()) return unlocked && mem.has(k) ? mem.get(k) : null;
-      return N.getItem(k);
+      if(isSecure(k) && secureOn()){
+        if(!unlocked) return null;
+        const w = WAL.get(k);
+        if(w && w.v !== null && w.v !== undefined) return String(w.v);
+        return mem.has(k) ? mem.get(k) : null;
+      }
+      return NLS.getItem(k);
     },
+
     setItem(k, v){
       if(isSecure(k) && secureOn()){
-        if(!unlocked) return;
-        v = String(v); mem.set(k, v);
-        enqueue(async()=>{ const sl = await seal(v, key); await S.put({k, iv: sl.iv, ct: sl.ct}); });
+        if(!unlocked){
+          pendingWrites.set(k, String(v));
+          console.warn('التطبيق مقفول: الكتابة اتحطات فالانتظار حتى الفتح:', k);
+          return;
+        }
+        v = String(v);
+        mem.set(k, v);
+        WAL.add(k, v);
+        replicate(k, v).then(r=>{
+          if(r.idb || r.mirror){
+            try{ WAL.remove(k); }catch(e){}
+            if(!r.idb) console.warn('IndexedDB فشل، Mirror نجح:', k);
+            if(!r.mirror && r.idb) console.warn('Mirror فشل، IndexedDB نجح:', k);
+          }else{
+            console.error('كلتا النسختين فشلتا:', k);
+            try{ if(typeof notifyStorageFailure === 'function') notifyStorageFailure(new Error('BOTH_REPLICAS_FAILED')); }catch(_){}
+            let attempts = 0;
+            const retry = setInterval(()=>{
+              attempts++;
+              replicate(k, v).then(r2=>{
+                if(r2.idb || r2.mirror){ clearInterval(retry); WAL.remove(k); }
+                else if(attempts >= 5){ clearInterval(retry); }
+              });
+            }, 4000);
+          }
+        });
         return;
       }
-      N.setItem(k, v);
+      NLS.setItem(k, v);
     },
+
     removeItem(k){
       if(isSecure(k) && secureOn()){
         if(!unlocked) return;
-        mem.delete(k); enqueue(()=> S.del(k)); return;
+        mem.delete(k);
+        try{ WAL.add(k, null); }catch(e){}
+        replicateDelete(k).then(r=>{ if(r.idb || r.mirror){ try{ WAL.remove(k); }catch(e){} } });
+        return;
       }
-      N.removeItem(k);
+      NLS.removeItem(k);
     },
+
     keys(){
       const out = new Set(mem.keys());
-      for(let i=0; i<N.length; i++) out.add(N.key(i));
+      for(let i=0;i<NLS.length;i++){
+        const k = NLS.key(i);
+        if(!k) continue;
+        if(k.startsWith(MIRROR_PREFIX) || k.startsWith(WAL_PREFIX)) continue;
+        out.add(k);
+      }
       return Array.from(out);
     },
-    get length(){ return api.keys().length; },
-    key(i){ return api.keys()[i] ?? null; },
+    get length(){ return this.keys().length; },
+    key(i){ return this.keys()[i] ?? null; },
+
     async verifyPin(pin){
-      try{
-        await S.open(); const meta = await S.getMeta(); if(!meta) return false;
-        await unseal(meta.check, await derive(pin, meta.salt)); return true;
-      }catch(e){ return false; }
+      try{ const meta = await getMetaWithFallback(); if(!meta) return false; const k = await deriveKey(pin, unb64(meta.salt)); await unseal(meta.check, k); return true; }
+      catch(e){ return false; }
     },
-    // يرجّع: 'ok' (فتح عادي) | 'migrated' (أول تشفير) | 'empty' (التشفير مفعّل لكن المخزن فارغ)
+
     async unlock(pin){
-      if(unlocked) return 'ok';
-      await S.open();
-      const meta = await S.getMeta();
+      let meta = await idb.getMeta();
+      if(!meta){ meta = loadMetaBackup(); if(meta){ try{ await idb.setMeta({salt: meta.salt, check: meta.check}); }catch(e){} } }
+      if(!secureOn() && meta){
+        let k;
+        try{ k = await deriveKey(pin, unb64(meta.salt)); await unseal(meta.check, k); }
+        catch(e){ throw new Error('BADPIN'); }
+        const rows = await idb.getAll();
+        for(const r of rows){ try{ mem.set(r.k, await unseal(r, k)); }catch(e){} }
+        key = k; unlocked = true;
+        NLS.setItem(SECURE_FLAG, '1'); NLS.setItem('alioua_btp_pin_hash', 'secure');
+        this._lastUnlockInfo = {replayed:0, repaired:0, status:'recovered'};
+        flushPendingWrites(this);
+        return 'recovered';
+      }
       if(secureOn() && meta){
-        const k = await derive(pin, meta.salt);
-        try{ await unseal(meta.check, k); }catch(e){ throw new Error('BADPIN'); }
-        const rows = await S.getAll();
-        for(const r of rows) mem.set(r.k, await unseal(r, k));
-        key = k; unlocked = true; return 'ok';
+        let k;
+        try{ k = await deriveKey(pin, unb64(meta.salt)); await unseal(meta.check, k); }
+        catch(e){ throw new Error('BADPIN'); }
+        const idbRows = await idb.getAll();
+        const idbMap = new Map(); idbRows.forEach(r=> idbMap.set(r.k, r));
+        const mirKeys = new Set(mirror.keys());
+        const walKeys = new Set(WAL.keys());
+        const allKeys = new Set([...idbMap.keys(), ...mirKeys, ...walKeys]);
+        let replayed = 0, repaired = 0;
+        const repairs = [];
+        for(const kk of allKeys){
+          const idbRec = idbMap.get(kk);
+          const mirRec = mirror.get(kk);
+          const walRec = WAL.get(kk);
+          let winner = null, winnerSeq = 0, unsealed = false;
+          if(walRec){ winner = walRec.v; winnerSeq = walRec.seq; unsealed = true; }
+          else if(idbRec && mirRec){
+            const iseq = idbRec.seq || 0, mseq = mirRec.seq || 0;
+            if(iseq >= mseq){ try{ winner = await unseal(idbRec, k); winnerSeq = iseq; unsealed = true; }catch(e){} if(!unsealed){ try{ winner = await unseal(mirRec, k); winnerSeq = mseq; unsealed = true; }catch(e){} } }
+            else { try{ winner = await unseal(mirRec, k); winnerSeq = mseq; unsealed = true; }catch(e){} if(!unsealed){ try{ winner = await unseal(idbRec, k); winnerSeq = iseq; unsealed = true; }catch(e){} } }
+          } else if(idbRec){ try{ winner = await unseal(idbRec, k); winnerSeq = idbRec.seq || 0; unsealed = true; repairs.push({k:kk, v:winner, seq:winnerSeq, target:'mirror'}); }catch(e){} }
+          else if(mirRec){ try{ winner = await unseal(mirRec, k); winnerSeq = mirRec.seq || 0; unsealed = true; repairs.push({k:kk, v:winner, seq:winnerSeq, target:'idb'}); }catch(e){} }
+          if(walRec && winner !== null){
+            try{ const sl = await seal(winner, k); await Promise.all([idb.put({k:kk, ...sl, seq:winnerSeq}), Promise.resolve(mirror.put(kk, sl, winnerSeq))]); WAL.remove(kk); replayed++; }catch(e){}
+          }
+          if(unsealed && winner !== null) mem.set(kk, winner);
+        }
+        for(const r of repairs){
+          try{ const sl = await seal(r.v, k); if(r.target === 'idb') await idb.put({k:r.k, ...sl, seq:r.seq}); else mirror.put(r.k, sl, r.seq); repaired++; }catch(e){}
+        }
+        if(!loadMetaBackup()) saveMetaBackup({salt: meta.salt, check: meta.check});
+        key = k; unlocked = true;
+        this._lastUnlockInfo = {replayed, repaired, status:'ok'};
+        flushPendingWrites(this);
+        return 'ok';
       }
       const wasOn = secureOn();
       const salt = crypto.getRandomValues(new Uint8Array(16));
-      const k = await derive(pin, salt);
+      const k = await deriveKey(pin, salt);
       const nativeKeys = [];
-      for(let i=0; i<N.length; i++){ const nk = N.key(i); if(isSecure(nk)) nativeKeys.push(nk); }
-      const recs = [], tmp = new Map();
-      for(const nk of nativeKeys){ const v = N.getItem(nk); tmp.set(nk, v); const sl = await seal(v, k); recs.push({k: nk, iv: sl.iv, ct: sl.ct}); }
-      await S.replaceAll(recs, {salt, check: await seal('ok', k)});
-      if((await S.getAll()).length !== recs.length) throw new Error('VERIFY');
-      tmp.forEach((v, nk)=> mem.set(nk, v));
+      for(let i=0;i<NLS.length;i++){ const nk = NLS.key(i); if(isSecure(nk)) nativeKeys.push(nk); }
+      for(const nk of nativeKeys){
+        const v = NLS.getItem(nk); mem.set(nk, v);
+        const sl = await seal(v, k);
+        await Promise.all([idb.put({k:nk, ...sl, seq:Date.now()}), Promise.resolve(mirror.put(nk, sl, Date.now()))]);
+      }
+      const newMeta = {salt: b64(salt), check: await seal('ok', k)};
+      await idb.setMeta(newMeta); saveMetaBackup(newMeta);
+      const checkRows = await idb.getAll();
+      if(checkRows.length !== nativeKeys.length) throw new Error('VERIFY');
+      nativeKeys.forEach(nk=> NLS.removeItem(nk));
+      NLS.setItem(SECURE_FLAG, '1');
+      NLS.setItem('alioua_btp_pin_hash', 'secure');
       key = k; unlocked = true;
-      nativeKeys.forEach(nk=> N.removeItem(nk));   // نمسحو النسخة المكشوفة فقط بعد التأكد من نجاح التشفير
-      N.setItem(SECURE_FLAG, '1'); N.setItem('alioua_btp_pin_hash', 'secure');
+      this._lastUnlockInfo = {replayed:0, repaired:0, status: wasOn ? 'empty' : 'migrated'};
+      flushPendingWrites(this);
       return wasOn ? 'empty' : 'migrated';
     },
+
     async rekey(newPin){
       if(!unlocked) throw new Error('LOCKED');
-      await enqueue(async()=>{
-        const salt = crypto.getRandomValues(new Uint8Array(16));
-        const nk = await derive(newPin, salt);
-        const recs = [];
-        for(const [k, v] of mem){ const sl = await seal(v, nk); recs.push({k, iv: sl.iv, ct: sl.ct}); }
-        await S.replaceAll(recs, {salt, check: await seal('ok', nk)});
-        key = nk;
-      }, true);
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const newKey = await deriveKey(newPin, salt);
+      const updates = []; for(const [k,v] of mem) if(isSecure(k)) updates.push({k,v});
+      await idb.clear();
+      for(const k of mirror.keys()) mirror.remove(k);
+      for(const {k,v} of updates){
+        const sl = await seal(v, newKey);
+        await Promise.all([idb.put({k, ...sl, seq:Date.now()}), Promise.resolve(mirror.put(k, sl, Date.now()))]);
+      }
+      const newMeta = {salt: b64(salt), check: await seal('ok', newKey)};
+      await idb.setMeta(newMeta); saveMetaBackup(newMeta);
+      key = newKey;
     },
+
     async wipe(){
-      await S.wipe(); mem.clear(); key = null; unlocked = false;
-      N.removeItem(SECURE_FLAG); N.removeItem('alioua_btp_pin_hash');
+      await idb.wipe();
+      for(const k of mirror.keys()) mirror.remove(k);
+      WAL.clear(); mem.clear(); pendingWrites.clear(); key = null; unlocked = false;
+      NLS.removeItem(SECURE_FLAG); NLS.removeItem('alioua_btp_pin_hash'); NLS.removeItem(META_BACKUP_KEY);
+    },
+
+    async healthCheck(){
+      if(!unlocked) return {status:'locked', issues:[], stats:{}};
+      const idbRows = await idb.getAll();
+      const idbKeys = new Set(idbRows.map(r=>r.k));
+      const mirKeys = new Set(mirror.keys());
+      const walKeys = new Set(WAL.keys());
+      const issues = [];
+      for(const [k, v] of mem){
+        if(!isSecure(k)) continue;
+        if(!idbKeys.has(k)) issues.push({key:k, missing:'idb'});
+        const tooBigForMirror = Math.ceil((enc.encode(String(v)).length + 16) / 3) * 4 > MIRROR_MAX_BYTES;
+        if(!mirKeys.has(k) && !tooBigForMirror) issues.push({key:k, missing:'mirror'});
+      }
+      for(const kk of idbKeys){ if(!mem.has(kk)) issues.push({key:kk, missing:'mem'}); }
+      const stats = {idb: idbKeys.size, mirror: mirKeys.size, mem: mem.size, wal: walKeys.size};
+      const status = issues.length ? (issues.length > Math.max(3, mem.size/2) ? 'critical' : 'degraded') : (stats.wal > 0 ? 'pending' : 'healthy');
+      return {status, issues, stats};
+    },
+
+    async repairAll(){
+      if(!unlocked) return 0;
+      let n = 0;
+      for(const [k,v] of mem){
+        if(!isSecure(k)) continue;
+        try{ const sl = await seal(v, key); await Promise.all([idb.put({k, ...sl, seq:Date.now()}), Promise.resolve(mirror.put(k, sl, Date.now()))]); n++; }catch(e){}
+      }
+      WAL.clear();
+      return n;
     }
   };
-  return api;
-}
+})();
 function makeIdbStore(){
   const DB = 'alioua_btp_secure'; let dbp = null;
   const req = r => new Promise((res, rej)=>{ r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); });
@@ -1852,7 +2071,7 @@ function makeIdbStore(){
     async wipe(){ try{ const d = await open(); d.close(); }catch(e){} dbp = null; await new Promise(res=>{ const r = indexedDB.deleteDatabase(DB); r.onsuccess = r.onerror = r.onblocked = ()=>res(); }); }
   };
 }
-const LS = makeSecureLS(window.localStorage, makeIdbStore());
+const LS = DurableStore;
 
 /* ===== قفل الشهور + سجل التغييرات + سلة المحذوفات =====
    كل كتابة فالمجموعات المالية كتدوز من هنا: نقارنو القديم بالجديد، نسجلو، نحميو الشهور المقفولة، ونحطو المحذوف فالسلة. */
@@ -3241,8 +3460,10 @@ async function autoRestoreFromCloud(pin){
       if(v && syncCodeStrong(v.code)){ safeSetItem(SYNC_CODE_KEY, v.code); if(v.url) safeSetItem(FB_DBURL_KEY, v.url); }
     }
     if(!syncCodeStrong(getSyncCode())){
-      const c = (prompt('☁️ المخزن المحلي فارغ. دخل رمز المزامنة (مرة وحدة فقط) باش نسترجع بياناتك من السحابة تلقائيًا.\n\nإلا هادا أول استعمال، خليه فارغ وكمّل.') || '').trim();
-      if(!syncCodeStrong(c)) return;
+      let last = 0; try{ last = +(window.localStorage.getItem('yunus_restore_skip') || 0); }catch(e){}
+      if(Date.now() - last < 12*3600*1000) return;   // ما نعاودش نسول قبل 12 ساعة
+      const c = (prompt('☁️ المخزن المحلي فارغ. دخل رمز المزامنة (مرة وحدة فقط) باش نسترجع بياناتك من السحابة. إلا بغيتي تتجاهل، ضغط إلغاء.') || '').trim();
+      if(!syncCodeStrong(c)){ try{ window.localStorage.setItem('yunus_restore_skip', String(Date.now())); }catch(e){} return; }
       safeSetItem(SYNC_CODE_KEY, c);
     }
     await cloudPull((status, detail)=>{
@@ -3277,7 +3498,7 @@ async function syncDecrypt(rec, code){
 }
 
 // المفاتيح المستثناة عمدًا من المزامنة (لأسباب أمان/منطقية بحتة، ماشي نسيان)
-const CLOUD_SYNC_EXCLUDE = ['alioua_btp_sync_vault', 'alioua_btp_cloud_dirty', 'alioua_btp_openrouter_key', 'alioua_btp_mistral_key', 'alioua_btp_fb_dburl', 'alioua_btp_sync_code', 'alioua_btp_gcal_token', 'alioua_btp_pin_hash', 'alioua_btp_last_sync', 'alioua_btp_last_auto_backup'];
+const CLOUD_SYNC_EXCLUDE = ['alioua_btp_hard_backup', 'alioua_btp_hard_backup_prepull', 'alioua_btp_meta_v3', 'alioua_btp_secure_on', 'alioua_btp_sync_vault', 'alioua_btp_cloud_dirty', 'alioua_btp_openrouter_key', 'alioua_btp_mistral_key', 'alioua_btp_fb_dburl', 'alioua_btp_sync_code', 'alioua_btp_gcal_token', 'alioua_btp_pin_hash', 'alioua_btp_last_sync', 'alioua_btp_last_auto_backup'];
 
 function collectAllAppData(){
   // كنجمعو تلقائيًا كل مفتاح alioua_btp_* من التخزين المحلي، بلا الحاجة نتذكرو واحد واحد
@@ -3307,6 +3528,41 @@ function dataScore(obj){
     try{ const v = JSON.parse(obj[k]); if(Array.isArray(v)) n += v.length; }catch(e){}
   });
   return n;
+}
+// ===== حماية السحب: مقارنة عدد العناصر لكل مفتاح + نسخة صلبة =====
+const HARD_BACKUP_KEY = 'alioua_btp_hard_backup';
+const HARD_BACKUP_PREPULL_KEY = 'alioua_btp_hard_backup_prepull';
+const HARD_BACKUP_MAX_CHARS = 1500000;
+function perKeyScores(obj){
+  const out = {};
+  Object.keys(obj || {}).forEach(k=>{
+    if(!k.startsWith('alioua_btp_') || k === HISTORY_KEY || CLOUD_SYNC_EXCLUDE.includes(k)) return;
+    let n = 0;
+    try{ const v = JSON.parse(obj[k]); if(Array.isArray(v)) n = v.length; }catch(e){}
+    out[k] = n;
+  });
+  return out;
+}
+function findShrinkage(localData, remoteData){
+  const ls = perKeyScores(localData), rs = perKeyScores(remoteData);
+  const out = [];
+  Object.keys(ls).forEach(k=>{
+    const l = ls[k], r = rs[k] || 0;
+    if(l > r) out.push({key: k, local: l, remote: r});
+  });
+  return out;
+}
+function makeHardBackup(reason){
+  try{
+    if(LS.locked) return false;
+    const data = collectAllAppData();
+    if(dataScore(data) === 0) return false; // ما نعوّضوش نسخة سليمة بنسخة فارغة
+    const payload = JSON.stringify({t: Date.now(), reason: String(reason || ''), data});
+    if(payload.length > HARD_BACKUP_MAX_CHARS){ console.warn('النسخة الصلبة كبيرة بزاف، ما تحفظاتش:', payload.length); return false; }
+    LS.setItem(HARD_BACKUP_KEY, payload);
+    if(reason === 'pre-pull') LS.setItem(HARD_BACKUP_PREPULL_KEY, payload);
+    return true;
+  }catch(e){ console.warn('makeHardBackup فشلت:', e); return false; }
 }
 async function cloudSnapshot(dbUrl, code, body){
   // نسخة يومية فالسحابة (آخر 14 يوم) — حتى إلا تخربات النسخة الحالية، النسخ القديمة كتبقى
@@ -3541,6 +3797,8 @@ function _applyCloudData(data){
 async function cloudPull(onStatus, opts){
   if(!cloudConfigured()){ if(onStatus) onStatus('fail', (getFirebaseDbUrl() && !syncCodeStrong(getSyncCode())) ? SYNC_WEAK_MSG : 'خصك تعمري: رابط Database URL ورمز المزامنة أولاً.'); return; }
 
+  makeHardBackup('pre-pull');
+
   // حماية جوهرية: إذا كاين تعديلات محلية معلقة لسه ماتأكدش رفعها بنجاح، نحاولو نرفعوها أولاً.
   // إذا فشل الرفع، نرفضو السحب كليًا — بلا هاد الفحص، السحب غادي يمحي التعديلات المحلية
   // بلا ما توصل للسحابة أصلاً (هذا كان سبب اختفاء البيانات).
@@ -3573,13 +3831,15 @@ async function cloudPull(onStatus, opts){
     if(!data){ if(onStatus) onStatus('fail', 'ما لقيتش بيانات بهاد الرمز — يمكن أول مرة كتربطي، ديري "مزامنة الآن" أولاً.'); return; }
 
     if(!(opts && opts.force)){
-      const ls = dataScore(collectAllAppData()), rs = dataScore(data);
-      if(ls > 0 && rs < ls * 0.5 && ls - rs >= 5){
-        if(onStatus) onStatus('blocked', `نسخة السحابة (${rs} عنصر) أصغر بكثير من بيانات هاد الجهاز (${ls} عنصر). وقفت السحب باش ما تضيعش بيانات. ديري "مزامنة الآن" باش ترفع بيانات هاد الجهاز، أو كمّل السحب يدويًا إلا كنتي متأكد.`);
+      const shrink = findShrinkage(collectAllAppData(), data);
+      if(shrink.length){
+        const lines = shrink.slice(0, 8).map(x=> `• ${x.key.replace('alioua_btp_', '')}: ${x.local} ← ${x.remote}`).join('\n');
+        if(onStatus) onStatus('blocked', `نسخة السحابة فيها عناصر أقل من هاد الجهاز فـ ${shrink.length} مفتاح (كان ← صار):\n${lines}${shrink.length > 8 ? '\n...' : ''}\nوقفت السحب باش ما تضيعش بيانات. ديري "مزامنة الآن" باش ترفع بيانات هاد الجهاز، أو كمّل السحب يدويًا إلا كنتي متأكد.`);
         return;
       }
     }
     applyCloudData(data);
+    makeHardBackup('post-pull');
     if(onStatus) onStatus('ok');
   }catch(e){
     if(onStatus) onStatus('fail', 'خطأ فالاتصال بالإنترنت');
@@ -3648,6 +3908,51 @@ saveKeyBtn.addEventListener('click', saveAllSettings);
 document.getElementById('saveKeyBtn2')?.addEventListener('click', saveAllSettings);
 cancelModalBtn.addEventListener('click', closeModal);
 settingsBtn.addEventListener('click', ()=>openModal(false));
+
+/* ---------- فحص التخزين ---------- */
+async function runStorageHealthCheck(){
+  const out = document.getElementById('healthCheckResult');
+  if(!out) return;
+  out.textContent = '⏳ كنفحص...';
+  try{
+    const h = await LS.healthCheck();
+    updateStorageHealthBadge(h);
+    const ui = STORAGE_HEALTH_UI[h.status] || STORAGE_HEALTH_UI.locked;
+    out.textContent = '';
+    const badge = document.createElement('div');
+    badge.style.cssText = 'display:inline-block; padding:3px 10px; border-radius:10px; font-weight:700; background:' + ui.bg + '; color:' + ui.fg + ';';
+    badge.textContent = 'الحالة: ' + ui.label;
+    out.appendChild(badge);
+    const st = h.stats || {};
+    const stats = document.createElement('div');
+    stats.textContent = 'IdB: ' + (st.idb ?? 0) + ' · Mirror: ' + (st.mirror ?? 0) + ' · Memory: ' + (st.mem ?? 0) + ' · WAL: ' + (st.wal ?? 0);
+    out.appendChild(stats);
+    const issues = h.issues || [];
+    if(issues.length){
+      const names = {idb:'ناقص فـ IndexedDB', mirror:'ناقص فـ Mirror', mem:'ناقص فـ الذاكرة'};
+      issues.slice(0, 8).forEach(it=>{
+        const d = document.createElement('div');
+        d.textContent = '• ' + String(it.key).replace('alioua_btp_', '') + ' — ' + (names[it.missing] || it.missing);
+        out.appendChild(d);
+      });
+      if(issues.length > 8){ const more = document.createElement('div'); more.textContent = '... و ' + (issues.length - 8) + ' أخرى'; out.appendChild(more); }
+      const fix = document.createElement('button');
+      fix.className = 'btn-ghost';
+      fix.style.marginTop = '6px';
+      fix.textContent = '🔧 إصلاح الآن';
+      fix.addEventListener('click', async ()=>{
+        fix.disabled = true; fix.textContent = '⏳ كنصلح...';
+        try{ await LS.repairAll(); }catch(e){ console.error('repairAll', e); }
+        runStorageHealthCheck();
+      });
+      out.appendChild(fix);
+    }
+  }catch(e){
+    console.error('healthCheck', e);
+    out.textContent = '❌ تعذّر الفحص: ' + (e && e.message ? e.message : e);
+  }
+}
+document.getElementById('healthCheckBtn')?.addEventListener('click', runStorageHealthCheck);
 
 /* ---------- نسخة احتياطية للإعدادات (تصدير/استيراد) ---------- */
 if(navigator.storage && navigator.storage.persist){
@@ -5055,7 +5360,9 @@ function setStage(stage){
   [lockTitle.textContent, lockSubtitle.textContent] = map[stage];
 }
 
+let unlockStorageFailed = false;
 async function tryUnlock(pin){
+  unlockStorageFailed = false;
   const sub = lockSubtitle.textContent;
   lockSubtitle.textContent = '⏳ جارٍ فتح/تشفير البيانات...';
   try{
@@ -5064,15 +5371,20 @@ async function tryUnlock(pin){
   }catch(e){
     lockSubtitle.textContent = sub;
     if(e && e.message === 'BADPIN') return false;
-    console.error('تعذّر التشفير:', e);
-    alert('⚠️ تعذّر تفعيل التشفير فهاد المتصفح (IndexedDB غير متاحة). التطبيق غادي يخدم بلا تشفير.');
+    console.error('تعذّر فتح قاعدة البيانات:', e);
+    alert('تعذّر فتح قاعدة البيانات. التخزين معطّل — أي بيانات جديدة لن تُحفظ. أعد المحاولة، أعد تشغيل الهاتف، أو راسل الدعم.');
+    unlockStorageFailed = true;
+    try{ pinBuffer = ''; updatePinDots(); }catch(_){}
+    return false;
   }
   lockSubtitle.textContent = sub;
   unlockApp();
   if(SESSION_PIN){
     try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}
     let empty = false; try{ empty = dataScore(collectAllAppData()) === 0; }catch(e){}
-    if(unlockStatus === 'empty' || empty){ await autoRestoreFromCloud(SESSION_PIN); }
+    let hasVault = false; try{ hasVault = !!window.localStorage.getItem(VAULT_KEY); }catch(e){}
+    // نسترجع فقط ملي كاين مسح حقيقي (كانت بيانات وتمسحات) أو كاين رمز محفوظ؛ الاستعمال الأول ما كيسولش
+    if(unlockStatus === 'empty' || (empty && hasVault)){ await autoRestoreFromCloud(SESSION_PIN); }
     else{ vaultSave(SESSION_PIN); }
   }
   return true;
@@ -5086,7 +5398,7 @@ async function handlePinComplete(){
   const savedHash = LS.getItem(PIN_KEY);
 
   if(pinStage === 'unlock'){
-    if(secure){ if(!(await tryUnlock(pin))) shakeDots('رمز غير صحيح، حاول مرة ثانية'); }
+    if(secure){ if(!(await tryUnlock(pin)) && !unlockStorageFailed) shakeDots('رمز غير صحيح، حاول مرة ثانية'); }
     else if(hash === savedHash){ await tryUnlock(pin); }
     else{ shakeDots('رمز غير صحيح، حاول مرة ثانية'); }
   }
@@ -8622,13 +8934,16 @@ function buildShareBtn(blob){
 
 
 /* ---------- بدء التشغيل ---------- */
+// بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 07-11-2026 ب'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:2147483000; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('service-worker.js',{updateViaCache:'none'}).then(r=>{ try{ r.update(); }catch(e){} }).catch(()=>{});
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='fix-2026-11-05';
+    const BUILD='fix-2026-11-07b';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
@@ -8656,12 +8971,11 @@ function decideOpenSetupModal(){
   }catch(e){ console.error('تعذّر فحص إعدادات المفاتيح:', e); }
 }
 
-/* ---------- مزامنة تلقائية حقيقية بين الأجهزة (هاتف ↔ حاسوب) ----------
-   المزامنة كتخدم تلقائيًا بالإعدادات الافتراضية بلا حاجة لأي إعداد يدوي:
-   - عند فتح التطبيق: نجيبو آخر نسخة من السحابة قبل ما نبداو.
-   - كل 60 ثانية (والتطبيق مفتوح وظاهر): نجيبو آخر تحديثات جاو من الجهاز الآخر.
-   - أول ما ترجعي للتطبيق (بدّلتي من تطبيق آخر أو جهاز آخر): نجيبو آخر نسخة فوري.
-   - قبل ما التطبيق يتخبى أو يتسد: نرفعو أي تعديلات محلية معلقة فوري (بلا انتظار 2.5 ثانية). */
+/* ---------- حماية المزامنة بين الأجهزة (هاتف ↔ حاسوب) ----------
+   - السحب من السحابة (cloudPull) ولّا يدوي فقط: ما بقاش كيتسحب أوتوماتيكيًا (كان كيعوّض بيانات محلية بنسخة ناقصة).
+   - عند فتح التطبيق: كنسحبو من السحابة فقط إلا كان هاد الجهاز فارغ (جهاز جديد).
+   - قبل ما التطبيق يتخبى أو يتسد: نرفعو أي تعديلات محلية معلقة فوري (بلا انتظار 2.5 ثانية).
+   - كل 5 دقايق: فحص صحة التخزين + إصلاح تلقائي إلا كان الوضع حرج. */
 function refreshCloudSyncResultNote(status, detail){
   const note = document.getElementById('cloudSyncResult');
   if(status === 'ok' && note){ note.textContent = '✅ تم تحديث البيانات من السحابة.'; note.style.color = '#2e7d32'; }
@@ -8671,37 +8985,55 @@ function refreshCloudSyncResultNote(status, detail){
   }
 }
 
+const STORAGE_HEALTH_UI = {
+  healthy:  {label:'سليم ✅',   dot:'#2e7d32', bg:'#dcfce7', fg:'#166534'},
+  pending:  {label:'معلّق ⏳',  dot:'#b45309', bg:'#fef3c7', fg:'#92400e'},
+  degraded: {label:'متدهور ⚠️', dot:'#ea580c', bg:'#ffedd5', fg:'#9a3412'},
+  critical: {label:'حرج 🚨',    dot:'#b91c1c', bg:'#fee2e2', fg:'#991b1b'},
+  locked:   {label:'مقفول 🔒',  dot:'#8a9aa5', bg:'#e5e7eb', fg:'#374151'}
+};
+function updateStorageHealthBadge(health){
+  const dot = document.getElementById('cloudSyncStatusDot');
+  if(!dot) return;
+  const ui = STORAGE_HEALTH_UI[health && health.status] || STORAGE_HEALTH_UI.locked;
+  dot.style.background = ui.dot;
+  dot.title = 'حالة التخزين: ' + ui.label;
+}
+
 let cloudAutoSyncLoopStarted = false;
 function startAutoCloudSyncLoop(){
   if(cloudAutoSyncLoopStarted) return;
   cloudAutoSyncLoopStarted = true;
 
-  // سحب دوري كل 60 ثانية، فقط إذا التطبيق ظاهر حاليًا (نوفرو البطارية والبيانات لما التطبيق مخبّي)
-  setInterval(()=>{
-    if(document.visibilityState !== 'visible') return;
-    if(cloudSyncTimer) return; // كاين تعديلات محلية معلقة باش تتصعد، ما نديروش سحب دابا باش ما تضيعش
-    if(!cloudConfigured()) return;
-    cloudPull(refreshCloudSyncResultNote);
-  }, 60000);
-
-  // رجعنا للتطبيق (بدّلنا من جهاز/تطبيق آخر) — نجيبو آخر نسخة فوري بلا ننتظرو الدورة العادية
+  // ما بقا حتى سحب أوتوماتيكي: السحب يدوي فقط. هنا غير نرفعو التعديلات المعلقة قبل ما التطبيق يتخبى/يتسد.
   document.addEventListener('visibilitychange', ()=>{
-    if(document.visibilityState === 'visible'){
-      if(!cloudSyncTimer && cloudConfigured()){
-        cloudPull(refreshCloudSyncResultNote);
-      }
-    }else if(document.visibilityState === 'hidden'){
-      flushPendingCloudSync();
-    }
+    if(document.visibilityState === 'hidden') flushPendingCloudSync();
   });
-  // شبكة أمان إضافية لما الصفحة غادي تتسد نهائيًا (بعض المتصفحات كتطلق pagehide بلا visibilitychange)
   window.addEventListener('pagehide', flushPendingCloudSync);
+
+  // فحص صحة التخزين كل 5 دقايق + إصلاح إلا كانت الحالة حرجة أو المشاكل أكثر من 3
+  const storageHealthTick = async ()=>{
+    try{
+      let h = await LS.healthCheck();
+      updateStorageHealthBadge(h);
+      if(h.status === 'critical' || (h.issues && h.issues.length > 3)){
+        await LS.repairAll();
+        h = await LS.healthCheck();
+        updateStorageHealthBadge(h);
+      }
+    }catch(e){ console.warn('فحص صحة التخزين فشل:', e); }
+  };
+  setTimeout(storageHealthTick, 3000);
+  setInterval(storageHealthTick, 5*60*1000);
 }
 
 function startupSequence(){
 try{ if(!syncCodeStrong(getSyncCode())){ messages.push({role:'model', text: SYNC_WEAK_MSG + '\nالمزامنة السحابية متوقفة لين تبدّلو. أول جهاز فيه البيانات: بدّل الرمز ثم "مزامنة الآن"، وفالأجهزة الأخرى حط نفس الرمز ثم "استرجاع".', time:Date.now()}); renderMessages(); } }catch(e){}
 try{
-  if(typeof cloudConfigured === 'function' && cloudConfigured()){
+  // السحب أوتوماتيكيًا فقط على جهاز فارغ (جهاز جديد)؛ جهاز فيه بيانات ما كيتسحبش عليه أبدًا عند الفتح
+  let localEmpty = false;
+  try{ localEmpty = dataScore(collectAllAppData()) === 0; }catch(e){ localEmpty = false; }
+  if(localEmpty && typeof cloudConfigured === 'function' && cloudConfigured()){
     cloudPull((status)=>{
       refreshCloudSyncResultNote(status);
       decideOpenSetupModal();
@@ -8709,6 +9041,7 @@ try{
     });
   }else{
     decideOpenSetupModal();
+    startAutoCloudSyncLoop();
   }
 }catch(e){
   console.error('تعذّر تشغيل تسلسل المزامنة عند الإقلاع:', e);
@@ -8880,6 +9213,9 @@ function bootAfterUnlock(){
   try{ messages = loadHistory(); }catch(e){ messages = []; }
   refreshAllViews();
   startupSequence();
+  try{ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(e=> console.warn('persist() فشلت:', e)); } }catch(e){ console.warn('persist() فشلت:', e); }
+  setInterval(()=> makeHardBackup('auto-5min'), 5*60*1000);
+  window.addEventListener('pagehide', ()=> makeHardBackup('pagehide'));
 }
 </script>
 </body>
