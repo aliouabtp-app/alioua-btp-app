@@ -3317,7 +3317,7 @@ async function groqModelCandidates(gKey, vision){
 
 async function callGroq(gKey, msgs){
   // Groq (مجاني) — نص بـ gpt-oss، وإذا الرسالة الأخيرة فيها صورة كنستعمل موديل رؤية متاح
-  const recent = msgs.slice(-14);
+  const recent = msgs.slice(voiceChatActive ? -8 : -14);
   const last = recent[recent.length-1] || {};
   const hasImg = last.role === 'user' && (last.image || (last.images && last.images.length));
   const gMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs)}];
@@ -3338,7 +3338,7 @@ async function callGroq(gKey, msgs){
     }
   });
   const run = (model, ms)=>{
-    const body = { model, messages: ms, temperature: 0.7, max_completion_tokens: 2048 };
+    const body = { model, messages: ms, temperature: 0.7, max_completion_tokens: voiceChatActive ? 450 : 2048 };
     if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
     return _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gKey, body, 'Groq');
   };
@@ -4149,15 +4149,15 @@ const VC = (function(){
   /* ---------- صوت دارجة سحابي (Gemini TTS) — ما كيحتاج حتى حزمة لغة فالهاتف ---------- */
   let _gtCool = 0, _gtModels = null, _gtModelsAt = 0;
   async function geminiTtsModels(key){
-    if(!_gtModels || Date.now() - _gtModelsAt > 6*3600*1000){
-      try{
+    if(!_gtModels){
+      _gtModels = ['gemini-2.5-flash-preview-tts']; _gtModelsAt = Date.now();
+      (async()=>{ try{
         const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + key);
         const j = await r.json();
-        _gtModels = (j.models || []).filter(m => /tts/i.test(m.name) && (m.supportedGenerationMethods || []).includes('generateContent'))
+        const l = (j.models || []).filter(m => /tts/i.test(m.name) && (m.supportedGenerationMethods || []).includes('generateContent'))
           .map(m => m.name.replace('models/', '')).sort((a,b)=> (/pro/.test(a) ? 1 : 0) - (/pro/.test(b) ? 1 : 0));
-      }catch(e){ _gtModels = []; }
-      if(!_gtModels.length) _gtModels = ['gemini-2.5-flash-preview-tts'];
-      _gtModelsAt = Date.now();
+        if(l.length) _gtModels = l;
+      }catch(e){} })();
     }
     return _gtModels;
   }
@@ -4197,19 +4197,24 @@ const VC = (function(){
   }
   // يرجع النص اللي ما تنطقش (فاش كيفشل الصوت السحابي) باش الصوت المحلي يكمّل
   async function geminiSpeak(text, key, id){
-    const parts = []; let rest = text;
+    const parts = []; let rest = text.trim();
+    // أول مقطع قصير (جملة وحدة) باش يبدا الصوت فأسرع وقت، والباقي كيتحضّر بالتوازي
+    { const m = /^[^.!?؟\n]{15,140}[.!?؟]/.exec(rest);
+      let cut = m ? m[0].length : (rest.length > 150 ? rest.lastIndexOf(' ', 130) : rest.length);
+      if(cut <= 0) cut = Math.min(rest.length, 130);
+      parts.push(rest.slice(0, cut).trim()); rest = rest.slice(cut).trim(); }
     while(rest.length){
-      if(rest.length <= 450){ parts.push(rest); break; }
-      let cut = Math.max(rest.lastIndexOf('. ', 450), rest.lastIndexOf('؟', 450), rest.lastIndexOf('! ', 450), rest.lastIndexOf(' ', 450));
-      if(cut <= 80) cut = 450;
+      if(rest.length <= 400){ parts.push(rest); break; }
+      let cut = Math.max(rest.lastIndexOf('. ', 400), rest.lastIndexOf('؟', 400), rest.lastIndexOf('! ', 400), rest.lastIndexOf(' ', 400));
+      if(cut <= 80) cut = 400;
       parts.push(rest.slice(0, cut + 1).trim()); rest = rest.slice(cut + 1).trim();
     }
-    let next = geminiTtsChunk(parts[0], key);
+    const jobs = parts.map((t, k)=>{ if(k >= 4) return null; const pr = geminiTtsChunk(t, key); pr.catch(()=>{}); return pr; });
     for(let i = 0; i < parts.length; i++){
       let blob;
-      try{ blob = await next; }catch(e){ return parts.slice(i).join(' '); }
+      if(!jobs[i]){ jobs[i] = geminiTtsChunk(parts[i], key); jobs[i].catch(()=>{}); }
+      try{ blob = await jobs[i]; }catch(e){ return parts.slice(i).join(' '); }
       if(id !== S.spk || window._ttsStop) return '';
-      if(i + 1 < parts.length){ next = geminiTtsChunk(parts[i + 1], key); next.catch(()=>{}); }
       const url = URL.createObjectURL(blob);
       const ok = await new Promise(resolve=>{
         const a = new Audio(url); window._ttsAudio = a;
@@ -4384,7 +4389,7 @@ const VC = (function(){
       S.lastDisplay = display;
       const tx = $('vcTranscript'); if(tx) tx.textContent = display;
       clearTimeout(S.silenceT);
-      if(display) S.silenceT = setTimeout(()=>finalizeTurn(S.lastDisplay), 1400);
+      if(display) S.silenceT = setTimeout(()=>finalizeTurn(S.lastDisplay), 900);
     };
     r.onerror = (e)=>{
       const er = e && e.error;
@@ -4480,7 +4485,7 @@ const VC = (function(){
     }else{
       S.buf.push(f);
       if(rms > S.thr){ S.lastVoice = now; S.voiced++; }
-      if(now - S.lastVoice > 1200 || now - S.speechStart > 30000) endUtterance();
+      if(now - S.lastVoice > 850 || now - S.speechStart > 30000) endUtterance();
     }
   }
   function encodeWav(chunks, srcRate){
@@ -4573,6 +4578,12 @@ const VC = (function(){
     if(!gk && !key) throw new Error('NOKEY');
     let lastErr = null, sawText = false;
     const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
+    if(gk){
+      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
+        if(_isCool('groq:' + m)) continue;
+        try{ const r = accept(await transcribeGroq(blob, gk, m)); if(r) return r; }catch(e){ lastErr = e; }
+      }
+    }
     if(key){
       let b64 = null;
       let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
@@ -4581,12 +4592,6 @@ const VC = (function(){
           b64 = b64 || await blobToB64(blob);
           const r = accept(await geminiTranscribe(m, key, b64, maxTok)); if(r) return r;
         }catch(e){ lastErr = e; }
-      }
-    }
-    if(gk){
-      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
-        if(_isCool('groq:' + m)) continue;
-        try{ const r = accept(await transcribeGroq(blob, gk, m)); if(r) return r; }catch(e){ lastErr = e; }
       }
     }
     if(!sawText && lastErr) throw lastErr;   // كل المزودين فشلو (حد/شبكة) ماشي صمت
