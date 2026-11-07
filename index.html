@@ -4146,10 +4146,98 @@ const VC = (function(){
     try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
     try{ window._ttsAudio && window._ttsAudio.pause(); }catch(e){}
   }
+  /* ---------- صوت دارجة سحابي (Gemini TTS) — ما كيحتاج حتى حزمة لغة فالهاتف ---------- */
+  let _gtCool = 0, _gtModels = null, _gtModelsAt = 0;
+  async function geminiTtsModels(key){
+    if(!_gtModels || Date.now() - _gtModelsAt > 6*3600*1000){
+      try{
+        const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + key);
+        const j = await r.json();
+        _gtModels = (j.models || []).filter(m => /tts/i.test(m.name) && (m.supportedGenerationMethods || []).includes('generateContent'))
+          .map(m => m.name.replace('models/', '')).sort((a,b)=> (/pro/.test(a) ? 1 : 0) - (/pro/.test(b) ? 1 : 0));
+      }catch(e){ _gtModels = []; }
+      if(!_gtModels.length) _gtModels = ['gemini-2.5-flash-preview-tts'];
+      _gtModelsAt = Date.now();
+    }
+    return _gtModels;
+  }
+  function pcmToWavBlob(b64, rate){
+    const bin = atob(b64), n = bin.length, u8 = new Uint8Array(44 + n);
+    const dv = new DataView(u8.buffer);
+    const w = (o, t)=>{ for(let i = 0; i < t.length; i++) dv.setUint8(o + i, t.charCodeAt(i)); };
+    w(0,'RIFF'); dv.setUint32(4, 36 + n, true); w(8,'WAVE'); w(12,'fmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+    w(36,'data'); dv.setUint32(40, n, true);
+    for(let i = 0; i < n; i++) u8[44 + i] = bin.charCodeAt(i);
+    return new Blob([u8], { type:'audio/wav' });
+  }
+  async function geminiTtsChunk(text, key){
+    let lastErr = null;
+    for(const m of await geminiTtsModels(key)){
+      try{
+        const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            contents:[{ parts:[{ text: 'Say the following in natural, fluent Moroccan Darija (Moroccan Arabic dialect, Casablanca accent), in a calm, friendly, professional tone, at a natural pace. Pronounce Moroccan words the Moroccan way and French words in French: ' + text }] }],
+            generationConfig:{ responseModalities:['AUDIO'], speechConfig:{ voiceConfig:{ prebuiltVoiceConfig:{ voiceName:'Orus' } } } }
+          })
+        });
+        if(res.status === 429){ _gtCool = Date.now() + 90000; throw new Error('429'); }
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        const part = (((j.candidates||[])[0]||{}).content||{}).parts;
+        const inl = part && part.map(x=>x.inlineData).find(Boolean);
+        if(!inl || !inl.data) throw new Error('NOAUDIO');
+        const rm = /rate=(\d+)/.exec(inl.mimeType || '');
+        return pcmToWavBlob(inl.data, rm ? +rm[1] : 24000);
+      }catch(e){ lastErr = e; if(String(e.message) === '429') break; }
+    }
+    throw lastErr || new Error('TTS');
+  }
+  // يرجع النص اللي ما تنطقش (فاش كيفشل الصوت السحابي) باش الصوت المحلي يكمّل
+  async function geminiSpeak(text, key, id){
+    const parts = []; let rest = text;
+    while(rest.length){
+      if(rest.length <= 450){ parts.push(rest); break; }
+      let cut = Math.max(rest.lastIndexOf('. ', 450), rest.lastIndexOf('؟', 450), rest.lastIndexOf('! ', 450), rest.lastIndexOf(' ', 450));
+      if(cut <= 80) cut = 450;
+      parts.push(rest.slice(0, cut + 1).trim()); rest = rest.slice(cut + 1).trim();
+    }
+    let next = geminiTtsChunk(parts[0], key);
+    for(let i = 0; i < parts.length; i++){
+      let blob;
+      try{ blob = await next; }catch(e){ return parts.slice(i).join(' '); }
+      if(id !== S.spk || window._ttsStop) return '';
+      if(i + 1 < parts.length){ next = geminiTtsChunk(parts[i + 1], key); next.catch(()=>{}); }
+      const url = URL.createObjectURL(blob);
+      const ok = await new Promise(resolve=>{
+        const a = new Audio(url); window._ttsAudio = a;
+        a.addEventListener('ended', ()=>{ URL.revokeObjectURL(url); resolve(true); });
+        a.addEventListener('pause', ()=>{ resolve(true); });
+        a.addEventListener('error', ()=>{ URL.revokeObjectURL(url); resolve(false); });
+        a.play().catch(()=>{ URL.revokeObjectURL(url); resolve(false); });
+      });
+      if(!ok) return parts.slice(i).join(' ');
+    }
+    return '';
+  }
   function speak(text, done){
     const id = ++S.spk;
     window._ttsStop = false;
     const fin = ()=>{ if(id === S.spk && done) done(); };
+    const gk = getApiKey();
+    if(gk && Date.now() > _gtCool){
+      geminiSpeak(text, gk, id).then(rest=>{
+        if(id !== S.spk) return;
+        if(!rest) return fin();
+        speakLocal(rest, id, fin);
+      }).catch(()=> speakLocal(text, id, fin));
+      return;
+    }
+    speakLocal(text, id, fin);
+  }
+  function speakLocal(text, id, fin){
     const synth = window.speechSynthesis;
     let voice = null;
     try{
