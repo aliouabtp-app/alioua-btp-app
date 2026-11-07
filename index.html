@@ -1422,6 +1422,12 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
             <span style="font-size:13px; color:var(--ink-soft);">نسبة TVA %</span>
             <input type="number" id="invTvaRate" value="20" style="flex:1;">
           </div>
+          <div style="margin-top:10px; padding:8px 10px; border:1.5px dashed var(--line); border-radius:12px;">
+            <div style="font-size:12.5px; font-weight:800; margin-bottom:6px;">📑 كشف مرحلي (Décompte provisoire) — اختياري</div>
+            <div style="display:flex; gap:6px; align-items:center; margin-top:6px;"><span style="font-size:12.5px; flex:1;">اقتطاع الضمان % (Retenue de garantie)</span><input type="number" id="invRetGar" value="0" min="0" max="100" step="0.5" style="width:80px;"></div>
+            <div style="display:flex; gap:6px; align-items:center; margin-top:6px;"><span style="font-size:12.5px; flex:1;">خصم التسبيق (Avance) درهم</span><input type="number" id="invAvance" value="0" min="0" style="width:110px;"></div>
+            <div style="display:flex; gap:6px; align-items:center; margin-top:6px;"><span style="font-size:12.5px; flex:1;">الضريبة المقتطعة % (RAS)</span><input type="number" id="invRas" value="0" min="0" max="100" step="0.5" style="width:80px;"></div>
+          </div>
 
           <div id="invTotalsPreview" style="margin-top:10px; font-size:13px; color:var(--ink); line-height:1.9;"></div>
 
@@ -1714,6 +1720,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 </div>
 
 <script>
+var PAY_TERMS_KEY = 'alioua_btp_pay_terms', REVIEW_KEY = 'alioua_btp_review_done', ADMIN_ID = '__admin', cpOpen = {}, VAULT_KEY = 'alioua_btp_sync_vault', SESSION_PIN = null, unlockStatus = 'ok';
+
 /* ===== ALIOUA BTP — المساعد الذكي (يونس) ===== */
 
 /* ===== تخزين مشفّر: AES-GCM (مفتاح مشتق من الـPIN بـ PBKDF2) داخل IndexedDB =====
@@ -2892,7 +2900,7 @@ function buildAccountingSnapshotText(){
     // العملاء (النظام البسيط — مصروف حسب طبيعة عمل الشركة)
     if(clients.length){
       lines.push('\n## العملاء (مدخول): فواتير PDF المرتبطة بكل عميل تُحتسب دخلاً');
-      try{ loadCustomers().forEach(c=>{ const t=loadPdfInvoices().filter(i=>i.customerId===c.id).reduce((a,i)=>a+pdfInvTotalTTC(i),0); const pd=loadCustPayments().filter(p=>p.customerId===c.id).reduce((a,p)=>a+p.amount,0); lines.push(`- عميل ${c.name}: فواتير ${Math.round(t).toLocaleString('en-US')} درهم، مقبوض ${Math.round(pd).toLocaleString('en-US')}، متبقي ${Math.round(t-pd).toLocaleString('en-US')}`); }); }catch(e){}
+      try{ loadCustomers().forEach(c=>{ const t=loadPdfInvoices().filter(i=>i.customerId===c.id).reduce((a,i)=>a+pdfInvNet(i),0); const pd=loadCustPayments().filter(p=>p.customerId===c.id).reduce((a,p)=>a+p.amount,0); lines.push(`- عميل ${c.name}: فواتير ${Math.round(t).toLocaleString('en-US')} درهم، مقبوض ${Math.round(pd).toLocaleString('en-US')}، متبقي ${Math.round(t-pd).toLocaleString('en-US')}`); }); }catch(e){}
       lines.push('\n## مقدِّمو الخدمات (فواتيرهم تُحتسب كمصروف)');
       clients.forEach(c=>{
         const cInvoices = simpleInvoices.filter(inv=>inv.clientId===c.id);
@@ -3202,8 +3210,6 @@ function setSyncCode(v){ safeSetItem(SYNC_CODE_KEY, v); if(SESSION_PIN) vaultSav
    المشكل: رمز المزامنة كان كيتخزن غير داخل IndexedDB. ملي المتصفح كيمسح IndexedDB كيضيع الرمز
    ومبقاش التطبيق يقدر يسحب من السحابة. دابا كنخبّيو نسخة منو مشفّرة AES-GCM بمفتاح مشتق من الـPIN
    (PBKDF2 310000) فمكان مستقل، وملي كنلقاو المخزن فارغ كنسحبو من السحابة تلقائيًا. */
-const VAULT_KEY = 'alioua_btp_sync_vault';
-let SESSION_PIN = null;
 async function _vaultDerive(pin, salt){
   const km = await crypto.subtle.importKey('raw', new TextEncoder().encode('vault|'+String(pin)), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:310000, hash:'SHA-256'}, km, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
@@ -5071,7 +5077,7 @@ async function tryUnlock(pin){
   }
   return true;
 }
-let unlockStatus = 'ok';
+
 
 async function handlePinComplete(){
   const pin = pinBuffer;
@@ -5977,13 +5983,26 @@ function computeInvTotals(){
   const ttc = totalHT + tva;
   return {totalHT, tva, ttc, tvaRate};
 }
-function updateInvTotalsPreview(){
-  const {totalHT, tva, ttc, tvaRate} = computeInvTotals();
-  document.getElementById('invTotalsPreview').innerHTML =
-    `TOTAL HT: <strong>${fmtMAD(totalHT)}</strong> درهم<br>`+
-    `TVA (${tvaRate}%): <strong>${fmtMAD(tva)}</strong> درهم<br>`+
-    `TOTAL TTC: <strong>${fmtMAD(ttc)}</strong> درهم`;
+function invExtrasFromForm(){
+  return {
+    retGarPct: parseFloat(document.getElementById('invRetGar')?.value) || 0,
+    avanceDeduct: parseFloat(document.getElementById('invAvance')?.value) || 0,
+    rasPct: parseFloat(document.getElementById('invRas')?.value) || 0
+  };
 }
+function updateInvTotalsPreview(){
+  const {totalHT, tvaRate} = computeInvTotals();
+  const bk = pdfInvBreakdown(Object.assign({items: invItems, tvaRate}, invExtrasFromForm()));
+  let h = `TOTAL HT: <strong>${fmtMAD(bk.ht)}</strong> درهم<br>` +
+    `TVA (${tvaRate}%): <strong>${fmtMAD(bk.tva)}</strong> درهم<br>` +
+    `TOTAL TTC: <strong>${fmtMAD(bk.ttc)}</strong> درهم`;
+  if(bk.rg) h += `<br>− اقتطاع الضمان: <strong>${fmtMAD(bk.rg)}</strong>`;
+  if(bk.av) h += `<br>− خصم التسبيق: <strong>${fmtMAD(bk.av)}</strong>`;
+  if(bk.ras) h += `<br>− RAS: <strong>${fmtMAD(bk.ras)}</strong>`;
+  if(bk.rg || bk.av || bk.ras) h += `<br><b>الصافي للأداء: ${fmtMAD(bk.net)} درهم</b>`;
+  document.getElementById('invTotalsPreview').innerHTML = h;
+}
+['invRetGar','invAvance','invRas'].forEach(id=> document.getElementById(id)?.addEventListener('input', ()=>{ try{ updateInvTotalsPreview(); }catch(e){} }));
 document.getElementById('invTvaRate')?.addEventListener('input', updateInvTotalsPreview);
 
 function containsArabic(text){
@@ -6308,12 +6327,22 @@ function buildInvoicePdf(invData){
   ty += 7;
   doc.setFont('helvetica','bold'); doc.text('TOTAL TTC :', 138, ty);
   doc.setFont('helvetica','normal'); doc.text(fmtMAD(ttc) + ' Dh', 195, ty, {align:'right'});
+  const _bk = pdfInvBreakdown(invData);
+  [[`Retenue de garantie (${invData.retGarPct||0}%) :`, _bk.rg], ['Avance de démarrage à déduire :', _bk.av], [`RAS (${invData.rasPct||0}%) :`, _bk.ras]].forEach(([lbl, v])=>{
+    if(!v) return; ty += 7;
+    doc.setFont('helvetica','bold'); doc.text(lbl, 138, ty, {maxWidth:38});
+    doc.setFont('helvetica','normal'); doc.text('- ' + fmtMAD(v) + ' Dh', 195, ty, {align:'right'});
+  });
+  if(_bk.rg || _bk.av || _bk.ras){
+    ty += 7; doc.setFont('helvetica','bold'); doc.text('NET À PAYER :', 138, ty);
+    doc.setFont('helvetica','normal'); doc.text(fmtMAD(_bk.net) + ' Dh', 195, ty, {align:'right'});
+  }
   ty += 9;
   doc.setFont('helvetica','bold'); doc.setTextColor(30,100,160); doc.setFontSize(10);
   doc.text('SOMME FINALE À PAYER :', 138, ty);
   ty += 6;
   doc.setFontSize(11); doc.setTextColor(0,0,0);
-  doc.text(numberToFrenchWords(ttc) + ' Dirhams', 138, ty, {maxWidth:60});
+  doc.text(numberToFrenchWords(_bk.net) + ' Dirhams', 138, ty, {maxWidth:60});
 
   ty = Math.max(ty+6, ribBottomY + 14);
 
@@ -6398,6 +6427,7 @@ function loadInvoiceIntoForm(id){
   document.getElementById('invClientIce').value = inv.clientIce || '';
   document.getElementById('invSectionTitle').value = inv.sectionTitle || '';
   document.getElementById('invTvaRate').value = inv.tvaRate;
+  document.getElementById('invRetGar').value = inv.retGarPct || 0; document.getElementById('invAvance').value = inv.avanceDeduct || 0; document.getElementById('invRas').value = inv.rasPct || 0;
   fillProjectSelect(document.getElementById('invProject'), inv.projectId, true);
   fillCustomerSelect(inv.customerId);
   invItems = inv.items.map(it=>({...it}));
@@ -6422,7 +6452,8 @@ document.getElementById('invGeneratePdfBtn')?.addEventListener('click', ()=>{
   const invData = {
     id: editingInvoiceId || ('inv'+Date.now()),
     createdAt: editingInvoiceId ? (loadPdfInvoices().find(i=>i.id===editingInvoiceId)?.createdAt || Date.now()) : Date.now(),
-    clientName, clientIce, invNumber, invDate, sectionTitle, items, tvaRate, projectId, customerId
+    clientName, clientIce, invNumber, invDate, sectionTitle, items, tvaRate, projectId, customerId,
+    retGarPct: invExtrasFromForm().retGarPct, avanceDeduct: invExtrasFromForm().avanceDeduct, rasPct: invExtrasFromForm().rasPct
   };
 
   const doc = buildInvoicePdf(invData);
@@ -6463,7 +6494,20 @@ function loadCustomers(){ try{ return JSON.parse(LS.getItem(CUSTOMERS_KEY)||'[]'
 function saveCustomers(l){ safeSetItem(CUSTOMERS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); try{ renderAccounting(); }catch(e){} }
 function loadCustPayments(){ try{ return JSON.parse(LS.getItem(CUSTOMER_PAYMENTS_KEY)||'[]'); }catch(e){ return []; } }
 function saveCustPayments(l){ safeSetItem(CUSTOMER_PAYMENTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
-function pdfInvTotalTTC(inv){ return inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100); }
+function round2(n){ return Math.round((+n||0) * 100) / 100; }
+// تفصيل الفاتورة/الكشف المرحلي: HT، TVA، TTC، اقتطاع الضمان (على TTC)، خصم التسبيق، الضريبة المقتطعة RAS (على HT)، الصافي للأداء
+function pdfInvBreakdown(inv){
+  const ht = round2((inv.items||[]).reduce((s,it)=> s + (it.qty*it.price), 0));
+  const tva = round2(ht * (inv.tvaRate||0) / 100);
+  const ttc = round2(ht + tva);
+  const rg = round2(ttc * (inv.retGarPct||0) / 100);
+  const av = round2(inv.avanceDeduct||0);
+  const ras = round2(ht * (inv.rasPct||0) / 100);
+  const net = round2(ttc - rg - av - ras);
+  return {ht, tva, ttc, rg, av, ras, net};
+}
+function pdfInvTotalTTC(inv){ return pdfInvBreakdown(inv).ttc; }
+function pdfInvNet(inv){ return pdfInvBreakdown(inv).net; }
 let openCustId = null;
 
 function fillCustomerSelect(selectedId){
@@ -6493,7 +6537,7 @@ function renderCustomers(){
   const el = document.getElementById('custList'); if(!el) return;
   let gInv = 0, gPaid = 0;
   customers.forEach(c=>{
-    gInv += invs.filter(i=>i.customerId===c.id).reduce((s,i)=>s+pdfInvTotalTTC(i),0);
+    gInv += invs.filter(i=>i.customerId===c.id).reduce((s,i)=>s+pdfInvNet(i),0);
     gPaid += pays.filter(p=>p.customerId===c.id).reduce((s,p)=>s+p.amount,0);
   });
   document.getElementById('custSumInv').textContent = Math.round(gInv).toLocaleString('ar');
@@ -6503,7 +6547,7 @@ function renderCustomers(){
   el.innerHTML = '';
   customers.forEach(c=>{
     const cInvs = invs.filter(i=>i.customerId===c.id);
-    const total = cInvs.reduce((s,i)=>s+pdfInvTotalTTC(i),0);
+    const total = cInvs.reduce((s,i)=>s+pdfInvNet(i),0);
     const cPays = pays.filter(p=>p.customerId===c.id).sort((a,b)=> b.date.localeCompare(a.date));
     const paid = cPays.reduce((s,p)=>s+p.amount,0);
     const due = total - paid;
@@ -8678,8 +8722,6 @@ function refreshAllViews(){
 }
 
 /* ===== لوحة مراقبة المحاسبة: مصاريف غير مرتبطة، مستحقات، توزيع إداري، ميزانية، مراجعة شهرية ===== */
-const PAY_TERMS_KEY = 'alioua_btp_pay_terms', REVIEW_KEY = 'alioua_btp_review_done', ADMIN_ID = '__admin';
-const cpOpen = {};
 function payTerms(){ const n = parseInt(LS.getItem(PAY_TERMS_KEY)); return n > 0 ? n : 30; }
 function cpMoney(n){ return Math.round(n).toLocaleString('ar') + ' درهم'; }
 function firstFriday(y, m){ const d = new Date(y, m, 1); return new Date(y, m, 1 + (5 - d.getDay() + 7) % 7); }
@@ -8697,7 +8739,7 @@ function computeDues(){
   const invs = loadPdfInvoices(), cp = loadCustPayments();
   loadCustomers().forEach(c=>{
     const is = invs.filter(i=>i.customerId === c.id); if(!is.length) return;
-    const rem = is.reduce((s,i)=>s+pdfInvTotalTTC(i),0) - cp.filter(p=>p.customerId===c.id).reduce((s,p)=>s+(p.amount||0),0);
+    const rem = is.reduce((s,i)=>s+pdfInvNet(i),0) - cp.filter(p=>p.customerId===c.id).reduce((s,p)=>s+(p.amount||0),0);
     if(rem <= 0.5) return;
     const oldest = Math.min(...is.map(i=> new Date(i.invDate).getTime()));
     out.push({kind:'customer', name: c.name, amount: rem, due: oldest + terms*DAY});
@@ -8724,6 +8766,36 @@ function dueLabel(d){ return d.left < 0 ? `<b style="color:#b91c1c;">متأخر 
 function weeklyReportText(){
   const ds = computeDues();
   return '📋 تقرير المستحقات غير المدفوعة — ALIOUA BTP\n' + (ds.length ? ds.map(d=> (d.kind==='supplier'?'🚚 ':'🧑‍💼 ') + d.name + ' — ' + cpMoney(d.amount) + ' — ' + (d.left<0 ? 'متأخر '+(-d.left)+' يوم' : 'خلال '+d.left+' يوم')).join('\n') : 'ما كاين حتى مستحق.');
+}
+
+function exportAccountantCsv(){
+  const nf = n => String(round2(n)).replace('.', ',');
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const rows = [['Type','Date','Piece','Libelle','Tiers','Projet','HT','TVA','TTC','Retenue garantie','Avance','RAS','Net']];
+  const sups = loadSuppliers(), custs = loadCustomers(), workers = loadWorkers();
+  loadPdfInvoices().slice().sort((a,b)=> (a.invDate||'').localeCompare(b.invDate||'')).forEach(i=>{
+    const b = pdfInvBreakdown(i);
+    rows.push(['VENTE', i.invDate, i.invNumber, i.sectionTitle || 'Facture', i.clientName, projectNameById(i.projectId), nf(b.ht), nf(b.tva), nf(b.ttc), nf(b.rg), nf(b.av), nf(b.ras), nf(b.net)]);
+  });
+  loadPurchases().slice().sort((a,b)=> (a.date||'').localeCompare(b.date||'')).forEach(p=>{
+    const t = purchaseTotal(p);
+    rows.push(['ACHAT', p.date, p.invoiceNo || p.bl || '', 'Achat fournisseur', (sups.find(s=>s.id===p.supplierId)||{}).name || '', projectNameById(p.projectId), '', '', nf(t), '', '', '', nf(t)]);
+  });
+  loadCaisseData().bons.slice().sort((a,b)=> (a.date||'').localeCompare(b.date||'')).forEach(b=>{
+    const t = bonTotal(b);
+    rows.push(['CAISSE', b.date, b.bonNumber || '', 'Bon de caisse', '', projectNameById(b.projectId), '', '', nf(t), '', '', '', nf(t)]);
+  });
+  loadWPayments().slice().sort((a,b)=> (a.paidAt||'').localeCompare(b.paidAt||'')).forEach(x=>{
+    rows.push(['PAIE', x.paidAt, '', 'Paie ' + (x.from||'') + ' → ' + (x.to||'') + (x.extrasOnly ? ' (extras)' : ''), (workers.find(w=>w.id===x.workerId)||{}).name || '', projectNameById(x.projectId), '', '', nf(x.total), '', '', '', nf(x.total)]);
+  });
+  // ملخص TVA المحصّلة
+  const sales = loadPdfInvoices().map(pdfInvBreakdown);
+  rows.push([]); rows.push(['RECAP TVA COLLECTEE','','','','','', nf(sales.reduce((a,b)=>a+b.ht,0)), nf(sales.reduce((a,b)=>a+b.tva,0)), nf(sales.reduce((a,b)=>a+b.ttc,0))]);
+  const text = '\ufeff' + rows.map(r=> r.map(q).join(';')).join('\r\n');
+  const blob = new Blob([text], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'ALIOUA-BTP-export-comptable-' + todayStr() + '.csv';
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
 function renderControlPanel(){
   const anchor = document.getElementById('accountingChartWrap'); if(!anchor) return;
@@ -8758,7 +8830,7 @@ function renderControlPanel(){
   const sRev = `<div style="${box} display:flex; justify-content:space-between; align-items:center; gap:8px;"><div style="font-size:12.5px;"><b>📅 المراجعة الشهرية</b><br>جمعة ${ff.getDate()}/${ff.getMonth()+1} — ${done ? '<span style="color:#2e7d32;">✅ تمت هاد الشهر</span>' : (reviewDue() ? '<span style="color:#b91c1c;">⏳ ما تمتش بعد</span>' : 'ما جاتش بعد')}</div>${done ? '' : '<button class="btn-ghost" id="cpReview" style="flex:0 0 auto;">✅ تمت</button>'}</div>`;
 
   el.style.cssText = 'margin:0 0 12px;';
-  el.innerHTML = '<div style="font-weight:800; font-size:14px; margin-bottom:8px;">🛡️ مراقبة المحاسبة</div>' + sRev + sUn + sDue + sAdm + sBud;
+  el.innerHTML = '<div style="font-weight:800; font-size:14px; margin-bottom:8px;">🛡️ مراقبة المحاسبة</div>' + sRev + sUn + sDue + sAdm + sBud + '<button class="btn-ghost" id="cpCsv" style="width:100%; margin-bottom:6px;">📤 تصدير للمحاسب (CSV متوافق مع Sage/Ciel)</button>';
 
   el.querySelectorAll('details').forEach(d=> d.ontoggle = ()=>{ cpOpen[d.dataset.k] = d.open; });
   const refresh = ()=>{ try{ renderAccounting(); }catch(e){ renderControlPanel(); } };
@@ -8780,6 +8852,7 @@ function renderControlPanel(){
   el.querySelectorAll('[data-budget]').forEach(s=> s.onchange = ()=> setProj(s.dataset.budget, 'budget', parseFloat(s.value)||0));
   const t = el.querySelector('#cpTerms'); if(t) t.onchange = ()=>{ safeSetItem(PAY_TERMS_KEY, String(Math.max(1, parseInt(t.value)||30))); try{ renderOverdueAlerts(); }catch(e){} refresh(); };
   const r = el.querySelector('#cpReview'); if(r) r.onclick = ()=>{ safeSetItem(REVIEW_KEY, curMonthPrefix()); try{ renderOverdueAlerts(); }catch(e){} refresh(); };
+  const cv = el.querySelector('#cpCsv'); if(cv) cv.onclick = ()=>{ try{ exportAccountantCsv(); }catch(e){ alert('تعذّر التصدير: ' + e.message); } };
   const sh = el.querySelector('#cpShare'); if(sh) sh.onclick = ()=>{
     const txt = weeklyReportText();
     if(navigator.share){ navigator.share({text: txt}).catch(()=>{}); }
