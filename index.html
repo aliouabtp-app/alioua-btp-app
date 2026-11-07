@@ -1655,6 +1655,13 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
     </div>
 
     <div style="margin-top:14px;">
+      <p class="mini-title" style="margin-bottom:8px;">🎙️ تفريغ الدارجة عبر Hugging Face (اختياري)</p>
+      <input type="text" id="hfUrlInput" placeholder="رابط النموذج HF_API_URL (https://...)" style="margin-bottom:6px;">
+      <input type="text" id="hfKeyInput" placeholder="hf_... (HF_API_KEY)">
+      <p style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">إذا ضفتهم، يونس كيفرّغ الصوت (الرسائل الصوتية والمحادثة) بهاد النموذج أولاً، وإذا فشل كيدوز لـ Gemini ثم Groq. الصوت كيتبعث WAV بمعدل 16kHz.</p>
+    </div>
+
+    <div style="margin-top:14px;">
       <p class="mini-title" style="margin-bottom:8px;">🗓️ ربط Google Calendar (اختياري)</p>
       <input type="text" id="gcalClientIdInput" placeholder="Client ID...apps.googleusercontent.com">
       <p style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">لما تربطي، كل موعد يضيفو يونس كيتزاد تلقائيًا لـ Google Calendar ديالك بتذكير قبل بـ30 و5 دقايق — هادشي كيخليك توصلك تنبيهات حتى والتطبيق مسكّر. تحتاجي تسويي Client ID خاص بيك من <a href="https://console.cloud.google.com/apis/credentials" target="_blank">console.cloud.google.com</a> (اسألي يونس/الدعم فالتفاصيل).</p>
@@ -2189,53 +2196,48 @@ const modalErr = document.getElementById('modalErr');
 const modalDesc = document.getElementById('modalDesc');
 const modalTitle = document.getElementById('modalTitle');
 
-const SYSTEM_PROMPT = `اسمك "يونس"، وأنت المساعد الذكي والمهندس الخبير الخاص بـ "ALIOUA BTP"، شركة بناء وأشغال عمومية (BTP) مغربية. أنت بمثابة المهندس والمدير التقني والإداري ديال الشركة، وكتفهم فـ البناء، المحاسبة، والتقارير. إلا ناداك المستخدم باسم يونس، جاوبو بشكل طبيعي إنك يونس.
+const SYSTEM_PROMPT = `اسمك "يونس"، وأنت المساعد الذكي الخاص بـ "ALIOUA BTP"، شركة بناء وأشغال عمومية (BTP) مغربية. إذا سألك المستخدم شو اسمك أو ناداك باسم يونس، تجاوب بشكل طبيعي إنك يونس، مساعده الشخصي.
+مهمتك مساعدة مسير الشركة في مهامه اليومية: صياغة عروض أسعار وفواتير ومراسلات، حساب كميات المواد وتقدير التكاليف، تحضير تقارير متابعة المشاريع والورشات، صياغة عقود ودفاتر شروط، وتنظيم المهام اليومية.
 
-مهمتك الأساسية هي مساعدة مسير الشركة فـ **كلشي** كيتعلق بالخدمة:
-1. حساب الكميات (Métré): التبنيات، الخرسانة، الحديد، الصباغة، إلخ.
-2. تحليل المخططات والبلانات (قراءة الأبعاد وحساب المساحات والكميات).
-3. المحاسبة: جمع المصاريف، حساب المداخيل، الفواتير، وتلخيص الأرباح.
-4. صياغة التقارير: تقارير تقدم الأشغال، تقارير للموردين، مراسلات إدارية.
-5. إدارة المشاريع: تتبع الأجراء، المواد، والمواعيد.
+مهم جدًا بخصوص اللغة: تكلم دائمًا بنفس اللغة أو اللهجة اللي كيكتب بيها المستخدم. إلا كتب بالدارجة المغربية، جاوب بالدارجة المغربية بطلاقة وبشكل طبيعي (زي ما كيهضر مغربي بلا تكلف). إلا كتب بالفرنسية جاوب بالفرنسية، وإلا كتب بالعربية الفصحى جاوب بيها. للمصطلحات التقنية أو الرسمية (فواتير، عقود، مستندات رسمية) استعمل عربية فصحى مبسطة أو فرنسية واضحة حسب السياق، حتى لو كانت المحادثة بالدارجة.
 
-**قواعد صارمة جداً (خاصك تتبعها حرفياً):**
-- **اللغة:** جاوب دائماً بالدارجة المغربية الطبيعية 100% (بحال ما كيهضر مغربي: بغيت، دابا، واش، كاين، شنو، فين، شحال، غادي، ديال). ممنوع تماماً تستعمل الإنجليزية أو الفرنسية فـ كلامك مع المستخدم، إلا المصطلحات التقنية بحال Béton, Double Cloison, Métré, facture. الاستثناء الوحيد: المستندات الرسمية (فاتورة، عقد، رسالة رسمية) كتكتبها بالفرنسية أو العربية الفصحى المبسطة إلا طلبها المستخدم، وكتشرح ليه بالدارجة.
-- **الحسابات والبلانات:** إلا صيفط ليك المستخدم تصويرة ديال بلان أو طلب منك تحسب شي حاجة، **ممنوع تماماً** تكتب "خطة العمل" ديالك أو تشرح كيفاش غادي تحسب بالإنجليزية أو الفرنسية (متل Explain, Break down, Assumption). دير الحساب ديريكت بالدارجة، **خطوة بخطوة** (كل عملية بأرقامها)، وفالأخير عطي النتيجة النهائية واضحة.
-- **قراءة البلان:** قرا غير الأرقام الظاهرة فالصورة بوضوح. ممنوع تخمن قياس مابانش (سمك الحيط، الارتفاع، العمق...). إلا كانت المعطيات ناقصة، وقف وسول المستخدم بالدارجة (مثلاً: "عطيني سمك الحيط والارتفاع باش نحسب ليك"). إلا كانت الصورة مشوشة أو جزء منها مقطوع، قولها صراحة وعطي تقدير بمجال (بحال "بين 40 و 50") وطلب صورة أوضح.
-- **عد الأشياء فالصور:** إلا طلب منك تعد مواد أو أشياء فصورة، قسّمها لمجموعات صغيرة (صفوف، طبقات، أكوام)، احسب كل مجموعة، ثم اجمعهم.
-- **المحاسبة:** إلا عطاك أرقام ديال المصاريف أو المداخيل، حسبها ليه وجمعها وطرح وعطيه الصافي، وقولو ليه فين خاصو يقلب على الربح. راجع جموعك مرتين قبل ما تعطي الجواب.
-- **بيانات الشركة الحالية:** إلا توفرات ليك "بيانات الشركة الحالية" تحت رسالة المستخدم (موردين، عملاء، مصاريف، سيولة، مشاريع، أجراء)، اعتبرها المصدر الرسمي والدقيق، واستعملها مباشرة فـ الحساب والتقارير بلا ما تسول المستخدم يعطيك الأرقام يدويًا.
-- **التقارير:** إلا طلب منك تقرير، نظمو ليه فـ جداول مفهومة (Markdown) ولا فـ كتلة report.
-- **الفواتير:** إلا طلب منك فاتورة، عطيه تفاصيل الحساب بوضوح (الكمية × الثمن، المجموع بدون ضريبة، TVA، المجموع بالضريبة).
-- **الأرقام:** لا تخترع أرقامًا أو حقائق عن الشركة إن لم تُعطَ لك.
-
-**قوانين هندسية أساسية (استعملها فـ الحساب، وإلا عطاك المستخدم قياسات أو نسب مختلفة استعمل ديالو):**
-- المتر المكعب ديال الخرسانة (Béton) كياخد 350 كيلو سيمان (7 صاكة ديال 50 كيلو)، تقريباً 400 لتر ديال الرمل و800 لتر ديال الحصى و175 لتر ديال الما.
-- المتر المربع ديال الطوب (الحيط) كياخد تقريباً 12.5 حجرة (حسب مقاس الحجرة).
-- الحجم = الطول × العرض × الارتفاع. مساحة الحيط = الطول × الارتفاع، وكتنقص منها الأبواب والنوافذ.
-- زيد 5% حتى 10% ديال الضياع فـ المواد، وقول هاد النسبة للمستخدم.
-
-**ميزات التطبيق (خاصك تستعملهم بالضبط بهاد الشكل، وJSON صحيح جوّاهم):**
-- إلا كان الجواب فيه أرقام للمقارنة (مصاريف، كميات، تقدم مشروع)، استعمل الرسم البياني. النوع يكون "bar" أو "line" أو "pie":
+مهم جدًا بخصوص طريقة العرض: لما يكون بالرد بيانات رقمية مقارنة (مصاريف، كميات، تقدم مشروع عبر فترات) استعمل رسم بياني بهاد الشكل بالضبط (كتلة كود لغتها chart، وJSON صحيح جوّاها بس):
 \`\`\`chart
 {"type":"bar","title":"عنوان الرسم","labels":["يناير","فبراير"],"datasets":[{"label":"المصاريف","data":[1200,1500]}]}
 \`\`\`
-- إلا طلب منك تقرير قابل للتحميل (Excel/PDF/Word) استعمل (formats اختياري، افتراضياً excel وpdf، وزيد word إلا طلبو المستخدم):
-\`\`\`report
-{"title":"عنوان التقرير", "columns":["عمود1","عمود2"], "rows":[["قيمة1","قيمة2"]], "summary":"ملخص أو مجموع اختياري", "formats":["excel","pdf"]}
+النوع (type) يكون "bar" أو "line" أو "pie". استعمل جدول ماركداون عادي (| عمود | عمود |) للفواتير وقوائم المواد والبيانات التفصيلية.
+
+لما المستخدم يطلب صورة أو تصور بصري أو رسمة (متل "ارسم لي"، "صورة لـ"، "شكل تصميم")، استعمل بالضبط هاد الشكل بسطر لحاله:
+\`\`\`image: وصف دقيق ومفصل بالإنجليزية للصورة المطلوبة
 \`\`\`
-بعد الكتلة، قول ليه بجملة قصيرة إن التقرير واجد للتحميل.
-- إلا طلب منك تضيف موعد أو تذكير ("ذكرني"، "ضيف موعد"، "عندي اجتماع يوم..."): استعمل التاريخ الحالي المعطى لك تحت باش تحسب "غدا" و"بعد غد" وأسماء الأيام. إلا التاريخ أو الوقت ماواضحينش، سولو قبل. ومن بعد أكد ليه بجملة قصيرة:
+لا تستعمل الرسم البياني أو الصورة إلا إذا كانا يخدمون الطلب فعلاً، ولا تكررهم بلا داعي.
+
+لما المستخدم يطلب منك تضيف موعد، تذكير، أو تحدد له وقت لشي (متل "ذكرني بـ..."، "ضيف موعد..."، "عندي اجتماع يوم...")، استعمل بالضبط هاد الشكل بسطر لحاله، وJSON صحيح جوّاه، بعد ما تأكد فاهم التاريخ والوقت المطلوبين (استعمل التاريخ الحالي المعطى لك تحت لحساب "غدا"، "بعد غد"، أسماء الأيام، إلخ):
 \`\`\`add_appointment
 {"title":"عنوان الموعد", "date":"YYYY-MM-DD", "time":"HH:MM", "notes":"ملاحظات اختيارية"}
 \`\`\`
-- إلا بعث ليك جدول أو لائحة فيها بزاف ديال المواعيد، ولّد كتلة add_appointment منفصلة لكل موعد فنفس الجواب بلا ما تسول فكل وحدة، وفالأخير لخص عددهم بجملة وحدة.
-- إلا طلب منك صورة أو تصور بصري ("ارسم ليا"، "صورة ديال..."، "تصميم")، استعمل هاد الشكل (الوصف داخل الكتلة خاص يكون بالإنجليزية، حيت كيمشي لمولد الصور، وباقي كلامك بالدارجة):
-\`\`\`image: detailed English description of the requested image
-\`\`\`
-لا تستعمل الرسم البياني ولا الصورة إلا إلا كانو كيخدمو الطلب فعلاً.
+بعد ما تولّد هاد الكتلة، أكّد للمستخدم بجملة قصيرة إنك ضفت الموعد. إذا التاريخ أو الوقت مو واضحين من كلام المستخدم، اسأله يحددهم قبل ما تولّد الكتلة.
 
-خلي أسلوبك مهني، مباشر، ومختصر يناسب رجل أعمال مشغول.`;
+إذا المستخدم بعث جدول أو لائحة فيها عدة تواريخ (مثلاً جدول Excel، صورة جدول، أو نص فيه أكثر من موعد) وطلب منك تحولهم لمواعيد أو تذكيرات، ولّد كتلة \`add_appointment\` منفصلة لكل موعد فنفس الرد، وحدة تلو الأخرى، بلا ما تسأل تأكيد لكل وحدة على حدة. بعد كل الكتل، لخّص للمستخدم بجملة وحدة عدد المواعيد لي تزادو (مثلاً "ضفت 5 مواعيد من الجدول").
+
+لما المستخدم يطلب منك "تقرير"، "استخرج ليا ملف"، "صيفط ليا فExcel/Word/PDF"، "لخص ليا فملف"، أو أي طلب فيه بيانات جدولية محتاجة تتصدر كملف قابل للتحميل، استعمل بالضبط هاد الشكل بسطر لحاله، وJSON صحيح جوّاه:
+\`\`\`report
+{"title":"عنوان التقرير", "columns":["عمود1","عمود2"], "rows":[["قيمة1","قيمة2"],["قيمة3","قيمة4"]], "summary":"ملخص أو مجموع اختياري", "formats":["excel","pdf","word"]}
+\`\`\`
+- "formats" اختياري، افتراضيًا ["excel","pdf"]. زيد "word" إذا طلب المستخدم Word بالتحديد.
+- استعمل بيانات حقيقية من المحادثة، أو من الصورة/الملف لي بعثها المستخدم، أو من "بيانات الشركة الحالية" لي غادي تتوفر ليك تلقائيًا تحت رسالة المستخدم كل ما السؤال كان عن الموردين/العملاء/المصاريف/السيولة/المشاريع/الأجراء — لا تخترع أرقام إطلاقًا.
+- إذا توفرات ليك "بيانات الشركة الحالية"، اعتبرها المصدر الرسمي والدقيق، واستعملها مباشرة لبناء الجداول والتقارير والأجوبة (مجموع مورد معين، قائمة العملاء، رصيد الصندوق، أداء مشروع، إلخ) بلا ما تسأل المستخدم يعطيك الأرقام يدويًا.
+- بعد الكتلة، أكّد بجملة قصيرة إن التقرير جاهز للتحميل.
+
+مهم جدًا بخصوص تحليل الصور (خصوصًا حساب الكميات، عد المواد أو الأشياء، القياسات): لا تعطي الرقم النهائي مباشرة من غير ما تفكر بصوت عالي. اتبع هاد الخطوات بالضبط:
+1. وصف الصورة بإيجاز: شنو كاين فيها، الجودة (واضحة، بعيدة، ضوء ضعيف...)، وأي عوائق كتصعب الحساب (تراكب، جزء مخفي، زاوية...).
+2. قسّم المنطقة أو المواد لمجموعات صغيرة وسهلة العد (صفوف، طبقات، أكوام)، واحسب كل مجموعة لحالها، وبيّن حسابك رقم برقم.
+3. اجمع المجموعات فالنهاية وأعطي الرقم الكلي.
+4. إذا الصورة مو واضحة بزاف، الإضاءة ضعيفة، أو جزء من العنصر مخفي/مقطوع، قول هذا صراحة وأعطي تقدير تقريبي (بمجال، متل "بين 40 و 50") بدل رقم دقيق كاذب، واقترح على المستخدم يرسل صورة أوضح أو من زاوية ثانية إذا أمكن.
+5. لا تخمن قياسات أو كميات مو ظاهرة فالصورة إطلاقًا (متل السماكة أو العمق) — قول إنها مو قابلة للتحديد من الصورة وحدها.
+هاد الأسلوب (وصف ثم تقسيم ثم جمع) ينطبق بغض النظر شكون كيجاوب (Gemini، Groq، أو Cerebras).
+
+خلي أسلوبك مهني ومباشر ومختصر يناسب رجل أعمال مشغول. رتب الأرقام والجداول بوضوح عند الحاجة. لا تخترع أرقامًا أو حقائق عن الشركة إن لم تُعطَ لك.`;
 
 let messages = []; // {role: 'user'|'model', text, time}
 
@@ -2310,6 +2312,12 @@ function getGroqKey(){ return LS.getItem(GROQ_STORAGE_KEY) || ''; }
 function setGroqKey(k){ safeSetItem(GROQ_STORAGE_KEY, k); }
 function getCerebrasKey(){ return LS.getItem(CEREBRAS_STORAGE_KEY) || ''; }
 function setCerebrasKey(k){ safeSetItem(CEREBRAS_STORAGE_KEY, k); }
+// Hugging Face (تفريغ الدارجة): HF_API_KEY + HF_API_URL كيتحفظو فالإعدادات ⚙️ بحال باقي المفاتيح
+const HF_KEY_STORAGE = 'alioua_btp_hf_key', HF_URL_STORAGE = 'alioua_btp_hf_url';
+function getHfKey(){ return LS.getItem(HF_KEY_STORAGE) || ''; }
+function setHfKey(k){ safeSetItem(HF_KEY_STORAGE, k); }
+function getHfUrl(){ return LS.getItem(HF_URL_STORAGE) || ''; }
+function setHfUrl(u){ safeSetItem(HF_URL_STORAGE, u); }
 // تنظيف: مسح مفاتيح Kimi/OpenRouter وMistral القديمة نهائيًا من هاد الجهاز
 try{ LS.removeItem('alioua_btp_openrouter_key'); LS.removeItem('alioua_btp_mistral_key'); }catch(e){}
 function loadHistory(){
@@ -3257,6 +3265,7 @@ async function callGemini(key, msgs){
   return parts.map(p=>p.text||'').join('').trim() || 'ما قدرت أجهز رد، جرب صياغة السؤال بشكل مختلف.';
 }
 
+const YUNUS_DARIJA_RULE = '\n\nقاعدة ثابتة وتغلب أي قاعدة أخرى فاللغة: جاوب دائماً بالدارجة المغربية الطبيعية (ماشي فصحى ولا لهجة مصرية ولا خليجية)، حتى إلا كتب المستخدم بالفصحى. ما تجاوبش بالفرنسية إلا إلا كتب بيها المستخدم. المستندات الرسمية فقط (فواتير، عقود، تقارير للتسليم) كتكون بفصحى مبسطة أو فرنسية. وما تبدأش الجواب بـ "عذراً" ولا "آسف". الرسائل اللي جاية من تسجيل صوتي ممكن يكون فيها أخطاء فالتعرف على الكلام (كلمات مشوّهة أو مبدّلة بكلمات مشابهة فالنطق). ما تقولش أبداً "ما فهمتش" بلا محاولة: ردّ الكلمات المشوّهة لأقرب معنى منطقي حسب سياق الشركة (بناء، محاسبة، فواتير، أجور، سلفات، موردين، زبناء، مواعيد، مواد) وجاوب على أقرب تفسير معقول. وإلا بقى الطلب غامض فعلاً، قول بالدارجة شنو فهمتي من الكلمات الواضحة وسول سؤال واحد قصير فقط.';
 function _yunusFullSystemPrompt(msgs){
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-CA');
@@ -3264,7 +3273,7 @@ function _yunusFullSystemPrompt(msgs){
   const timeStr = now.toTimeString().slice(0,5);
   const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
   const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
-  return SYSTEM_PROMPT + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
+  return SYSTEM_PROMPT + YUNUS_DARIJA_RULE + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
 }
 
 async function _openAiStyleCall(url, apiKey, body, providerName){
@@ -3385,6 +3394,8 @@ function openModal(isFirstRun){
   apiKeyInput.value = getApiKey();
   groqKeyInput.value = getGroqKey();
   cerebrasKeyInput.value = getCerebrasKey();
+  document.getElementById('hfUrlInput').value = getHfUrl();
+  document.getElementById('hfKeyInput').value = getHfKey();
   document.getElementById('gcalClientIdInput').value = getGcalClientId();
   document.getElementById('gttsKeyInput').value = getGttsKey();
   document.getElementById('fbDbUrlInput').value = getFirebaseDbUrl();
@@ -3416,6 +3427,8 @@ function saveAllSettings(){
   setApiKey(val);
   setGroqKey(orVal);
   setCerebrasKey(cerebrasKeyInput.value.trim());
+  setHfUrl(document.getElementById('hfUrlInput').value.trim());
+  setHfKey(document.getElementById('hfKeyInput').value.trim());
   setGcalClientId(document.getElementById('gcalClientIdInput').value.trim());
   setGttsKey(document.getElementById('gttsKeyInput').value.trim());
   setFirebaseDbUrl(document.getElementById('fbDbUrlInput').value.trim());
@@ -3779,6 +3792,8 @@ function _applyCloudData(data){
     if(data.gemini && !getApiKey()) setApiKey(data.gemini);
     if(data.groq && !getGroqKey()) setGroqKey(data.groq);
     if(data.cerebras && !getCerebrasKey()) setCerebrasKey(data.cerebras);
+    if(data.hfKey && !getHfKey()) setHfKey(data.hfKey);
+    if(data.hfUrl && !getHfUrl()) setHfUrl(data.hfUrl);
     if(data.gcalClientId && !getGcalClientId()) setGcalClientId(data.gcalClientId);
     if(data.voicerss && !getGttsKey()) setGttsKey(data.voicerss);
 
@@ -3973,6 +3988,8 @@ function buildFullBackupObject(){
     gemini: getApiKey(),
     groq: getGroqKey(),
     cerebras: getCerebrasKey(),
+    hfKey: getHfKey(),
+    hfUrl: getHfUrl(),
     gcalClientId: getGcalClientId(),
     voicerss: getGttsKey(),
     exportedAt: new Date().toISOString()
@@ -4008,6 +4025,8 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(data.gemini) setApiKey(data.gemini);
       if(data.groq) setGroqKey(data.groq);
       if(data.cerebras) setCerebrasKey(data.cerebras);
+      if(data.hfKey) setHfKey(data.hfKey);
+      if(data.hfUrl) setHfUrl(data.hfUrl);
       if(data.gcalClientId) setGcalClientId(data.gcalClientId);
       if(data.voicerss) setGttsKey(data.voicerss);
       // كنطبقو كل مفتاح alioua_btp_* تلقائيًا (نفس آلية المزامنة السحابية) بلا الحاجة نتذكرو كل نوع بيانات يدويًا
@@ -4531,7 +4550,7 @@ const VC = (function(){
   const _AR = /[\u0600-\u06FF]/g, _LAT = /[A-Za-z\u00C0-\u024F]/g;
   const _looksArabic = t => { const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length; return a >= 2 && a >= l; };
   const _noise = t => !t || /اشتركوا|ترجمة نانسي|subscribe|^EMPTY\b/i.test(t);
-  const DARIJA_HINT = 'مرحبا يونس، بغيت نسجل فاتورة جديدة. شحال خلصنا للأجير فالورشة؟ دير ليا الحساب ديال السيمة والحديد، واش كاين شي كريدي؟ مسح هاد العملية وزيد وحدة أخرى، فين وصلنا دابا؟';
+  const DARIJA_HINT = 'مرحبا يونس، بغيت نسجل فاتورة جديدة. شحال خلصنا للأجير فالورشة؟ دير ليا الحساب ديال السيمة والحديد والرمل والبيتون، واش كاين شي كريدي؟ مسح هاد العملية وزيد وحدة أخرى، فين وصلنا دابا؟ عندي موعد مع الزبون غدا فالصباح.';
   let _gModels = null, _gModelsAt = 0;
   async function geminiAudioModels(key){
     if(!_gModels || Date.now() - _gModelsAt > 6*3600*1000){
@@ -4543,21 +4562,25 @@ const VC = (function(){
         _gModelsAt = Date.now();
       }catch(e){ _gModels = _gModels || []; }
     }
-    const lite = _gModels.filter(n => /lite/.test(n)).sort().reverse(), rest = _gModels.filter(n => !/lite/.test(n)).sort().reverse();
-    const order = lite.concat(rest); if(typeof MODEL === 'string' && !order.includes(MODEL)) order.push(MODEL);
-    return order.filter(m => !_isCool(m)).slice(0, 4);
+    const lite = _gModels.filter(n => /lite/.test(n)).sort().reverse(), rest = _gModels.filter(n => !/lite/.test(n)).sort((x, y)=> ((/preview/.test(x) ? 1 : 0) - (/preview/.test(y) ? 1 : 0)) || (x < y ? 1 : -1));
+    const order = rest.concat(lite); if(typeof MODEL === 'string' && !order.includes(MODEL)) order.push(MODEL);
+    return order.filter(m => !_isCool(m)).slice(0, 3);
   }
+  const STT_PROMPT = 'هذا تسجيل صوتي بالدارجة المغربية لمسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر مع مساعدو يونس. اكتب بالضبط ما قيل بالحروف العربية وبالدارجة كما يُنطق، بدون تحويل للفصحى وبدون تصحيح لغوي. سياق الكلام: بناء وأشغال عمومية، محاسبة وفواتير، أجور العمال والسلفات، موردون وزبناء، مواعيد، مواد (سيمة، حديد، رمل، حجر، بريك، بيتون، خرسانة، كوفراج، أساس، سقف، دالة، شاحنة)، ومبالغ بالدرهم. كلمات دارجة شائعة: بغيت، دابا، واش، كيفاش، فين، شحال، علاش، ديرلي، جيب، خلص، كريدي، سلفة، الأجير، الورشة، الصفقة. الكلمات الفرنسية الشائعة (facture, devis, chantier, ciment, brique, situation, TVA, avance) اكتبها بحروفها اللاتينية، والأرقام اكتبها بالأرقام. إذا كان مقطع غير واضح فاختر أقرب كلمات منطقية حسب سياق الشركة، ولا تخترع جملاً لم تُقل. بدون شرح ولا إضافة ولا علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY';
   async function geminiTranscribe(m, key, b64, maxTok){
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, {
-      method:'POST', headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        contents:[{ role:'user', parts:[
-          { inlineData:{ mimeType:'audio/wav', data:b64 } },
-          { text:'هذا تسجيل صوتي لشخص مغربي يتكلم بالدارجة المغربية (وقد يخلط كلمات فرنسية). اكتب ما قاله حرفياً بالحروف العربية كما يُنطق (مثل: بغيت، دابا، واش، كيفاش، فين، شحال، ديرلي، علاش)، والكلمات الفرنسية الشائعة (facture, chantier, ciment...) اكتبها بحروفها اللاتينية. بدون أي شرح أو إضافة أو علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY' }
-        ] }],
-        generationConfig:{ temperature:0, maxOutputTokens:(maxTok || 1024) }
-      })
-    });
+    const call = async (noThink)=>{
+      const cfg = { temperature:0, maxOutputTokens:(maxTok || 1024) };
+      if(!noThink && /gemini-2\.5-flash/.test(m)) cfg.thinkingConfig = { thinkingBudget:0 };
+      return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, {
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          contents:[{ role:'user', parts:[ { inlineData:{ mimeType:'audio/wav', data:b64 } }, { text: STT_PROMPT } ] }],
+          generationConfig: cfg
+        })
+      });
+    };
+    let res = await call(false);
+    if(res.status === 400 && /gemini-2\.5-flash/.test(m)) res = await call(true);
     if(res.status === 429){ const tx = await res.text(); _setCool(m, /PerDay/i.test(tx) ? 360 : 5); throw new Error('HTTP 429'); }
     if(res.status === 404 || res.status === 400){ _setCool(m, 720); throw new Error('HTTP ' + res.status); }
     if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -4578,29 +4601,108 @@ const VC = (function(){
     if(!res.ok) throw new Error('HTTP ' + res.status);
     return String((await res.json()).text || '').trim();
   }
+  // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
+  async function repairTranscript(text, gk){
+    try{
+      const cands = await groqModelCandidates(gk, false);
+      if(!cands.length) return text;
+      const model = cands[0];
+      const body = { model, temperature:0, max_completion_tokens:300, messages:[
+        { role:'system', content:'أنت مصحّح تفريغ صوتي للدارجة المغربية. النص جاي من برنامج تعرّف على الكلام وفيه أخطاء (كلمات مشوّهة أو مبدّلة بكلمات مشابهة فالنطق). المتكلم مسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر عن: فواتير، أجور وسلفات العمال، موردين وزبناء، مواعيد، مواد البناء (سيمة، حديد، رمل، بيتون، بريك)، ومبالغ بالدرهم. أعد كتابة النص بالدارجة مع تصحيح الكلمات المشوّهة لأقرب معنى منطقي، بدون تحويل للفصحى، وبدون إضافة معلومات ما قيلتش، وبدون شرح. أخرج النص المصحّح فقط. إلا كان النص ما عندو معنى إطلاقاً ومستحيل تفهم منو شي حاجة، أخرج كلمة وحدة: EMPTY' },
+        { role:'user', content:text }
+      ] };
+      if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
+      const out = String(await _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gk, body, 'Groq') || '').trim();
+      if(!out) return text;
+      if(/^EMPTY\b/i.test(out)) return '';
+      return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
+    }catch(e){ return text; }
+  }
+  // ===== Hugging Face: كنبعثو WAV (16kHz، mono، 16-bit) مباشرة كـ body، والمفتاح فـ Authorization =====
+  async function transcribeHF(blob){
+    const url = getHfUrl(), key = getHfKey();           // HF_API_URL / HF_API_KEY
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    let lastErr = null;
+    for(let attempt = 0; attempt < 3; attempt++){
+      let res;
+      try{
+        res = await fetch(url, { method:'POST', headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'audio/wav' }, body: blob });
+      }catch(e){ lastErr = new Error('HF شبكة'); if(attempt < 2) await wait(1500); continue; }
+      if(res.status === 401 || res.status === 403){ const e = new Error('HF مفتاح غير صالح'); e.fatal = true; throw e; }
+      if(res.status === 503 || res.status === 429){
+        // 503 = النموذج كيتحمّل (cold start)، 429 = زيادة طلبات: كنعاودو شوية
+        let est = 0; try{ est = Number((await res.json()).estimated_time) || 0; }catch(e){}
+        lastErr = new Error('HF ' + res.status + (res.status === 503 ? ' (النموذج كيتحمّل)' : ' (حد الاستعمال)'));
+        if(attempt < 2) await wait(Math.min(Math.max(est * 1000, 2500), 10000));
+        continue;
+      }
+      if(!res.ok){ let d = ''; try{ d = (await res.text()).slice(0, 80); }catch(e){} throw new Error('HF ' + res.status + (d ? ': ' + d : '')); }
+      const j = await res.json();
+      return String(Array.isArray(j) ? ((j[0] && j[0].text) || '') : (j.text || '')).trim();
+    }
+    throw lastErr || new Error('HF');
+  }
+  // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
+  async function repairTranscript(text, gk){
+    try{
+      const cands = await groqModelCandidates(gk, false);
+      if(!cands.length) return text;
+      const model = cands[0];
+      const body = { model, temperature:0, max_completion_tokens:300, messages:[
+        { role:'system', content:'أنت مصحّح تفريغ صوتي للدارجة المغربية. النص جاي من برنامج تعرّف على الكلام وفيه أخطاء (كلمات مشوّهة أو مبدّلة بكلمات مشابهة فالنطق). المتكلم مسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر عن: فواتير، أجور وسلفات العمال، موردين وزبناء، مواعيد، مواد البناء (سيمة، حديد، رمل، بيتون، بريك)، ومبالغ بالدرهم. أعد كتابة النص بالدارجة مع تصحيح الكلمات المشوّهة لأقرب معنى منطقي، بدون تحويل للفصحى، وبدون إضافة معلومات ما قيلتش، وبدون شرح. أخرج النص المصحّح فقط. إلا كان النص ما عندو معنى إطلاقاً ومستحيل تفهم منو شي حاجة، أخرج كلمة وحدة: EMPTY' },
+        { role:'user', content:text }
+      ] };
+      if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
+      const out = String(await _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gk, body, 'Groq') || '').trim();
+      if(!out) return text;
+      if(/^EMPTY\b/i.test(out)) return '';
+      return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
+    }catch(e){ return text; }
+  }
+  // السلسلة: Hugging Face (إلا مفعّل) ← Gemini ← Groq Whisper + تصحيح نصي
   async function transcribe(blob, maxTok){
-    const gk = getGroqKey(), key = getApiKey();
-    if(!gk && !key) throw new Error('NOKEY');
-    let lastErr = null, sawText = false;
+    const gk = getGroqKey(), key = getApiKey(), hfOn = !!(getHfKey() && getHfUrl());
+    if(!gk && !key && !hfOn) throw new Error('NOKEY');
+    const fails = []; let sawText = false, gemResponded = false;
     const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
-    if(gk){
-      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
-        if(_isCool('groq:' + m)) continue;
-        try{ const r = accept(await transcribeGroq(blob, gk, m)); if(r) return r; }catch(e){ lastErr = e; }
+
+    // 1) Hugging Face — كيرجع النص ديالو مباشرة (إلا خاوي = ما كاين كلام)
+    if(hfOn && !_isCool('hf')){
+      try{
+        const t = await transcribeHF(blob);
+        if(!t) return '';
+        const r = accept(t); if(r) return r;
+      }catch(e){
+        fails.push(String(e.message || 'HF'));
+        _setCool('hf', e.fatal ? 30 : 2);   // ما نبقاوش نستناو نموذج طايح فكل جملة
       }
     }
+    // 2) Gemini — كل موديل عندو حصتو؛ إلا وصل لحدو كيتحيد مؤقتاً
     if(key){
       let b64 = null;
       let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
       for(const m of ms){
         try{
           b64 = b64 || await blobToB64(blob);
-          const r = accept(await geminiTranscribe(m, key, b64, maxTok)); if(r) return r;
-        }catch(e){ lastErr = e; }
+          const raw = await geminiTranscribe(m, key, b64, maxTok);
+          gemResponded = true;
+          const r = accept(raw); if(r) return r;
+        }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
+      }
+      if(gemResponded) return '';            // Gemini قال ما كاين كلام: ما نمشيوش لـ Whisper باش ما يهلوسش
+    }
+    // 3) احتياطي أخير: Groq Whisper + تصحيح نصي بالدارجة
+    if(gk){
+      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
+        if(_isCool('groq:' + m)) continue;
+        try{
+          const r = accept(await transcribeGroq(blob, gk, m));
+          if(r){ const fixed = await repairTranscript(r, gk); if(fixed && _looksArabic(fixed)) return fixed; return ''; }
+        }catch(e){ fails.push('Groq ' + String(e.message || '')); }
       }
     }
-    if(!sawText && lastErr) throw lastErr;   // كل المزودين فشلو (حد/شبكة) ماشي صمت
-    return '';                               // ما فهمناش الكلام: كنرجعو خاوي بدل نص مهلوس
+    if(!sawText && fails.length) throw new Error(fails.join(' | '));   // كلشي فشل: رسالة واضحة فيها السبب
+    return '';                                                          // ما فهمناش الكلام: خاوي بدل نص مهلوس
   }
   function endUtterance(){
     const buf = S.buf, voiced = S.voiced;
@@ -4638,7 +4740,7 @@ const VC = (function(){
     if(!getApiKey() && !getGroqKey() && !getCerebrasKey()){ openModal(true); return; }
     let brave = false;
     try{ brave = !!(navigator.brave && await navigator.brave.isBrave()); }catch(e){}
-    S.mode = (!SRClass() || brave || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
+    S.mode = (!SRClass() || brave || getApiKey() || getGroqKey() || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
     if(S.mode === 'rec' && !getApiKey() && !getGroqKey()){
       alert('في هذا المتصفح تحتاج المحادثة الصوتية إلى مفتاح Groq (لتفريغ الصوت). أضفه من الإعدادات، أو افتح التطبيق في Chrome.');
       return;
