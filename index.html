@@ -4065,7 +4065,7 @@ function setVCStatus(kind, text){ try{ VC.setState(kind === 'idle' ? 'listening'
 function enterVoiceChat(){ return VC.enter(); }
 function exitVoiceChat(){ return VC.exit(); }
 
-const VOICE_CALL_RULE = '\n\nالمستخدم الآن في مكالمة صوتية معك: هو يكلمك بالصوت وردّك سيظهر له مكتوباً على الشاشة. جاوب بإيجاز ووضوح وبنفس لهجته، في بضع جمل قصيرة، وتجنب الجداول الطويلة والعناوين. وإذا كان الطلب يحتاج كتلة أمر خاصة (مثل إضافة موعد أو معاملة أو تقرير) فاكتب جملة قصيرة تؤكد ثم الكتلة بصيغتها المعتادة.';
+const VOICE_CALL_RULE = '\n\nالمستخدم الآن في مكالمة صوتية معك وردّك غادي يتنطق بصوت عالي: هضر دائماً بالدارجة المغربية الطبيعية (بحال ما كيهضر واحد مغربي: بغيت، دابا، واش، كاين، شنو، فين، شحال، غادي، ديال)، إلا إذا هضر معاك المستخدم بالفرنسية فجاوبو بالفرنسية. جاوب بجمل قصيرة وواضحة (جوج إلى أربع جمل)، بلا جداول ولا عناوين ولا رموز ولا إيموجي ولا نجوم، وكتب الأرقام والمبالغ بالحروف العربية كما كتنطق (مثلاً: ألفين درهم) والكلمات الفرنسية الشائعة (facture, chantier) بحروفها اللاتينية. وإذا كان الطلب يحتاج كتلة أمر خاصة (مثل إضافة موعد أو معاملة أو تقرير) فاكتب جملة قصيرة تؤكد بالدارجة ثم الكتلة بصيغتها المعتادة.';
 
 const VC = (function(){
   const $ = id => document.getElementById(id);
@@ -4155,7 +4155,9 @@ const VC = (function(){
     try{
       const voices = synth ? synth.getVoices() : [];
       const chosen = LS.getItem(VOICE_NAME_KEY);
-      voice = voices.find(v=>v.name === chosen) || voices.find(v=>v.lang && v.lang.toLowerCase().startsWith('ar')) || null;
+      const _ar = voices.filter(v=>v.lang && v.lang.toLowerCase().replace('_','-').startsWith('ar'));
+      const _pref = c => _ar.find(v=>v.lang.toLowerCase().replace('_','-') === c);
+      voice = voices.find(v=>v.name === chosen) || _pref('ar-ma') || _pref('ar-dz') || _pref('ar-tn') || _ar[0] || null;
     }catch(e){}
     if(synth && voice){
       const parts = splitSentences(text);
@@ -4235,9 +4237,15 @@ const VC = (function(){
     if(!voiceChatActive) return;
     const bt = $('vcBotText'); if(bt) bt.textContent = cleanForDisplay(reply) || 'تم ✅';
     const box = $('vcTexts'); if(box) box.scrollTop = 0;
-    startListening();
+    const spoken = cleanForSpeech(cleanForDisplay(reply).replace(/📋[^\n]*/g, ''));
+    if(!spoken){ startListening(); return; }
+    // الميكروفون كيتسد وقت ما يونس كيهضر باش ما يسمعش راسو
+    clearTimeout(S.silenceT); stopRecognizer();
+    S.inSpeech = false; S.buf = []; S.pre = [];
+    const tok = ++S.token;
+    setState('speaking');
+    speak(spoken, ()=>{ if(voiceChatActive && tok === S.token && S.state === 'speaking') startListening(); });
   }
-
   function onOrbTap(){
     if(!voiceChatActive) return;
     if(S.state === 'speaking'){ cancelSpeech(); S.token++; startListening(); return; }
@@ -4542,7 +4550,7 @@ const VC = (function(){
     S.muted = false; S.turning = false; S.srTimes = []; S.lang = 'ar-MA'; updateMuteUI();
     micBtn.disabled = true;
     $('voiceChatOverlay').classList.add('active');
-    $('vcTranscript').textContent = ''; $('vcBotText').textContent = 'تكلّم وسأجيبك كتابةً على الشاشة 👇';
+    $('vcTranscript').textContent = ''; $('vcBotText').textContent = 'هضر معايا بالدارجة وغادي نجاوبك بالصوت 👇';
     try{ inputEl.blur(); }catch(e){}
     requestWake();
     setState('idle');
