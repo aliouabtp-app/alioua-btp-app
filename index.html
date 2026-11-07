@@ -1720,7 +1720,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
    - الكود كله كيقرا ويكتب عبر LS (نفس واجهة localStorage) باش ما يتبدل حتى شي شي.
    - البيانات كتعيش مفكوكة فقط فالذاكرة بعد إدخال الـPIN الصحيح، وفـ IndexedDB كتبقى مشفّرة. */
 const SECURE_FLAG = 'alioua_btp_secure_on';
-const SECURE_PLAIN = ['alioua_btp_sync_vault','alioua_btp_pin_hash','alioua_btp_secure_on','alioua_btp_last_sync','alioua_btp_last_auto_backup'];
+const SECURE_PLAIN = ['alioua_btp_cloud_dirty','alioua_btp_sync_vault','alioua_btp_pin_hash','alioua_btp_secure_on','alioua_btp_last_sync','alioua_btp_last_auto_backup'];
 function makeSecureLS(N, S){
   const mem = new Map();
   let unlocked = false, key = null, q = Promise.resolve();
@@ -2539,25 +2539,51 @@ function generatePdfReport(data){
   const c = typeof loadCompanyInfo === 'function' ? loadCompanyInfo() : {};
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'mm', format:'a4'});
-  let y = 15;
-  if(c.logoDataUrl){ try{ doc.addImage(c.logoDataUrl, 'PNG', 15, 8, 50, 17); y = 32; }catch(e){} }
-  docTextSmart(doc, data.title, 15, y, {fontSize:14, bold:true});
-  y += 8;
+  const PW = 210, PH = 297, ML = 15, MR = 15, RIGHT = PW - MR, CW = PW - ML - MR;
+  const cols = (data.columns || []).map(x=> String(x == null ? '' : x));
+  const nc = cols.length || 1;
+  const rowsIn = (data.rows || []).map(r=>{ const a = (Array.isArray(r) ? r : [r]).map(x=> x == null ? '' : String(x)); while(a.length < nc) a.push(''); return a.slice(0, nc); });
+  // جدول عربي: العمود الأول كيكون على اليمين (اتجاه RTL)
+  const rtl = containsArabic(data.title) || cols.filter(containsArabic).length >= nc/2;
+  const order = cols.map((_, i)=> rtl ? nc - 1 - i : i);
+
+  let y = 12;
+  if(c.logoDataUrl){ try{ doc.addImage(c.logoDataUrl, 'PNG', ML, 10, 50, 17); }catch(e){} }
+  // سطر التاريخ على اليمين مقابل الشعار
+  const dstr = new Date().toLocaleDateString('fr-FR');
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(110,110,110);
+  doc.text(dstr, RIGHT, 14, {align:'right'});
+  y = c.logoDataUrl ? 32 : 22;
+  doc.setDrawColor(30,100,160); doc.setLineWidth(0.6); doc.line(ML, y, RIGHT, y);
+  y += 6;
+  y = pdfParagraph(doc, data.title || 'تقرير', RIGHT, y, CW, {fontPt:15, bold:true, rgb:[20,20,20]}) + 4;
+
   arabicAwareAutoTable(doc, {
     startY: y,
-    head: [data.columns],
-    body: data.rows,
-    theme:'grid',
-    headStyles:{fillColor:[90,90,90], textColor:255, fontSize:9},
-    bodyStyles:{fontSize:8.5},
-    margin:{left:15, right:15},
-    didParseCell: function(hookData){
-      // ندعمو النص العربي فالجدول عبر رسمو كصورة إذا احتوى على عربية
-    }
+    head: [order.map(i=> cols[i])],
+    body: rowsIn.map(r=> order.map(i=> r[i])),
+    theme: 'grid',
+    styles: {halign: rtl ? 'right' : 'left', fontSize: 9},
+    headStyles: {fillColor:[70,70,70], textColor:255, fontSize:9.5, fontStyle:'bold', halign: rtl ? 'right' : 'left'},
+    bodyStyles: {fontSize: 9},
+    alternateRowStyles: {fillColor:[247,247,247]},
+    margin: {top:15, bottom:18, left:ML, right:MR}
   });
-  let finalY = doc.lastAutoTable.finalY + 8;
+  let fy = doc.lastAutoTable.finalY + 8;
   if(data.summary){
-    docTextSmart(doc, data.summary, 15, finalY, {fontSize:10});
+    const fontMM = 10 * 0.352778;
+    const est = (containsArabic(data.summary) ? wrapArabicLines(data.summary, false, fontMM, CW).length : doc.splitTextToSize(String(data.summary), CW).length) * fontMM * 1.45 + 4;
+    if(fy + est > PH - 20){ doc.addPage(); fy = 20; }
+    pdfParagraph(doc, data.summary, RIGHT, fy, CW, {fontPt:10});
+  }
+  // تذييل بترقيم الصفحات
+  const n = doc.getNumberOfPages();
+  const brand = (c.name && !containsArabic(c.name)) ? c.name : 'ALIOUA BTP';
+  for(let i=1; i<=n; i++){
+    doc.setPage(i);
+    doc.setDrawColor(200,200,200); doc.setLineWidth(0.2); doc.line(ML, PH-14, RIGHT, PH-14);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120,120,120);
+    doc.text(brand + '  -  Page ' + i + ' / ' + n, PW/2, PH-9, {align:'center'});
   }
   doc.save((data.title||'تقرير').replace(/[\\/:*?"<>|]/g,'-') + '.pdf');
 }
@@ -3245,7 +3271,7 @@ async function syncDecrypt(rec, code){
 }
 
 // المفاتيح المستثناة عمدًا من المزامنة (لأسباب أمان/منطقية بحتة، ماشي نسيان)
-const CLOUD_SYNC_EXCLUDE = ['alioua_btp_openrouter_key', 'alioua_btp_mistral_key', 'alioua_btp_fb_dburl', 'alioua_btp_sync_code', 'alioua_btp_gcal_token', 'alioua_btp_pin_hash', 'alioua_btp_last_sync', 'alioua_btp_last_auto_backup'];
+const CLOUD_SYNC_EXCLUDE = ['alioua_btp_sync_vault', 'alioua_btp_cloud_dirty', 'alioua_btp_openrouter_key', 'alioua_btp_mistral_key', 'alioua_btp_fb_dburl', 'alioua_btp_sync_code', 'alioua_btp_gcal_token', 'alioua_btp_pin_hash', 'alioua_btp_last_sync', 'alioua_btp_last_auto_backup'];
 
 function collectAllAppData(){
   // كنجمعو تلقائيًا كل مفتاح alioua_btp_* من التخزين المحلي، بلا الحاجة نتذكرو واحد واحد
@@ -3305,7 +3331,7 @@ async function cloudRestoreSnapshot(day, onStatus){
     try{ data = await syncDecrypt(rec, getSyncCode()); }catch(e){ onStatus('fail', 'ما قدرتش نفك التشفير (رمز المزامنة خاطئ؟).'); return; }
     try{ downloadBackupFile('yunes-avant-restauration'); }catch(e){}   // نسخة أمان من الحالة الحالية قبل ما نبدلوها
     applyCloudData(data);
-    cloudHasUnsyncedChanges = true;
+    setCloudDirty(true);
     cloudPush(()=>{}, {force:true});
     onStatus('ok');
   }catch(e){ onStatus('fail', 'خطأ فالاتصال بالإنترنت'); }
@@ -3377,7 +3403,10 @@ const CLOUD_SYNC_MAX_WAIT_MS = 8000;
 // ---- حماية جذرية من فقدان البيانات: تتبع صريح لأي تعديل محلي لم يُؤكَّد رفعه بنجاح بعد.
 // هاد العلم كيبقى true حتى ينجح الرفع فعليًا (ماشي مجرد ما تتم "محاولة" الرفع) —
 // وطالما هو true، ممنوع نطبقو أي سحب (cloudPull) يقدر يمحي التعديلات هاد بلا رفعها أولاً.
-let cloudHasUnsyncedChanges = false;
+const CLOUD_DIRTY_KEY = 'alioua_btp_cloud_dirty';
+// العلم كيتحفظ فـ localStorage العادي: إلا تسدّ التطبيق قبل ما ينجح الرفع، كنعرفو عند الفتح الجاية أن كاين تعديلات ما وصلاتش للسحابة
+let cloudHasUnsyncedChanges = (function(){ try{ return window.localStorage.getItem(CLOUD_DIRTY_KEY) === '1'; }catch(e){ return false; } })();
+function setCloudDirty(v){ cloudHasUnsyncedChanges = !!v; try{ if(v) window.localStorage.setItem(CLOUD_DIRTY_KEY, '1'); else window.localStorage.removeItem(CLOUD_DIRTY_KEY); }catch(e){} }
 let cloudPushRetryTimer = null;
 let cloudPushFailStreak = 0;
 let cloudSyncWarningShown = false;
@@ -3409,7 +3438,7 @@ function attemptCloudPush(){
   updateSyncStatusBadge('syncing');
   cloudPush((status, detail)=>{
     if(status === 'ok'){
-      cloudHasUnsyncedChanges = false;
+      setCloudDirty(false);
       cloudPushFailStreak = 0;
       cloudSyncWarningShown = false;
       clearTimeout(cloudPushRetryTimer);
@@ -3436,7 +3465,7 @@ function attemptCloudPush(){
 
 function scheduleCloudSync(){
   if(!cloudConfigured()) return;
-  cloudHasUnsyncedChanges = true;
+  setCloudDirty(true);
   const now = Date.now();
   if(!cloudSyncFirstPendingAt) cloudSyncFirstPendingAt = now;
   clearTimeout(cloudSyncTimer);
@@ -3503,7 +3532,7 @@ function _applyCloudData(data){
     if(typeof renderProjects === 'function') renderProjects();
 }
 
-async function cloudPull(onStatus){
+async function cloudPull(onStatus, opts){
   if(!cloudConfigured()){ if(onStatus) onStatus('fail', (getFirebaseDbUrl() && !syncCodeStrong(getSyncCode())) ? SYNC_WEAK_MSG : 'خصك تعمري: رابط Database URL ورمز المزامنة أولاً.'); return; }
 
   // حماية جوهرية: إذا كاين تعديلات محلية معلقة لسه ماتأكدش رفعها بنجاح، نحاولو نرفعوها أولاً.
@@ -3511,7 +3540,7 @@ async function cloudPull(onStatus){
   // بلا ما توصل للسحابة أصلاً (هذا كان سبب اختفاء البيانات).
   if(cloudHasUnsyncedChanges){
     const pushSucceeded = await new Promise(resolve=>{
-      cloudPush((status)=>{ if(status === 'ok') cloudHasUnsyncedChanges = false; resolve(status === 'ok'); });
+      cloudPush((status)=>{ if(status === 'ok') setCloudDirty(false); resolve(status === 'ok'); });
     });
     if(!pushSucceeded){
       if(onStatus) onStatus('fail', 'كاين تعديلات محلية معلقة ماقدرناش نرفعوها للسحابة، تجاوزنا السحب حماية لبياناتك');
@@ -3537,6 +3566,13 @@ async function cloudPull(onStatus){
     }else if(data){ data = null; }
     if(!data){ if(onStatus) onStatus('fail', 'ما لقيتش بيانات بهاد الرمز — يمكن أول مرة كتربطي، ديري "مزامنة الآن" أولاً.'); return; }
 
+    if(!(opts && opts.force)){
+      const ls = dataScore(collectAllAppData()), rs = dataScore(data);
+      if(ls > 0 && rs < ls * 0.5 && ls - rs >= 5){
+        if(onStatus) onStatus('blocked', `نسخة السحابة (${rs} عنصر) أصغر بكثير من بيانات هاد الجهاز (${ls} عنصر). وقفت السحب باش ما تضيعش بيانات. ديري "مزامنة الآن" باش ترفع بيانات هاد الجهاز، أو كمّل السحب يدويًا إلا كنتي متأكد.`);
+        return;
+      }
+    }
     applyCloudData(data);
     if(onStatus) onStatus('ok');
   }catch(e){
@@ -3589,7 +3625,8 @@ document.getElementById('cloudPullBtn')?.addEventListener('click', ()=>{
   const resultEl = document.getElementById('cloudSyncResult');
   resultEl.textContent = '⏳ كنسترجع...';
   resultEl.style.color = 'var(--ink-soft)';
-  cloudPull((status, detail)=>{
+  const _pullCb = (status, detail)=>{
+    if(status === 'blocked' && confirm('⚠️ ' + detail + '\n\nواش متأكد بغيتي تعوّض بيانات هاد الجهاز بنسخة السحابة؟')){ cloudPull(_pullCb, {force:true}); return; }
     if(status === 'ok'){
       resultEl.textContent = '✅ تم استرجاع البيانات من السحابة!';
       resultEl.style.color = '#2e7d32';
@@ -3597,7 +3634,8 @@ document.getElementById('cloudPullBtn')?.addEventListener('click', ()=>{
       resultEl.textContent = '❌ ما قدرتش نسترجع: ' + (detail || 'خطأ غير معروف');
       resultEl.style.color = '#b91c1c';
     }
-  });
+  };
+  cloudPull(_pullCb);
 });
 
 saveKeyBtn.addEventListener('click', saveAllSettings);
@@ -5988,7 +6026,7 @@ function docTextSmart(doc, text, xMM, yMM, opts={}){
   if(containsArabic(text)){
     drawArabicText(doc, text, xMM, yMM, {
       fontSizeMM: opts.fontSizeMM || (opts.fontSize ? opts.fontSize*0.352778 : 4),
-      bold: opts.bold, color: opts.color, align: opts.align || (opts.jsAlign==='center'?'center':'right')
+      bold: opts.bold, color: opts.color, align: opts.align || (opts.jsAlign==='center'?'center':'left')
     });
   }else{
     const fontStyle = opts.bold ? 'bold' : 'normal';
@@ -6011,34 +6049,147 @@ function docTextAuto(doc, text, x, y, textOpts, fontSizePt){
   }
 }
 
-// غلاف حول doc.autoTable يصلح تلقائيًا مشكلة النص العربي المشوّه: jsPDF-autoTable
-// كيستعمل خطوط jsPDF العادية (ماعندهاش دعم للعربية)، فأي خلية فيها عربية كتبان
-// رموز مشوّهة. هاد الدالة كتكتشف أي خلية (هيدر أو جسم) فيها عربية وترسمها كصورة
-// فوق الخلية (بنفس طريقة docTextSmart)، بلا ما تأثر على الخلايا اللاتينية/الأرقام.
-// استعمليها بدل doc.autoTable(...) فأي جدول PDF جديد باش تبقى العربية سليمة دايمًا.
-function arabicAwareAutoTable(doc, options){
-  const userDidDrawCell = options.didDrawCell;
-  const patchedOptions = Object.assign({}, options, {
-    didDrawCell: function(hookData){
-      try{
-        const raw = hookData.cell.raw;
-        const text = Array.isArray(raw) ? raw.join(' ') : (raw === null || raw === undefined ? '' : String(raw));
-        if(text && containsArabic(text)){
-          const isHeader = hookData.section === 'head';
-          const styles = hookData.cell.styles || {};
-          const bg = Array.isArray(styles.fillColor) ? styles.fillColor : (isHeader ? [90,90,90] : [255,255,255]);
-          doc.setFillColor(bg[0], bg[1], bg[2]);
-          doc.rect(hookData.cell.x, hookData.cell.y, hookData.cell.width, hookData.cell.height, 'F');
-          const fontSize = styles.fontSize || (isHeader ? 9 : 8);
-          docTextSmart(doc, text, hookData.cell.x + hookData.cell.width/2, hookData.cell.y + hookData.cell.height/2 + fontSize*0.12 + 1, {
-            fontSize, bold: isHeader, color: isHeader ? '#ffffff' : '#000000', align:'center', jsAlign:'center'
-          });
-        }
-      }catch(e){ console.error('تعذّر إصلاح نص عربي فجدول PDF:', e); }
-      if(typeof userDidDrawCell === 'function') userDidDrawCell(hookData);
-    }
+// ===== رسم النص العربي فـ PDF: تقطيع الأسطر حسب عرض الخلية + رسم كل سطر كصورة (بلا نص مشوّه خلف الجدول) =====
+const AR_PX = 12; // بكسل لكل ملم (دقة ~300 dpi)
+function _arFont(bold, px){ return `${bold?'bold ':''}${px}px 'IBM Plex Sans Arabic', Arial, sans-serif`; }
+let _arCtx = null;
+function _arMeasure(text, bold, fontMM){
+  if(!_arCtx) _arCtx = document.createElement('canvas').getContext('2d');
+  _arCtx.font = _arFont(bold, Math.max(8, Math.round(fontMM*AR_PX)));
+  return _arCtx.measureText(text).width / AR_PX;
+}
+function wrapArabicLines(text, bold, fontMM, maxMM){
+  const out = [];
+  String(text == null ? '' : text).split(/\n/).forEach(par=>{
+    const words = par.split(/\s+/).filter(Boolean); let cur = '';
+    words.forEach(w=>{
+      const t = cur ? cur + ' ' + w : w;
+      if(cur && _arMeasure(t, bold, fontMM) > maxMM){ out.push(cur); cur = w; } else cur = t;
+    });
+    out.push(cur);
   });
-  doc.autoTable(patchedOptions);
+  return out.length ? out : [''];
+}
+function _cssColor(c, fallback){
+  if(Array.isArray(c)) return `rgb(${c[0]},${c[1]},${c[2]})`;
+  if(typeof c === 'number') return `rgb(${c},${c},${c})`;
+  if(typeof c === 'string' && c) return c;
+  return fallback || '#000';
+}
+// yMM = الوسط العمودي للسطر. align: right (xMM = الحافة اليمنى) | left (xMM = الحافة اليسرى) | center
+function drawArabicLine(doc, text, xMM, yMM, o){
+  if(!text) return;
+  o = o || {};
+  const px = Math.max(8, Math.round(o.fontMM * AR_PX));
+  const c = document.createElement('canvas'), ctx = c.getContext('2d');
+  ctx.font = _arFont(o.bold, px);
+  const w = ctx.measureText(text).width;
+  c.width = Math.ceil(w) + 6; c.height = Math.ceil(px * 1.5);
+  ctx.font = _arFont(o.bold, px);
+  ctx.direction = containsArabic(text) ? 'rtl' : 'ltr';
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.fillStyle = _cssColor(o.color, '#000');
+  ctx.fillText(text, c.width/2, c.height/2);
+  let wMM = c.width / AR_PX; const hMM = c.height / AR_PX; let hDraw = hMM;
+  if(o.maxW && wMM > o.maxW){ hDraw = hMM * o.maxW / wMM; wMM = o.maxW; }
+  const align = o.align || 'right';
+  const x = align === 'right' ? xMM - wMM : (align === 'center' ? xMM - wMM/2 : xMM);
+  doc.addImage(c.toDataURL('image/png'), 'PNG', x, yMM - hDraw/2, wMM, hDraw);
+}
+// عنوان/فقرة بعرض محدد (كتلتف على الأسطر) — كيرجّع Y الجديد
+function pdfParagraph(doc, text, xRight, y, maxW, o){
+  o = o || {}; const fontPt = o.fontPt || 10, fontMM = fontPt * 0.352778, lh = fontMM * 1.45;
+  if(containsArabic(text)){
+    const lines = wrapArabicLines(text, !!o.bold, fontMM, maxW);
+    lines.forEach((ln, i)=> drawArabicLine(doc, ln, xRight, y + lh*i + lh/2, {fontMM, bold:!!o.bold, color:o.color, align:'right', maxW}));
+    return y + lines.length * lh;
+  }
+  doc.setFont('helvetica', o.bold ? 'bold' : 'normal'); doc.setFontSize(fontPt);
+  const rgb = o.rgb || [0,0,0]; doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+  const lines = doc.splitTextToSize(String(text), maxW);
+  lines.forEach((ln, i)=> doc.text(ln, xRight, y + lh*i + lh*0.75, {align:'right'}));
+  return y + lines.length * lh;
+}
+
+// غلاف حول doc.autoTable كيضمن: عرض الجدول ديما داخل A4، تقطيع النص العربي على أسطر،
+// ارتفاع الصفوف صحيح، وما كاين حتى نص مشوّه خلف الجدول. استعملو بدل doc.autoTable.
+function arabicAwareAutoTable(doc, options){
+  const o = Object.assign({}, options);
+  const pageW = doc.internal.pageSize.getWidth();
+  const mg = (typeof o.margin === 'number') ? {top:o.margin,bottom:o.margin,left:o.margin,right:o.margin} : (o.margin || {});
+  const m = Object.assign({top:15, bottom:18, left:15, right:15}, mg);
+  o.margin = m;
+  o.styles = Object.assign({cellPadding:2.5, valign:'middle', overflow:'linebreak', lineWidth:0.1, lineColor:[170,170,170]}, o.styles || {});
+  const pad = (typeof o.styles.cellPadding === 'number') ? o.styles.cellPadding : 2.5;
+  const rowsOf = r => (r || []).map(row=> Array.isArray(row) ? row : [row]);
+  const headRows = rowsOf(o.head), bodyRows = rowsOf(o.body);
+  const spanOf = c => (c && typeof c === 'object' && !Array.isArray(c) && c.colSpan) ? c.colSpan : 1;
+  const textOf = c => { const v = (c && typeof c === 'object' && !Array.isArray(c)) ? c.content : c; return v == null ? '' : String(v); };
+  let ncols = 0;
+  headRows.concat(bodyRows).forEach(r=>{ ncols = Math.max(ncols, r.reduce((s,c)=> s + spanOf(c), 0)); });
+  if(!ncols) return doc.autoTable(o);
+  const avail = pageW - m.left - m.right;
+  const cs = Object.assign({}, o.columnStyles || {});
+  const widths = new Array(ncols).fill(0); let fixed = 0; const auto = [];
+  for(let i=0; i<ncols; i++){
+    const cw = cs[i] && cs[i].cellWidth;
+    if(typeof cw === 'number'){ widths[i] = cw; fixed += cw; } else auto.push(i);
+  }
+  if(auto.length){
+    const weight = i => {
+      let mx = 4;
+      headRows.concat(bodyRows).forEach(r=>{ let col = 0; r.forEach(c=>{ const sp = spanOf(c); if(sp === 1 && col === i){ mx = Math.max(mx, Math.min(40, textOf(c).length)); } col += sp; }); });
+      return mx;
+    };
+    const ws = auto.map(weight), tw = ws.reduce((a,b)=>a+b, 0);
+    const rem = Math.max(avail - fixed, auto.length * 14);
+    auto.forEach((i,k)=>{ widths[i] = Math.max(14, rem * ws[k] / tw); });
+  }
+  const total = widths.reduce((a,b)=>a+b, 0);
+  if(total > avail + 0.5){ const f = avail / total; for(let i=0; i<ncols; i++) widths[i] *= f; }
+  for(let i=0; i<ncols; i++) cs[i] = Object.assign({}, cs[i], {cellWidth: widths[i]});
+  o.columnStyles = cs;
+
+  const arMap = {};
+  const proc = (rows, section)=> rows.map((row, r)=>{
+    let col = 0;
+    return row.map(cell=>{
+      const obj = (cell && typeof cell === 'object' && !Array.isArray(cell)) ? Object.assign({}, cell) : {content: cell};
+      const sp = obj.colSpan || 1, text = textOf(cell);
+      const w = widths.slice(col, col + sp).reduce((a,b)=>a+b, 0);
+      if(containsArabic(text)){
+        const st = Object.assign({}, o.styles, section === 'head' ? (o.headStyles||{}) : (o.bodyStyles||{}), obj.styles || {});
+        const fontMM = (st.fontSize || 10) * 0.352778;
+        const bold = section === 'head' || st.fontStyle === 'bold';
+        const lines = wrapArabicLines(text, bold, fontMM, Math.max(5, w - 2*pad));
+        arMap[section + '|' + r + '|' + col] = {lines, fontMM, bold};
+        obj.content = '';
+        obj.styles = Object.assign({}, obj.styles, {minCellHeight: lines.length * fontMM * 1.45 + 2*pad});
+      }
+      col += sp;
+      return obj;
+    });
+  });
+  o.head = proc(headRows, 'head');
+  o.body = proc(bodyRows, 'body');
+
+  const userDidDrawCell = o.didDrawCell;
+  o.didDrawCell = function(hd){
+    try{
+      const info = arMap[hd.section + '|' + hd.row.index + '|' + hd.column.index];
+      if(info){
+        const st = hd.cell.styles || {}, cell = hd.cell;
+        const lh = info.fontMM * 1.45, totalH = info.lines.length * lh;
+        const y0 = cell.y + (cell.height - totalH) / 2 + lh / 2;
+        const center = st.halign === 'center';
+        const x = center ? cell.x + cell.width/2 : cell.x + cell.width - pad;
+        const col = hd.section === 'head' ? (st.textColor != null ? st.textColor : [255,255,255]) : (st.textColor != null ? st.textColor : [0,0,0]);
+        info.lines.forEach((ln, i)=> drawArabicLine(doc, ln, x, y0 + i*lh, {fontMM:info.fontMM, bold:info.bold, color:col, align: center ? 'center' : 'right', maxW: cell.width - 2*pad}));
+      }
+    }catch(e){ console.error('تعذّر رسم نص عربي فجدول PDF:', e); }
+    if(typeof userDidDrawCell === 'function') userDidDrawCell(hd);
+  };
+  doc.autoTable(o);
 }
 
 function fmtMAD(n){
@@ -7895,11 +8046,14 @@ function workerCalc(w, att, extras, monthlyFactor, requireActivity){
   return {days, extraDays, otHours, base, extraDaysAmt, otAmt, total: Math.round((base + extraDaysAmt + otAmt)*100)/100};
 }
 const _inR = (d, rs)=> rs.some(r=> d >= r[0] && d <= r[1]);
-function paidRanges(wid){ return loadWPayments().filter(x=>x.workerId===wid).map(x=>[x.from, x.to]); }
+function paidRanges(wid){ return loadWPayments().filter(x=>x.workerId===wid && !x.extrasOnly).map(x=>[x.from, x.to]); }
+function paidExtraIds(){ const s = new Set(); loadWPayments().forEach(x=>{ (x.extraIds||[]).forEach(id=> s.add(id)); }); return s; }
+function unpaidExtras(w){ const rs = paidRanges(w.id), pe = paidExtraIds(); return loadExtras().filter(x=>x.workerId===w.id && !pe.has(x.id) && !_inR(x.date, rs)).sort((a,b)=> a.date.localeCompare(b.date)); }
 function calcPeriod(w, pr, needActivity){
   const rs = paidRanges(w.id);
   const att = loadAttendance().filter(a=>a.workerId===w.id && a.date>=pr.from && a.date<=pr.to && !_inR(a.date, rs));
-  const ex = loadExtras().filter(x=>x.workerId===w.id && x.date>=pr.from && x.date<=pr.to && !_inR(x.date, rs));
+  const pe = paidExtraIds();
+  const ex = loadExtras().filter(x=>x.workerId===w.id && !pe.has(x.id) && x.date>=pr.from && x.date<=pr.to && !_inR(x.date, rs));
   const c = workerCalc(w, att, ex, 0.5, !!needActivity);
   if(w.type === 'monthly' && _inR(pr.from, rs)){ c.base = 0; c.total = Math.round((c.extraDaysAmt + c.otAmt)*100)/100; }
   return c;
@@ -7913,7 +8067,7 @@ function todayStr(){ const d = new Date(); return d.getFullYear() + '-' + p2(d.g
 // كل المستحقات غير المؤداة من أول يوم تسجل (حضور أو إضافي) حتى اليوم
 function calcAllUnpaid(w){
   const dates = loadAttendance().filter(a=>a.workerId===w.id).map(a=>a.date)
-    .concat(loadExtras().filter(x=>x.workerId===w.id).map(x=>x.date)).filter(Boolean).sort();
+    .concat(loadExtras().filter(x=>x.workerId===w.id && !paidExtraIds().has(x.id)).map(x=>x.date)).filter(Boolean).sort();
   if(!dates.length) return null;
   const today = todayStr(); const rows = [];
   let pr = periodOf(dates[0]);
@@ -7938,7 +8092,7 @@ function renderWorkers(){
     const card = btn.closest('.list-card'); if(!card) return;
     const bar = document.createElement('div'); bar.className = 'lc-actions'; bar.style.marginTop = '6px';
     const mk = (k, label)=> `<button class="lc-btn" data-wui="${k}" style="${wUi[w.id]===k?'background:#d1fae5;':''}">${label}</button>`;
-    const _du = calcAllUnpaid(w); bar.innerHTML = mk('pay','💸 أداء 15 يوم' + (_du ? ' (' + _du.rows.length + ')' : '')) + mk('log','📜 سجل الأداءات') + mk('extraday','➕ يوم إضافي') + mk('extrahours','⏱ ساعات إضافية');
+    const _du = calcAllUnpaid(w); bar.innerHTML = mk('pay','💸 أداء 15 يوم' + (_du ? ' (' + _du.rows.length + ')' : '')) + mk('extrapay','💰 أداء الإضافي' + (unpaidExtras(w).length ? ' (' + unpaidExtras(w).length + ')' : '')) + mk('log','📜 سجل الأداءات') + mk('extraday','➕ يوم إضافي') + mk('extrahours','⏱ ساعات إضافية');
     const host = document.createElement('div');
     card.appendChild(bar); card.appendChild(host);
     bar.querySelectorAll('[data-wui]').forEach(b=> b.onclick = ()=>{ wUi[w.id] = (wUi[w.id]===b.dataset.wui) ? null : b.dataset.wui; renderWorkers(); });
@@ -7967,14 +8121,38 @@ function renderWorkers(){
           const l = loadWPayments(); all.rows.forEach((r,i)=> l.push(rec(r.pr, r.c, i))); saveWPayments(l); renderWorkers();
         };
       }
+    }else if(mode === 'extrapay'){
+      const ux = unpaidExtras(w);
+      const dm = d=> d.split('-').reverse().join('/');
+      const amt = x=> workerCalc(w, [], [x], 0, false).total;
+      if(!ux.length){ host.innerHTML = '<span style="color:var(--ink-soft); font-size:12.5px;">✅ ما كاين حتى يوم أو ساعات إضافية غير مؤدّاة. سجّلهم بالأزرار ➕ يوم إضافي / ⏱ ساعات إضافية.</span>'; }
+      else{
+        const sumAll = ux.reduce((t,x)=> t + amt(x), 0);
+        host.innerHTML = ux.map((x,i)=>`<div class="lc-row" style="border-top:${i?'1px solid var(--line)':'0'}; padding:8px 0; align-items:center;"><div class="lc-body" style="font-size:12.5px; line-height:1.7;"><b dir="ltr" style="display:block;text-align:right;">${x.kind==='day' ? '➕ '+x.qty+' يوم إضافي' : '⏱ '+x.qty+' ساعة إضافية'} — ${dm(x.date)}</b>${x.note ? '<span style="font-size:11.5px; color:var(--ink-soft);">'+escapeHtml(x.note)+'</span>' : ''}</div><button class="btn-primary" data-payex="${i}" style="flex:0 0 auto; width:auto; padding:9px 12px; font-size:12.5px;">💸 أدّي ${money(amt(x))}</button></div>`).join('') +
+          (ux.length > 1 ? `<button class="btn-ghost" id="exAll_${w.id}" style="margin-top:8px; width:100%;">📆 أدّي كل الإضافي (${money(sumAll)})</button>` : '');
+        const payExtras = list=>{
+          const sel = list.map(x=> ({x, c: workerCalc(w, [], [x], 0, false)}));
+          const tot = Math.round(sel.reduce((t,r)=> t + r.c.total, 0)*100)/100;
+          if(tot <= 0) return;
+          if(!confirm('تأكيد أداء الإضافي لـ ' + w.name + ' : ' + money(tot) + ' ؟')) return;
+          const dates = sel.map(r=>r.x.date).sort();
+          const l = loadWPayments();
+          l.push({id:'wp'+Date.now(), workerId:w.id, projectId:w.projectId||'', from:dates[0], to:dates[dates.length-1], extrasOnly:true, extraIds: sel.map(r=>r.x.id),
+            days:0, base:0, extraDays: sel.reduce((t,r)=>t+r.c.extraDays,0), extraDaysAmt: sel.reduce((t,r)=>t+r.c.extraDaysAmt,0), otHours: sel.reduce((t,r)=>t+r.c.otHours,0), otAmt: sel.reduce((t,r)=>t+r.c.otAmt,0), total: tot, paidAt: today, periods:0});
+          saveWPayments(l);
+          wUi[w.id] = 'log'; renderWorkers();
+        };
+        host.querySelectorAll('[data-payex]').forEach(b=> b.onclick = ()=> payExtras([ux[+b.dataset.payex]]));
+        const ab = host.querySelector('#exAll_'+w.id); if(ab) ab.onclick = ()=> payExtras(ux);
+      }
     }else if(mode === 'log'){
       const pays = loadWPayments().filter(x=>x.workerId===w.id).sort((a,b)=> b.paidAt.localeCompare(a.paidAt) || b.from.localeCompare(a.from));
       const exs = loadExtras().filter(x=>x.workerId===w.id).sort((a,b)=> b.date.localeCompare(a.date));
       const dm = d=> d.split('-').reverse().join('/');
       host.innerHTML = `<div style="font-size:12px; font-weight:700; margin-bottom:4px;">📜 الأداءات (المجموع: ${money(pays.reduce((s,x)=>s+x.total,0))})</div>` +
-        (pays.length ? pays.map(x=>`<div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><div class="lc-body"><span dir="ltr" style="display:block;text-align:right;">${dm(x.from)} → ${dm(x.to)} — <b>${money(x.total)}</b></span><span style="font-size:11px;color:var(--ink-soft);">أدّيت ${dm(x.paidAt)} · حضور ${x.days} · إضافي ${x.extraDays} يوم + ${x.otHours} س${x.periods ? ' · ' + x.periods + ' فترة' : ''}</span></div><button class="lc-del" data-wpdel="${x.id}">🗑</button></div>`).join('') : '<div class="empty-hint" style="padding:6px;">ما كاين حتى أداء مسجل.</div>') +
+        (pays.length ? pays.map(x=>`<div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><div class="lc-body"><span dir="ltr" style="display:block;text-align:right;">${dm(x.from)} → ${dm(x.to)} — <b>${money(x.total)}</b></span><span style="font-size:11px;color:var(--ink-soft);">أدّيت ${dm(x.paidAt)} · ${x.extrasOnly ? '💰 أداء الإضافي فقط' : 'حضور ' + x.days} · إضافي ${x.extraDays} يوم + ${x.otHours} س${x.periods ? ' · ' + x.periods + ' فترة' : ''}</span></div><button class="lc-del" data-wpdel="${x.id}">🗑</button></div>`).join('') : '<div class="empty-hint" style="padding:6px;">ما كاين حتى أداء مسجل.</div>') +
         `<div style="font-size:12px; font-weight:700; margin:12px 0 4px;">⏱ الأيام والساعات الإضافية</div>` +
-        (exs.length ? exs.map(x=>`<div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><div class="lc-body"><span dir="ltr" style="display:block;text-align:right;">${dm(x.date)} — ${x.kind==='day'?x.qty+' يوم إضافي':x.qty+' ساعة إضافية'}${x.note?' — '+escapeHtml(x.note):''}</span></div><button class="lc-del" data-exdel="${x.id}">🗑</button></div>`).join('') : '<div class="empty-hint" style="padding:6px;">ما كاين إضافي مسجل.</div>');
+        (exs.length ? exs.map(x=>`<div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><div class="lc-body"><span dir="ltr" style="display:block;text-align:right;">${dm(x.date)} — ${x.kind==='day'?x.qty+' يوم إضافي':x.qty+' ساعة إضافية'}${x.note?' — '+escapeHtml(x.note):''}${paidExtraIds().has(x.id)?' ✅ مؤدّى':''}</span></div><button class="lc-del" data-exdel="${x.id}">🗑</button></div>`).join('') : '<div class="empty-hint" style="padding:6px;">ما كاين إضافي مسجل.</div>');
       host.querySelectorAll('[data-wpdel]').forEach(b=> b.onclick = ()=>{ if(!confirm('مسح هاد الأداء من السجل؟')) return; saveWPayments(loadWPayments().filter(x=>x.id!==b.dataset.wpdel)); renderWorkers(); });
       host.querySelectorAll('[data-exdel]').forEach(b=> b.onclick = ()=>{ saveExtras(loadExtras().filter(x=>x.id!==b.dataset.exdel)); renderWorkers(); });
     }else{
@@ -8440,9 +8618,13 @@ function decideOpenSetupModal(){
    - كل 60 ثانية (والتطبيق مفتوح وظاهر): نجيبو آخر تحديثات جاو من الجهاز الآخر.
    - أول ما ترجعي للتطبيق (بدّلتي من تطبيق آخر أو جهاز آخر): نجيبو آخر نسخة فوري.
    - قبل ما التطبيق يتخبى أو يتسد: نرفعو أي تعديلات محلية معلقة فوري (بلا انتظار 2.5 ثانية). */
-function refreshCloudSyncResultNote(status){
+function refreshCloudSyncResultNote(status, detail){
   const note = document.getElementById('cloudSyncResult');
   if(status === 'ok' && note){ note.textContent = '✅ تم تحديث البيانات من السحابة.'; note.style.color = '#2e7d32'; }
+  if(status === 'blocked'){
+    if(note){ note.textContent = '🛡️ ' + (detail || 'السحب متوقف حماية للبيانات.'); note.style.color = '#b45309'; }
+    if(!window._pullBlockedShown){ window._pullBlockedShown = true; try{ messages.push({role:'model', text:'🛡️ ' + (detail || 'السحب من السحابة متوقف حماية لبياناتك.'), time:Date.now()}); renderMessages(); saveHistory(); }catch(e){} }
+  }
 }
 
 let cloudAutoSyncLoopStarted = false;
