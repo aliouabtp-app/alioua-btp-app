@@ -1747,6 +1747,10 @@ const DurableStore = (function(){
   const secureOn = () => NLS.getItem(SECURE_FLAG) === '1';
   const b64 = u8 => { let s=''; u8.forEach(b=>s+=String.fromCharCode(b)); return btoa(s); };
   const unb64 = t => Uint8Array.from(atob(t), c=>c.charCodeAt(0));
+  // توافق مع الفورمات القديمة: النسخة القديمة كانت كتخزن iv/ct/salt كـ Uint8Array فـ IndexedDB، والجديدة base64
+  const toU8 = x => (x instanceof Uint8Array) ? x : (x instanceof ArrayBuffer) ? new Uint8Array(x) : (typeof x === 'string') ? unb64(x) : new Uint8Array(x);
+  const toB64 = x => (typeof x === 'string') ? x : b64(toU8(x));
+  const normMeta = m => ({salt: toB64(m.salt), check: {iv: toB64(m.check.iv), ct: toB64(m.check.ct)}});
 
   async function deriveKey(pin, salt){
     const km = await crypto.subtle.importKey('raw', enc.encode(String(pin)), 'PBKDF2', false, ['deriveKey']);
@@ -1758,7 +1762,7 @@ const DurableStore = (function(){
     return {iv: b64(iv), ct: b64(ct)};
   }
   async function unseal(rec, k){
-    return dec.decode(await crypto.subtle.decrypt({name:'AES-GCM', iv: unb64(rec.iv)}, k, unb64(rec.ct)));
+    return dec.decode(await crypto.subtle.decrypt({name:'AES-GCM', iv: toU8(rec.iv)}, k, toU8(rec.ct)));
   }
 
   const idb = (function(){
@@ -1824,7 +1828,7 @@ const DurableStore = (function(){
 
   const META_BACKUP_KEY = 'alioua_btp_meta_v3';
   function saveMetaBackup(meta){
-    try{ NLS.setItem(META_BACKUP_KEY, JSON.stringify(meta)); }catch(e){}
+    try{ NLS.setItem(META_BACKUP_KEY, JSON.stringify(normMeta(meta))); }catch(e){}
   }
   function loadMetaBackup(){
     try{ const r = NLS.getItem(META_BACKUP_KEY); return r ? JSON.parse(r) : null; }catch(e){ return null; }
@@ -1918,7 +1922,7 @@ const DurableStore = (function(){
     key(i){ return this.keys()[i] ?? null; },
 
     async verifyPin(pin){
-      try{ const meta = await getMetaWithFallback(); if(!meta) return false; const k = await deriveKey(pin, unb64(meta.salt)); await unseal(meta.check, k); return true; }
+      try{ const meta = await getMetaWithFallback(); if(!meta) return false; const k = await deriveKey(pin, toU8(meta.salt)); await unseal(meta.check, k); return true; }
       catch(e){ return false; }
     },
 
@@ -1927,7 +1931,7 @@ const DurableStore = (function(){
       if(!meta){ meta = loadMetaBackup(); if(meta){ try{ await idb.setMeta({salt: meta.salt, check: meta.check}); }catch(e){} } }
       if(!secureOn() && meta){
         let k;
-        try{ k = await deriveKey(pin, unb64(meta.salt)); await unseal(meta.check, k); }
+        try{ k = await deriveKey(pin, toU8(meta.salt)); await unseal(meta.check, k); }
         catch(e){ throw new Error('BADPIN'); }
         const rows = await idb.getAll();
         for(const r of rows){ try{ mem.set(r.k, await unseal(r, k)); }catch(e){} }
@@ -1939,7 +1943,7 @@ const DurableStore = (function(){
       }
       if(secureOn() && meta){
         let k;
-        try{ k = await deriveKey(pin, unb64(meta.salt)); await unseal(meta.check, k); }
+        try{ k = await deriveKey(pin, toU8(meta.salt)); await unseal(meta.check, k); }
         catch(e){ throw new Error('BADPIN'); }
         const idbRows = await idb.getAll();
         const idbMap = new Map(); idbRows.forEach(r=> idbMap.set(r.k, r));
