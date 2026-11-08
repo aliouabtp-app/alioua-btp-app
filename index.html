@@ -813,6 +813,19 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   cursor:pointer;
 }
 
+#attachPreview{ gap:6px; flex-wrap:wrap; }
+.attach-thumb.pdf{
+  width:84px; background:var(--stone); color:var(--navy);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  padding:4px 4px 2px; box-sizing:border-box;
+}
+.attach-thumb.pdf .pdf-ic{ font-size:20px; line-height:1; }
+.attach-thumb.pdf .pdf-nm{ font-size:9px; line-height:1.2; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:ltr; }
+.msg.user .msg-file{
+  display:flex; align-items:center; gap:6px; max-width:220px;
+  background:rgba(255,255,255,.18); border-radius:10px; padding:6px 10px; margin-bottom:6px;
+  font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:ltr;
+}
 .msg.user .msg-img{
   max-width:220px;
   border-radius:12px;
@@ -1224,7 +1237,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 }
 
 </style>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -1283,8 +1296,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
     <div id="chat"></div>
     <div id="attachPreview"></div>
     <div id="inputbar">
-      <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
-      <button id="attachBtn" title="إرفاق صورة">
+      <input type="file" id="fileInput" accept="image/*,application/pdf,.pdf" multiple style="display:none;">
+      <button id="attachBtn" title="إرفاق صورة أو ملف PDF">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
       </button>
       <textarea id="msgInput" rows="1" placeholder="اكتب رسالتك هنا..."></textarea>
@@ -1652,6 +1665,13 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
       <p class="mini-title" style="margin-bottom:8px;">🧠 مفتاح Cerebras احتياطي (اختياري، مجاني، نص فقط)</p>
       <input type="text" id="cerebrasKeyInput" placeholder="csk-...">
       <p style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">احتياطي ثاني للأسئلة النصية إذا Groq وصل لحدو. ما كيدعمش الصور. مجاني بلا بطاقة بنكية، من <a href="https://cloud.cerebras.ai" target="_blank">cloud.cerebras.ai</a>.</p>
+    </div>
+
+    <div style="margin-top:14px;">
+      <p class="mini-title" style="margin-bottom:8px;">🎙️ تفريغ الدارجة عبر Hugging Face (اختياري)</p>
+      <input type="text" id="hfUrlInput" placeholder="رابط النموذج HF_API_URL (https://...)" style="margin-bottom:6px;">
+      <input type="text" id="hfKeyInput" placeholder="hf_... (HF_API_KEY)">
+      <p style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">إذا ضفتهم، يونس كيفرّغ الصوت (الرسائل الصوتية والمحادثة) بهاد النموذج أولاً، وإذا فشل كيدوز لـ Gemini ثم Groq. الصوت كيتبعث WAV بمعدل 16kHz.</p>
     </div>
 
     <div style="margin-top:14px;">
@@ -2169,7 +2189,16 @@ const STORAGE_KEY = 'alioua_btp_api_key';
 const GROQ_STORAGE_KEY = 'alioua_btp_groq_key';
 const CEREBRAS_STORAGE_KEY = 'alioua_btp_cerebras_key';
 const HISTORY_KEY = 'alioua_btp_chat_history';
-const MODEL = 'gemini-3.5-flash';
+const MODEL = 'gemini-2.5-pro';
+const PRO_MODEL = 'gemini-2.5-pro'; // كيتجرب أولاً لتحليل البلانات (إلا ما تاحش، كنرجعو لـ MODEL)
+// نسب الحديد كلغ/م³ بيتون (تقديرية شائعة، كتتبدل بـ "acier" فالعنصر؛ مكتب الدراسات هو المرجع النهائي)
+const METRE_STEEL = { semelle_isolee:70, semelle_filante:60, longrine:110, poteau:160, poutre:130, chainage:120, voile:90, dalle_pleine:100, escalier:110 };
+const METRE_LABEL = {
+  terrassement:'حفر (terrassement)', beton_proprete:'بيتون النظافة', semelle_isolee:'أساس معزول', semelle_filante:'أساس مستمر',
+  longrine:'longrine', poteau:'عمود', poutre:'كمرة', chainage:'chaînage', voile:'voile بيتون', dalle_pleine:'دالة مسلحة',
+  dallage:'dallage', dalle_hourdis:'سقف hourdis', escalier:'درج', mur_brique:'جدار طوب', cloison:'حاجز طوب',
+  enduit:'enduit', carrelage:'تبليط', faience:'faïence', etancheite:'عزل (étanchéité)', peinture:'صباغة', divers:''
+};
 const FALLBACK_MODEL = 'gemini-2.5-flash';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
@@ -2189,53 +2218,55 @@ const modalErr = document.getElementById('modalErr');
 const modalDesc = document.getElementById('modalDesc');
 const modalTitle = document.getElementById('modalTitle');
 
-const SYSTEM_PROMPT = `اسمك "يونس"، وأنت المساعد الذكي والمهندس الخبير الخاص بـ "ALIOUA BTP"، شركة بناء وأشغال عمومية (BTP) مغربية. أنت بمثابة المهندس والمدير التقني والإداري ديال الشركة، وكتفهم فـ البناء، المحاسبة، والتقارير. إلا ناداك المستخدم باسم يونس، جاوبو بشكل طبيعي إنك يونس.
+const SYSTEM_PROMPT = `أنت "يونس"، المساعد الشخصي والمستشار الخبير للمدير العام لشركة "ALIOUA BTP" (بناء وأشغال عمومية بالمغرب).
+أنت ماشي شات بوت عادي، أنت خبير ومهندس ومحاسب ومحامي. كتهضر بالدارجة المغربية، وكتعطي الحلول مباشرة بلا لف ودوران.
 
-مهمتك الأساسية هي مساعدة مسير الشركة فـ **كلشي** كيتعلق بالخدمة:
-1. حساب الكميات (Métré): التبنيات، الخرسانة، الحديد، الصباغة، إلخ.
-2. تحليل المخططات والبلانات (قراءة الأبعاد وحساب المساحات والكميات).
-3. المحاسبة: جمع المصاريف، حساب المداخيل، الفواتير، وتلخيص الأرباح.
-4. صياغة التقارير: تقارير تقدم الأشغال، تقارير للموردين، مراسلات إدارية.
-5. إدارة المشاريع: تتبع الأجراء، المواد، والمواعيد.
+## 🚨 القواعد الذهبية (إلزامية):
+1. **جاوب، ما تسولش**: المستخدم كيبغي النتيجة. إلا كان ناقص شي معلومة بسيطة، افترضها، قول "على أساس فرضية..."، وأعطي الجواب النهائي. عمرك ما تقول "عطيني المعطيات" ولا "واش تقصد". إلا كان السؤال غامض، خد التفسير الأكثر منطقية فـ سياق البناء والمحاسبة وجاوب.
+2. **أنت الخبير**: ما تقولش "روح للمحاسب" ولا "استشر المهندس". أنت هو المهندس والمحاسب والمحامي. عطي الحسابات والقوانين بالمرجع المغربي (PCGE، مدونة الشغل، CGI، TVA...). إلا ما كنتيش متأكد من رقم مادة ولا نسبة ولا ثمن، قول "تقريباً/حسب علمي، خاصو تأكيد من النص الرسمي" وما تخترعش. النسب والأثمنة كتتبدل: إلا عندك بحث فالويب استعملو.
+3. **الوثائق والصور**: إلا صيفط ليك المستخدم PDF أو صورة أو بلان، قراه مباشرة وحللو صفحة صفحة (السلم، الأبعاد، الجداول). ما تقولش "ما قريتهاش" ولا "بعثها واضحة". خد الأرقام المكتوبة فقط وما تقيسش بالعين.
+4. **بلا حشو**: ماتكتبش مقدمات طويلة بحال "أهلاً بك، يسعدني مساعدتك...". ادخل فـ الموضوع دغيا.
+5. **ما تخترعش أرقام**: كل رقم لازم يجي من البلان، من كلام المستخدم، من "بيانات الشركة" المتوفرة ليك تحت الرسالة (هي المصدر الرسمي، استعملها مباشرة بلا ما تسول المستخدم)، أو من قاعدة قانونية/محاسبية معروفة.
 
-**قواعد صارمة جداً (خاصك تتبعها حرفياً):**
-- **اللغة:** جاوب دائماً بالدارجة المغربية الطبيعية 100% (بحال ما كيهضر مغربي: بغيت، دابا، واش، كاين، شنو، فين، شحال، غادي، ديال). ممنوع تماماً تستعمل الإنجليزية أو الفرنسية فـ كلامك مع المستخدم، إلا المصطلحات التقنية بحال Béton, Double Cloison, Métré, facture. الاستثناء الوحيد: المستندات الرسمية (فاتورة، عقد، رسالة رسمية) كتكتبها بالفرنسية أو العربية الفصحى المبسطة إلا طلبها المستخدم، وكتشرح ليه بالدارجة.
-- **الحسابات والبلانات:** إلا صيفط ليك المستخدم تصويرة ديال بلان أو طلب منك تحسب شي حاجة، **ممنوع تماماً** تكتب "خطة العمل" ديالك أو تشرح كيفاش غادي تحسب بالإنجليزية أو الفرنسية (متل Explain, Break down, Assumption). دير الحساب ديريكت بالدارجة، **خطوة بخطوة** (كل عملية بأرقامها)، وفالأخير عطي النتيجة النهائية واضحة.
-- **قراءة البلان:** قرا غير الأرقام الظاهرة فالصورة بوضوح. ممنوع تخمن قياس مابانش (سمك الحيط، الارتفاع، العمق...). إلا كانت المعطيات ناقصة، وقف وسول المستخدم بالدارجة (مثلاً: "عطيني سمك الحيط والارتفاع باش نحسب ليك"). إلا كانت الصورة مشوشة أو جزء منها مقطوع، قولها صراحة وعطي تقدير بمجال (بحال "بين 40 و 50") وطلب صورة أوضح.
-- **عد الأشياء فالصور:** إلا طلب منك تعد مواد أو أشياء فصورة، قسّمها لمجموعات صغيرة (صفوف، طبقات، أكوام)، احسب كل مجموعة، ثم اجمعهم.
-- **المحاسبة:** إلا عطاك أرقام ديال المصاريف أو المداخيل، حسبها ليه وجمعها وطرح وعطيه الصافي، وقولو ليه فين خاصو يقلب على الربح. راجع جموعك مرتين قبل ما تعطي الجواب.
-- **بيانات الشركة الحالية:** إلا توفرات ليك "بيانات الشركة الحالية" تحت رسالة المستخدم (موردين، عملاء، مصاريف، سيولة، مشاريع، أجراء)، اعتبرها المصدر الرسمي والدقيق، واستعملها مباشرة فـ الحساب والتقارير بلا ما تسول المستخدم يعطيك الأرقام يدويًا.
-- **التقارير:** إلا طلب منك تقرير، نظمو ليه فـ جداول مفهومة (Markdown) ولا فـ كتلة report.
-- **الفواتير:** إلا طلب منك فاتورة، عطيه تفاصيل الحساب بوضوح (الكمية × الثمن، المجموع بدون ضريبة، TVA، المجموع بالضريبة).
-- **الأرقام:** لا تخترع أرقامًا أو حقائق عن الشركة إن لم تُعطَ لك.
+## 🗣️ اللغة والتنسيق:
+- **الدارجة المغربية** هي الأساس فـ الحوار (ماشي فصحى، ماشي مصرية).
+- **الفرنسية/العربية الفصحى** فـ المصطلحات التقنية والقانونية (Béton, TVA, المادة 16) وفـ الفواتير والعقود والمراسلات الرسمية.
+- **ممنوع LaTeX**: ماشي \\( ولا \\times ولا m^2. استعمل × و ² و ³ مباشرة.
+- استعمل **جداول Markdown** للبيانات والقوائم، حيت التطبيق كيعرضها بشكل زوين.
+- الأرقام بالأرقام (0-9).
 
-**قوانين هندسية أساسية (استعملها فـ الحساب، وإلا عطاك المستخدم قياسات أو نسب مختلفة استعمل ديالو):**
-- المتر المكعب ديال الخرسانة (Béton) كياخد 350 كيلو سيمان (7 صاكة ديال 50 كيلو)، تقريباً 400 لتر ديال الرمل و800 لتر ديال الحصى و175 لتر ديال الما.
-- المتر المربع ديال الطوب (الحيط) كياخد تقريباً 12.5 حجرة (حسب مقاس الحجرة).
-- الحجم = الطول × العرض × الارتفاع. مساحة الحيط = الطول × الارتفاع، وكتنقص منها الأبواب والنوافذ.
-- زيد 5% حتى 10% ديال الضياع فـ المواد، وقول هاد النسبة للمستخدم.
+## 🧮 الحسابات (BTP والمحاسبة):
+دائماً ورّي الخطوات: 1) المعادلة 2) التعويض بالأرقام 3) النتيجة مع الوحدة (m³, m², Dh) 4) تعليق قصير.
+فـ الخرسانة: فصّل كل عنصر على حدة (Dalle, Longrine, Chaînage, Poteau, Semelle...) وحسب الحجم ديالو، ومن بعد جمعهم. ما تبداش بالحجم الإجمالي.
 
-**ميزات التطبيق (خاصك تستعملهم بالضبط بهاد الشكل، وJSON صحيح جوّاهم):**
-- إلا كان الجواب فيه أرقام للمقارنة (مصاريف، كميات، تقدم مشروع)، استعمل الرسم البياني. النوع يكون "bar" أو "line" أو "pie":
+## 📚 مراجع ثابتة (استعملها):
+- حسابات PCGE: 3421 عملاء، 4411 موردون، 5141 بنك، 5161 صندوق، 3455 TVA récupérable، 4455 TVA facturée. الباقي سميه بالاسم وقل "تأكد من الرقم فـ PCGE".
+- TVA: 20% و10%. IS (2026): 20% إلا كان الربح أقل من 100 مليون Dh، 35% من 100 مليون فما فوق. IR: 0% حتى 40,000 Dh، 10% (40,001–60,000)، 20% (60,001–80,000)، 30% (80,001–100,000)، 34% (100,001–180,000)، 37% فوق 180,000.
+- CNSS (2026): الأجير 6.74% (4.48% مسقوفة فـ 6,000 Dh + 2.26% AMO)، المشغل حوالي 21.09%. التصريح قبل 10 من الشهر الموالي.
+- قوانين: مدونة الشغل 65-99، DOC 1913، التحفيظ 14-07، التعمير 12-90، التجزئات 25-90، 44-00 (VEFA)، الصفقات العمومية مرسوم 2-22-431، الشركات 17-95 و5-96، المقاولة الذاتية 114-13، التحكيم 95-17.
+- الجواب القانوني: الجواب المباشر + المرجع (القانون/المادة) + الإجراء العملي + التحذير إلا كان.
+
+## 🛠️ الأدوات التقنية (لازم تتبع الصيغة بالحرف، كل كتلة بسطر لحالها وJSON صحيح):
+- **رسم بياني** (type: bar أو line أو pie، وما تستعملو إلا إلا كان كيخدم الطلب):
 \`\`\`chart
-{"type":"bar","title":"عنوان الرسم","labels":["يناير","فبراير"],"datasets":[{"label":"المصاريف","data":[1200,1500]}]}
+{"type":"bar","title":"...","labels":["..."],"datasets":[{"label":"...","data":[0]}]}
 \`\`\`
-- إلا طلب منك تقرير قابل للتحميل (Excel/PDF/Word) استعمل (formats اختياري، افتراضياً excel وpdf، وزيد word إلا طلبو المستخدم):
+- **تقرير للتحميل** (كلما طلب "تقرير" ولا ملف Excel/PDF/Word؛ formats افتراضياً ["excel","pdf"] وزيد "word" إلا طلبو):
 \`\`\`report
-{"title":"عنوان التقرير", "columns":["عمود1","عمود2"], "rows":[["قيمة1","قيمة2"]], "summary":"ملخص أو مجموع اختياري", "formats":["excel","pdf"]}
+{"title":"...","columns":["..."],"rows":[["..."]],"summary":"...","formats":["excel","pdf"]}
 \`\`\`
-بعد الكتلة، قول ليه بجملة قصيرة إن التقرير واجد للتحميل.
-- إلا طلب منك تضيف موعد أو تذكير ("ذكرني"، "ضيف موعد"، "عندي اجتماع يوم..."): استعمل التاريخ الحالي المعطى لك تحت باش تحسب "غدا" و"بعد غد" وأسماء الأيام. إلا التاريخ أو الوقت ماواضحينش، سولو قبل. ومن بعد أكد ليه بجملة قصيرة:
+- **موعد/تذكير** (استعمل التاريخ ديال اليوم لحساب "غدا"، "بعد غد"، أسماء الأيام. إلا كانو عدة مواعيد فجدول، كتلة منفصلة لكل موعد بلا تأكيد، وفالأخير جملة وحدة بالعدد):
 \`\`\`add_appointment
-{"title":"عنوان الموعد", "date":"YYYY-MM-DD", "time":"HH:MM", "notes":"ملاحظات اختيارية"}
+{"title":"...","date":"YYYY-MM-DD","time":"HH:MM","notes":"..."}
 \`\`\`
-- إلا بعث ليك جدول أو لائحة فيها بزاف ديال المواعيد، ولّد كتلة add_appointment منفصلة لكل موعد فنفس الجواب بلا ما تسول فكل وحدة، وفالأخير لخص عددهم بجملة وحدة.
-- إلا طلب منك صورة أو تصور بصري ("ارسم ليا"، "صورة ديال..."، "تصميم")، استعمل هاد الشكل (الوصف داخل الكتلة خاص يكون بالإنجليزية، حيت كيمشي لمولد الصور، وباقي كلامك بالدارجة):
-\`\`\`image: detailed English description of the requested image
+- **صورة** (الوصف بالإنجليزية):
+\`\`\`image: English prompt for the image here
 \`\`\`
-لا تستعمل الرسم البياني ولا الصورة إلا إلا كانو كيخدمو الطلب فعلاً.
-
-خلي أسلوبك مهني، مباشر، ومختصر يناسب رجل أعمال مشغول.`;
+- **المتري (كميات المواد)**: ما تحسبش الكميات بالذهن، التطبيق هو اللي كيحسب (إسمنت، حديد، طوب...) مع هدر 5%. غير ولّد كتلة وحدة، الأبعاد بالمتر والمساحات بالمتر المربع، وبعدها جملة وحدة إن الجدول جاهز. ما تكتبش نتائج المواد بيدك.
+\`\`\`metre
+{"projet":"...","hyp":["..."],"params":{"marge":5},"elements":[{"t":"semelle_isolee","nom":"S1","n":12,"L":1.2,"l":1.2,"h":0.4},{"t":"dalle_pleine","nom":"...","L":10,"l":8,"e":0.15}]}
+\`\`\`
+  الأنواع t: terrassement(L,l,h) | beton_proprete(S أو L,l وe) | semelle_isolee، semelle_filante، longrine، poteau، poutre، chainage (n,L,l,h؛ فالعمود L وl هوما المقطع وh الارتفاع) | voile(L,h,e) | dalle_pleine، dallage، dalle_hourdis (S أو L,l، وe السمك) | escalier(V) | mur_brique، cloison (L,h أو S، ouv=مساحة الفتحات، e) | enduit، carrelage، faience، etancheite (S) | peinture(S,couches) | divers(nom,q,u). تقدر تعوض الأبعاد بـ S (م²) أو V (م³). n = عدد العناصر المتشابهة، كل عنصر كتكتبو مرة وحدة (مثلاً 6 longrines بطول 9.96: عنصر واحد n=6).`;
 
 let messages = []; // {role: 'user'|'model', text, time}
 
@@ -2310,6 +2341,12 @@ function getGroqKey(){ return LS.getItem(GROQ_STORAGE_KEY) || ''; }
 function setGroqKey(k){ safeSetItem(GROQ_STORAGE_KEY, k); }
 function getCerebrasKey(){ return LS.getItem(CEREBRAS_STORAGE_KEY) || ''; }
 function setCerebrasKey(k){ safeSetItem(CEREBRAS_STORAGE_KEY, k); }
+// Hugging Face (تفريغ الدارجة): HF_API_KEY + HF_API_URL كيتحفظو فالإعدادات ⚙️ بحال باقي المفاتيح
+const HF_KEY_STORAGE = 'alioua_btp_hf_key', HF_URL_STORAGE = 'alioua_btp_hf_url';
+function getHfKey(){ return LS.getItem(HF_KEY_STORAGE) || ''; }
+function setHfKey(k){ safeSetItem(HF_KEY_STORAGE, k); }
+function getHfUrl(){ return LS.getItem(HF_URL_STORAGE) || ''; }
+function setHfUrl(u){ safeSetItem(HF_URL_STORAGE, u); }
 // تنظيف: مسح مفاتيح Kimi/OpenRouter وMistral القديمة نهائيًا من هاد الجهاز
 try{ LS.removeItem('alioua_btp_openrouter_key'); LS.removeItem('alioua_btp_mistral_key'); }catch(e){}
 function loadHistory(){
@@ -2384,9 +2421,9 @@ function renderMessages(){
     if(m.role === 'user'){
       let imgHtml = '';
       if(m.images && m.images.length){
-        imgHtml = '<div class="msg-img-grid">' + m.images.map(img=>`<img class="msg-img" src="data:${img.mime};base64,${img.data}">`).join('') + '</div>';
+        imgHtml = '<div class="msg-img-grid">' + m.images.map(_attHtml).join('') + '</div>';
       }else if(m.image){
-        imgHtml = `<img class="msg-img" src="data:${m.image.mime};base64,${m.image.data}">`;
+        imgHtml = _attHtml(m.image);
       }
       if(m.voice && window.VN){
         div.innerHTML = imgHtml;
@@ -2412,10 +2449,26 @@ function escapeHtml(str){
   return d.innerHTML;
 }
 
+/* مسح رموز LaTeX اللي التطبيق ما كيدعمهاش (حتى إلا غلط الموديل وكتبها) */
+function stripLatex(t){
+  return String(t)
+    .replace(/\\text\{([^}]*)\}/g, '$1')
+    .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1/$2)')
+    .replace(/\\(times|cdot)\b/g, '×')
+    .replace(/\\div\b/g, '÷')
+    .replace(/\\approx\b/g, '≈')
+    .replace(/\\(left|right)\b/g, '')
+    .replace(/\\[()\[\]]/g, '')
+    .replace(/\\[;,!:]/g, ' ')
+    .replace(/\\%/g, '%')
+    .replace(/\^\{?2\}?/g, '²')
+    .replace(/\^\{?3\}?/g, '³');
+}
+
 /* ---------- عرض غني: نص + جداول + رسوم بيانية + صور + مواعيد ---------- */
 function renderRichBotContent(container, rawText){
   // نقسم النص لأجزاء: كتل chart، كتل image، كتل add_appointment، وبقية النص
-  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```report\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)/g;
+  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```report\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)|```metre\s*([\s\S]*?)```/g;
   let lastIndex = 0;
   let match;
   const parts = [];
@@ -2424,6 +2477,7 @@ function renderRichBotContent(container, rawText){
     if(match[1] !== undefined){ parts.push({type:'chart', content: match[1].trim()}); }
     else if(match[2] !== undefined){ parts.push({type:'add_appointment', content: match[2].trim()}); }
     else if(match[3] !== undefined){ parts.push({type:'report', content: match[3].trim()}); }
+    else if(match[6] !== undefined){ parts.push({type:'metre', content: match[6].trim()}); }
     else{ parts.push({type:'image', content: (match[4] !== undefined ? match[4] : match[5]).trim()}); }
     lastIndex = blockRegex.lastIndex;
   }
@@ -2432,13 +2486,15 @@ function renderRichBotContent(container, rawText){
 
   parts.forEach(part=>{
     if(part.type === 'text'){
-      appendTextWithTables(container, part.content);
+      appendTextWithTables(container, stripLatex(part.content));
     }else if(part.type === 'chart'){
       appendChart(container, part.content);
     }else if(part.type === 'add_appointment'){
       appendAppointmentAction(container, part.content);
     }else if(part.type === 'report'){
       appendReportAction(container, part.content);
+    }else if(part.type === 'metre'){
+      try{ appendMetreCard(container, part.content); }catch(e){ appendTextWithTables(container, '⚠️ تعذر عرض جدول المتري.'); }
     }else if(part.type === 'image'){
       appendImage(container, part.content);
     }
@@ -2450,11 +2506,26 @@ function appendTextWithTables(container, text){
   let buffer = [];
   let tableLines = [];
 
+  function _mdInline(s){
+    // s مهرّب (escaped) من قبل: كنزيدو غير وسوم مسموحة
+    return s
+      .replace(/`([^`\n]+)`/g, '<code style="background:rgba(127,127,127,.18);padding:0 4px;border-radius:4px;font-family:\'IBM Plex Mono\',monospace;font-size:.92em">$1</code>')
+      .replace(/\*\*(?=\S)([^\n]+?)(?<=\S)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[\s(])_(?=\S)([^_\n]+?)(?<=\S)_(?=$|[\s).,:;!?،])/g, '$1<em>$2</em>');
+  }
   function flushText(){
     if(buffer.length === 0) return;
+    const html = buffer.map(line=>{
+      const esc = escapeHtml(line);
+      let m;
+      if((m = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(esc))) return '<div style="font-weight:700;margin:8px 0 2px">' + _mdInline(m[1]) + '</div>';
+      if(/^\s*([-*_])(\s*\1){2,}\s*$/.test(esc)) return '<hr style="border:0;border-top:1px solid rgba(127,127,127,.35);margin:8px 0">';
+      if((m = /^(\s*)[-*•]\s+(.+)$/.exec(esc))) return '<div style="padding-inline-start:' + (12 + Math.min(m[1].length, 8) * 4) + 'px;text-indent:-12px">• ' + _mdInline(m[2]) + '</div>';
+      return _mdInline(esc) + '<br>';
+    }).join('').replace(/(<br>)+$/,'');
     const span = document.createElement('div');
     span.setAttribute('dir', 'auto');
-    span.innerHTML = escapeHtml(buffer.join('\n')).replace(/\n/g,'<br>');
+    span.innerHTML = html;
     container.appendChild(span);
     buffer = [];
   }
@@ -2522,11 +2593,12 @@ function appendChart(container, jsonText){
 
   try{
     const cfg = JSON.parse(jsonText);
-    const palette = ['#1C6FA5','#7C241C','#D6AE4E','#4FA3D1','#5C1A14'];
+    const palette = ['#1C6FA5','#7C241C','#D6AE4E','#4FA3D1','#5C1A14','#2E8B57','#8E5BA8','#E07B39','#6B7B8C','#C2185B'];
+    const _sliced = cfg.type === 'pie' || cfg.type === 'doughnut';
     const datasets = (cfg.datasets||[]).map((d,i)=>({
       label:d.label || '',
       data:d.data || [],
-      backgroundColor: cfg.type==='line' ? 'rgba(28,111,165,.15)' : palette[i % palette.length],
+      backgroundColor: _sliced ? (d.data || []).map((_, k)=> palette[k % palette.length]) : (cfg.type==='line' ? 'rgba(28,111,165,.15)' : palette[i % palette.length]),
       borderColor: palette[i % palette.length],
       borderWidth: 2,
       tension:.3
@@ -2538,9 +2610,9 @@ function appendChart(container, jsonText){
         responsive:true,
         plugins:{
           title:{ display: !!cfg.title, text: cfg.title || '', font:{family:"'IBM Plex Sans Arabic'", size:13} },
-          legend:{ display: datasets.length > 1, labels:{font:{family:"'IBM Plex Sans Arabic'"}} }
+          legend:{ display: datasets.length > 1 || cfg.type === 'pie' || cfg.type === 'doughnut', labels:{font:{family:"'IBM Plex Sans Arabic'"}} }
         },
-        scales: cfg.type === 'pie' ? {} : {
+        scales: (cfg.type === 'pie' || cfg.type === 'doughnut') ? {} : {
           y:{ beginAtZero:true, ticks:{font:{family:"'IBM Plex Mono'"}} },
           x:{ ticks:{font:{family:"'IBM Plex Sans Arabic'"}} }
         }
@@ -2729,6 +2801,222 @@ async function gcalSyncPending(interactive){
 }
 
 /* ---------- توليد تقارير (Excel / PDF / Word) من رد يونس ---------- */
+/* ---------- محرك المتري: النموذج كيقرا الأبعاد من التصميم، والتطبيق هو اللي كيحسب (الذهن كيغلط فالحساب) ---------- */
+function _mNum(v){ if(v === null || v === undefined || v === '') return null; const x = parseFloat(String(v).replace(',', '.')); return isFinite(x) ? x : null; }
+function _mR(x){ return Math.round(x * 100) / 100; }
+function _mParse(txt){
+  try{ return JSON.parse(txt); }catch(e){}
+  try{ return JSON.parse(String(txt).replace(/,\s*([}\]])/g, '$1')); }catch(e){}
+  return null;
+}
+
+function computeMetre(data){
+  const P = Object.assign({ marge:5, dosage:350, dosage_mortier:350, sable_beton:0.4, gravier_beton:0.8, sable_mortier:1.1,
+    briques_m2:12.5, hourdis_m2:8, acier_hourdis_m2:7, couches:2, conso_peinture:0.125, perte_carrelage:10, ep_enduit:0.02 }, (data && data.params) || {});
+  Object.keys(P).forEach(k=>{ const v = _mNum(P[k]); if(v !== null) P[k] = v; });
+  const rows = [], warn = [], divers = [];
+  const T = { beton:0, proprete:0, acier:0, mortier:0, briques:0, hourdis:0, carrelage:0, faience:0, peinture:0, etanch:0, terr:0, treillis:0, enduit:0 };
+  const BA = ['semelle_isolee','semelle_filante','longrine','poteau','poutre','chainage'];
+  let cmFixes = 0;
+  const cm = (v, max)=>{ if(v !== null && v > max){ cmFixes++; return v / 100; } return v; };   // رقم كبير بزاف = غالباً بالسم
+  const f = (...a)=> a.filter(x=> x !== null && x !== undefined).map(_mR).join(' × ');
+
+  (data.elements || []).forEach(el=>{
+    if(!el || typeof el !== 'object') return;
+    const t = String(el.t || '').trim();
+    const nv = _mNum(el.n), n = nv !== null && nv > 0 ? nv : 1;
+    const nTxt = n !== 1 ? _mR(n) + ' × ' : '';
+    let L = _mNum(el.L), l = _mNum(el.l), h = _mNum(el.h), e = _mNum(el.e);
+    const S = _mNum(el.S), V = _mNum(el.V);
+    const nm = (el.nom ? el.nom + ' — ' : '') + (METRE_LABEL[t] !== undefined ? METRE_LABEL[t] : t);
+    const bad = why=>{ warn.push(nm + ': ' + why + ' — ما تحسبش.'); };
+    e = cm(e, 3);
+    const areaOf = ()=> S !== null ? S : (L !== null && l !== null ? L * l : null);
+
+    if(BA.includes(t)){
+      if(t === 'poteau'){ L = cm(L, 5); h = cm(h, 30); } else { L = cm(L, 300); h = cm(h, 5); }
+      l = cm(l, 5);
+      const vu = V !== null ? V : (L !== null && l !== null && h !== null ? L * l * h : null);
+      if(vu === null) return bad('أبعاد ناقصة (L وl وh)');
+      const vol = n * vu;
+      const ratio = _mNum(el.acier) !== null ? _mNum(el.acier) : METRE_STEEL[t];
+      const kg = _mNum(el.kg) !== null ? _mNum(el.kg) : vol * ratio;
+      T.beton += vol; T.acier += kg;
+      rows.push([nm, nTxt + (V !== null ? 'V=' + _mR(V) : f(L, l, h)) + ' = ' + _mR(vol) + ' | حديد ' + _mR(ratio) + ' كلغ/م³', _mR(vol), 'م³', _mR(kg)]);
+    }else if(t === 'voile'){
+      L = cm(L, 300); h = cm(h, 30);
+      const vu = V !== null ? V : (L !== null && h !== null && e !== null ? L * h * e : null);
+      if(vu === null) return bad('أبعاد ناقصة (L وh وe)');
+      const vol = n * vu, ratio = _mNum(el.acier) !== null ? _mNum(el.acier) : METRE_STEEL.voile;
+      const kg = _mNum(el.kg) !== null ? _mNum(el.kg) : vol * ratio;
+      T.beton += vol; T.acier += kg;
+      rows.push([nm, nTxt + (V !== null ? 'V=' + _mR(V) : f(L, h, e)) + ' = ' + _mR(vol) + ' | حديد ' + _mR(ratio) + ' كلغ/م³', _mR(vol), 'م³', _mR(kg)]);
+    }else if(t === 'dalle_pleine' || t === 'escalier'){
+      L = cm(L, 300); l = cm(l, 300);
+      const a = t === 'escalier' ? null : areaOf();
+      const vu = V !== null ? V : (a !== null && e !== null ? a * e : (t === 'escalier' && L !== null && l !== null && e !== null ? L * l * e : null));
+      if(vu === null) return bad('أبعاد ناقصة (S أو L×l، وe السمك)');
+      const vol = n * vu, ratio = _mNum(el.acier) !== null ? _mNum(el.acier) : METRE_STEEL[t];
+      const kg = _mNum(el.kg) !== null ? _mNum(el.kg) : vol * ratio;
+      T.beton += vol; T.acier += kg;
+      rows.push([nm, nTxt + (V !== null ? 'V=' + _mR(V) : (a !== null ? (S !== null ? 'S=' + _mR(S) : f(L, l)) + ' × ' + _mR(e) : f(L, l, e))) + ' = ' + _mR(vol) + ' | حديد ' + _mR(ratio) + ' كلغ/م³', _mR(vol), 'م³', _mR(kg)]);
+    }else if(t === 'dalle_hourdis'){
+      L = cm(L, 300); l = cm(l, 300);
+      const a0 = areaOf(); if(a0 === null) return bad('أبعاد ناقصة (S أو L×l)');
+      const ep = e !== null ? e : 0.20, area = n * a0;
+      const vol = area * ep * 0.4, hr = area * P.hourdis_m2, kg = _mNum(el.kg) !== null ? _mNum(el.kg) : area * P.acier_hourdis_m2;
+      T.beton += vol; T.hourdis += hr; T.acier += kg;
+      rows.push([nm, 'S=' + _mR(area) + ' م² | بيتون S×' + _mR(ep) + '×0.4 = ' + _mR(vol) + ' م³ | hourdis ' + _mR(hr) + ' وحدة', _mR(area), 'م²', _mR(kg)]);
+    }else if(t === 'dallage'){
+      L = cm(L, 300); l = cm(l, 300);
+      const a0 = areaOf(); if(a0 === null) return bad('أبعاد ناقصة (S أو L×l)');
+      const ep = e !== null ? e : 0.10, area = n * a0, vol = area * ep;
+      T.beton += vol; T.treillis += area * 1.1;
+      rows.push([nm, 'S=' + _mR(area) + ' × ' + _mR(ep) + ' = ' + _mR(vol) + ' م³ | treillis soudé ' + _mR(area * 1.1) + ' م²', _mR(vol), 'م³', '']);
+    }else if(t === 'beton_proprete'){
+      L = cm(L, 300); l = cm(l, 300);
+      const a0 = areaOf(); if(a0 === null) return bad('أبعاد ناقصة (S أو L×l)');
+      const ep = e !== null ? e : 0.10, vol = n * a0 * ep;
+      T.proprete += vol;
+      rows.push([nm, nTxt + (S !== null ? 'S=' + _mR(S) : f(L, l)) + ' × ' + _mR(ep) + ' = ' + _mR(vol), _mR(vol), 'م³', '']);
+    }else if(t === 'terrassement'){
+      L = cm(L, 300); l = cm(l, 300); h = cm(h, 30);
+      const vu = V !== null ? V : (L !== null && l !== null && h !== null ? L * l * h : null);
+      if(vu === null) return bad('أبعاد ناقصة (L وl وh)');
+      const vol = n * vu; T.terr += vol;
+      rows.push([nm, nTxt + (V !== null ? 'V=' + _mR(V) : f(L, l, h)) + ' = ' + _mR(vol), _mR(vol), 'م³', '']);
+    }else if(t === 'mur_brique' || t === 'cloison'){
+      L = cm(L, 300); h = cm(h, 30);
+      const au = S !== null ? S : (L !== null && h !== null ? L * h : null);
+      if(au === null) return bad('أبعاد ناقصة (S أو L×h)');
+      const ouv = _mNum(el.ouv) || 0, area = n * au - ouv;
+      if(area <= 0) return bad('المساحة الصافية ≤ 0');
+      const ep = e !== null ? e : (t === 'cloison' ? 0.10 : 0.20);
+      const br = area * P.briques_m2, mo = area * ep * 0.10;
+      T.briques += br; T.mortier += mo;
+      rows.push([nm, nTxt + (S !== null ? 'S=' + _mR(S) : f(L, h)) + (ouv ? ' − فتحات ' + _mR(ouv) : '') + ' = ' + _mR(area) + ' م² | طوب ' + _mR(br) + ' (×' + P.briques_m2 + ') | سمك ' + _mR(ep), _mR(area), 'م²', '']);
+    }else if(t === 'enduit' || t === 'carrelage' || t === 'faience' || t === 'etancheite' || t === 'peinture'){
+      L = cm(L, 300); h = cm(h, 30);
+      const au = S !== null ? S : (L !== null && (l !== null || h !== null) ? L * (l !== null ? l : h) : null);
+      if(au === null) return bad('المساحة ناقصة (S)');
+      const area = n * au - (_mNum(el.ouv) || 0);
+      if(area <= 0) return bad('المساحة الصافية ≤ 0');
+      let extra = '';
+      if(t === 'enduit'){ const ep = e !== null ? e : P.ep_enduit; T.enduit += area; T.mortier += area * ep; extra = ' | سمك ' + _mR(ep); }
+      else if(t === 'carrelage'){ T.carrelage += area; }
+      else if(t === 'faience'){ T.faience += area; }
+      else if(t === 'etancheite'){ T.etanch += area; }
+      else{ const c = _mNum(el.couches) !== null ? _mNum(el.couches) : P.couches; const lit = area * c * P.conso_peinture; T.peinture += lit; extra = ' | ' + c + ' طبقات = ' + _mR(lit) + ' لتر'; }
+      rows.push([nm, (S !== null ? 'S=' + _mR(S) : f(L, l !== null ? l : h)) + (_mNum(el.ouv) ? ' − ' + _mR(_mNum(el.ouv)) : '') + ' = ' + _mR(area) + extra, _mR(area), 'م²', '']);
+    }else if(t === 'divers'){
+      const q = _mNum(el.q) !== null ? _mNum(el.q) : n;
+      divers.push({ nom: el.nom || 'مادة', q: _mR(q), u: el.u || 'وحدة' });
+      rows.push([el.nom || 'مادة', '', _mR(q), el.u || 'وحدة', '']);
+    }else{
+      warn.push('نوع عنصر غير معروف: "' + t + '" — ما تحسبش.');
+    }
+  });
+  if(cmFixes) warn.push('بعض القياسات كانت كبيرة بزاف فاعتبرناها بالسنتيمتر وحوّلناها للمتر (' + cmFixes + ') — تأكد منها.');
+
+  const mg = 1 + P.marge / 100, mgC = 1 + P.perte_carrelage / 100;
+  const cimentKg = T.beton * P.dosage + T.proprete * 150 + T.mortier * P.dosage_mortier;
+  const sable = T.beton * P.sable_beton + T.proprete * 0.45 + T.mortier * P.sable_mortier;
+  const gravier = T.beton * P.gravier_beton + T.proprete * 0.85;
+  const rec = [];
+  const add = (label, net, unit, k)=>{ if(net > 0.0001) rec.push([label, _mR(net), _mR(net * (k || mg)), unit]); };
+  add('بيتون مسلح', T.beton, 'م³');
+  add('بيتون النظافة', T.proprete, 'م³');
+  add('حفر (terrassement)', T.terr, 'م³', 1);
+  add('الإسمنت (بيتون ' + P.dosage + ' كلغ/م³ + ملاط)', cimentKg / 50, 'كيس 50 كلغ');
+  add('الرمل', sable, 'م³');
+  add('الحصى (gravier)', gravier, 'م³');
+  add('الحديد (ratio تقديري)', T.acier, 'كلغ');
+  add('treillis soudé', T.treillis, 'م²');
+  add('الطوب (briques)', T.briques, 'وحدة');
+  add('hourdis (corps creux)', T.hourdis, 'وحدة');
+  add('التبليط (carrelage)', T.carrelage, 'م²', mgC);
+  add('faïence', T.faience, 'م²', mgC);
+  add('الصباغة', T.peinture, 'لتر');
+  add('العزل (étanchéité)', T.etanch, 'م²', 1.1);
+  add('enduit (مساحة)', T.enduit, 'م²', 1);
+  divers.forEach(d=> rec.push([d.nom, d.q, d.q, d.u]));
+  return { title: 'المتري' + (data.projet ? ' — ' + data.projet : ''), rows, rec, warn, hyp: Array.isArray(data.hyp) ? data.hyp : [], P, T, steelTon: _mR(T.acier / 1000) };
+}
+
+function metreRecapText(r){
+  return r.rec.map(x=> x[0] + ': ' + x[1] + ' (مع الاحتياط ' + x[2] + ') ' + x[3]).join('\n');
+}
+function _metreFromText(text){
+  const m = /```metre\s*([\s\S]*?)```/.exec(text || '');
+  if(!m) return null;
+  const d = _mParse(m[1]);
+  if(!d || !Array.isArray(d.elements)) return null;
+  try{ return computeMetre(d); }catch(e){ return null; }
+}
+// آخر متري حسبو التطبيق كيتزاد للبرومت، باش أسئلة المتابعة ("شحال كيس إسمنت؟") تتجاوب من الأرقام الدقيقة ماشي بالذهن
+function _metreContext(msgs){
+  for(let i = msgs.length - 1; i >= 0; i--){
+    const m = msgs[i];
+    if(m && m.role !== 'user' && m.text && m.text.indexOf('```metre') >= 0){
+      const r = _metreFromText(m.text);
+      if(!r) return '';
+      return '\n\nنتائج آخر متري حسبها التطبيق بدقة (استعملها للأجوبة وما تعاودش تحسب بيدك؛ وإلا بغا المستخدم تعديل، ولّد كتلة metre جديدة):\n' + metreRecapText(r);
+    }
+  }
+  return '';
+}
+
+function appendMetreCard(container, jsonText){
+  const wrap = document.createElement('div');
+  wrap.className = 'appt-action-card metre-card';
+  const data = _mParse(jsonText);
+  let r = null;
+  if(data && Array.isArray(data.elements)){ try{ r = computeMetre(data); }catch(e){ r = null; } }
+  if(!r){
+    wrap.innerHTML = '<span class="appt-action-icon">⚠️</span> ما قدرتش نقرا بيانات المتري. عاود طلب الحساب.';
+    container.appendChild(wrap); return;
+  }
+  const head = document.createElement('div');
+  head.innerHTML = '<span class="appt-action-icon">📐</span> <strong>' + escapeHtml(r.title) + '</strong>';
+  wrap.appendChild(head);
+  const sec = txt=>{ const d = document.createElement('div'); d.style.cssText = 'font-weight:700; margin:10px 0 4px; font-size:13px;'; d.textContent = txt; wrap.appendChild(d); };
+  const mkTable = (cols, rowsArr)=>{
+    const w = document.createElement('div'); w.className = 'table-wrap';
+    const tb = document.createElement('table'); tb.className = 'msg-table'; tb.setAttribute('dir', 'auto');
+    const tr0 = document.createElement('tr');
+    cols.forEach(c=>{ const th = document.createElement('th'); th.textContent = c; th.setAttribute('dir', 'auto'); tr0.appendChild(th); });
+    const th0 = document.createElement('thead'); th0.appendChild(tr0); tb.appendChild(th0);
+    const body = document.createElement('tbody');
+    rowsArr.forEach(rw=>{ const tr = document.createElement('tr'); rw.forEach(c=>{ const td = document.createElement('td'); td.textContent = c === null || c === undefined ? '' : String(c); td.setAttribute('dir', 'auto'); tr.appendChild(td); }); body.appendChild(tr); });
+    tb.appendChild(body); w.appendChild(tb); return w;
+  };
+  if(r.rec.length){ sec('📦 ملخص المواد'); wrap.appendChild(mkTable(['المادة', 'الصافي', 'مع الاحتياط (' + r.P.marge + '%)', 'الوحدة'], r.rec)); }
+  if(r.rows.length){ sec('🧮 تفصيل الحساب'); wrap.appendChild(mkTable(['العنصر', 'المعادلة', 'الكمية', 'الوحدة', 'الحديد (كلغ)'], r.rows)); }
+  const notes = [];
+  if(r.T.acier > 0) notes.push('الحديد الصافي ≈ ' + r.steelTon + ' طن.');
+  r.hyp.forEach(h=> notes.push('فرضية: ' + h));
+  r.warn.forEach(w=> notes.push('⚠️ ' + w));
+  notes.push('نسب الحديد والطوب وhourdis تقديرية شائعة؛ دراسة التسليح (BET) هي المرجع النهائي قبل الطلب.');
+  const nd = document.createElement('div'); nd.style.cssText = 'font-size:12px; margin-top:8px; line-height:1.7;'; nd.setAttribute('dir', 'auto');
+  nd.innerHTML = notes.map(n=> escapeHtml(n)).join('<br>'); wrap.appendChild(nd);
+
+  const rep = {
+    title: r.title,
+    columns: ['البند', 'التفصيل', 'الكمية', 'الوحدة', 'ملاحظة'],
+    rows: r.rows.map(x=> [x[0], x[1], x[2], x[3], x[4] !== '' ? 'حديد: ' + x[4] + ' كلغ' : ''])
+      .concat([['', '', '', '', ''], ['— ملخص المواد —', '', '', '', '']])
+      .concat(r.rec.map(x=> [x[0], '', x[1], x[3], 'مع الاحتياط: ' + x[2]])),
+    summary: notes.join(' | ')
+  };
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;';
+  [['⬇️ Excel', ()=> generateExcelReport(rep)], ['⬇️ PDF', ()=> generatePdfReport(rep)], ['⬇️ Word', ()=> generateWordReport(rep)]].forEach(([lbl, fn])=>{
+    const b = document.createElement('button'); b.className = 'btn-ghost'; b.style.cssText = 'padding:8px 14px; font-size:12.5px;'; b.textContent = lbl; b.addEventListener('click', fn); btnRow.appendChild(b);
+  });
+  wrap.appendChild(btnRow);
+  container.appendChild(wrap);
+}
+
 function appendReportAction(container, jsonText){
   const wrap = document.createElement('div');
   wrap.className = 'appt-action-card';
@@ -2927,41 +3215,80 @@ function hideTyping(){
   if(t) t.remove();
 }
 
-/* ---------- إرفاق الصور ---------- */
-let pendingImages = []; // [{data(base64), mime}]
+/* ---------- إرفاق الصور وملفات PDF (بلانات، تصاميم، دفاتر شروط) ---------- */
+let pendingImages = []; // [{data(base64), mime, name?}] — صور أو PDF (mime = application/pdf)
 const attachBtn = document.getElementById('attachBtn');
 const fileInput = document.getElementById('fileInput');
 const attachPreview = document.getElementById('attachPreview');
 const MAX_IMAGES = 6;
+const MAX_PDF_BYTES = 14 * 1024 * 1024;     // Gemini كيقبل ≈20MB للطلب كامل، وbase64 كيزيد ≈33%
+const MAX_TOTAL_B64 = 19 * 1024 * 1024;     // مجموع المرفقات (base64) فالرسالة الوحدة
+const DEFAULT_ATTACH_PROMPT = 'حلل ليا هاد المرفق، وإلا كان بلان ولا تصميم حسب ليا كميات المواد (المتري) بالخطوات والمجموع.';
+
+function isPdfAtt(a){ return !!a && a.mime === 'application/pdf'; }
+function _attHtml(a){
+  if(isPdfAtt(a)) return `<div class="msg-file">📄 ${escapeHtml(a.name || 'PDF')}</div>`;
+  return `<img class="msg-img" src="data:${a.mime};base64,${a.data}">`;
+}
+function _readAsBase64(blob){
+  return new Promise((res, rej)=>{
+    const r = new FileReader();
+    r.onload = ()=> res(String(r.result).split(',')[1] || '');
+    r.onerror = ()=> rej(r.error || new Error('read'));
+    r.readAsDataURL(blob);
+  });
+}
+// الصور الكبيرة (>3MB) كنصغروها لـ 2400px كحد أقصى باش تدوز بسهولة من Gemini وGroq (حد 4MB للصورة فـ Groq)
+async function _prepareImageFile(file){
+  const mime = file.type || 'image/jpeg';
+  if(file.size > 3 * 1024 * 1024 && /^image\/(jpeg|png|webp)$/.test(mime)){
+    try{
+      const bmp = await createImageBitmap(file);
+      const k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(bmp, 0, 0, c.width, c.height);
+      const blob = await new Promise(r=> c.toBlob(r, 'image/jpeg', 0.9));
+      if(blob && blob.size < file.size) return { data: await _readAsBase64(blob), mime: 'image/jpeg' };
+    }catch(e){ /* نرجعو للصورة الأصلية */ }
+  }
+  return { data: await _readAsBase64(file), mime };
+}
 
 attachBtn.addEventListener('click', ()=> fileInput.click());
 
-fileInput.addEventListener('change', ()=>{
+fileInput.addEventListener('change', async ()=>{
   const files = Array.from(fileInput.files || []);
-  if(!files.length) return;
-  if(pendingImages.length + files.length > MAX_IMAGES){
-    alert(`ماقدرش تزيد أكثر من ${MAX_IMAGES} صور فمرة وحدة.`);
-  }
-  const filesToAdd = files.slice(0, Math.max(0, MAX_IMAGES - pendingImages.length));
-  let remaining = filesToAdd.length;
-  if(!remaining){ fileInput.value = ''; return; }
-  filesToAdd.forEach(file=>{
-    if(file.size > 8 * 1024 * 1024){
-      alert(`الصورة "${file.name}" كبيرة زيادة (أكبر من 8 ميجا)، تجاوزناها.`);
-      remaining--;
-      if(remaining === 0) renderAttachPreview();
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = ()=>{
-      const base64 = reader.result.split(',')[1];
-      pendingImages.push({ data: base64, mime: file.type || 'image/jpeg' });
-      remaining--;
-      renderAttachPreview();
-    };
-    reader.readAsDataURL(file);
-  });
   fileInput.value = '';
+  if(!files.length) return;
+  const room = Math.max(0, MAX_IMAGES - pendingImages.length);
+  if(files.length > room) alert(`ماقدرش تزيد أكثر من ${MAX_IMAGES} مرفقات فمرة وحدة.`);
+  for(const file of files.slice(0, room)){
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+    const isImg = /^image\//.test(file.type || '');
+    if(!isPdf && !isImg){ alert(`الملف "${file.name}" نوعو ما مدعومش. كنقبلو غير الصور وملفات PDF.`); continue; }
+    try{
+      let att;
+      if(isPdf){
+        if(file.size > MAX_PDF_BYTES){ alert(`ملف PDF "${file.name}" كبير زيادة (أكبر من 14 ميجا). قسمو لأجزاء أو صغّرو.`); continue; }
+        const data = await _readAsBase64(file);
+        let head = ''; try{ head = atob(data.slice(0, 8)); }catch(e){}
+        if(!head.startsWith('%PDF')){ alert(`"${file.name}" ماشي ملف PDF صالح.`); continue; }
+        att = { data, mime: 'application/pdf', name: file.name };
+      }else{
+        const shrinkable = /^image\/(jpeg|png|webp)$/.test(file.type || '');
+        if(file.size > (shrinkable ? 20 : 8) * 1024 * 1024){ alert(`الصورة "${file.name}" كبيرة زيادة، تجاوزناها.`); continue; }
+        att = await _prepareImageFile(file); att.name = file.name;
+      }
+      const total = pendingImages.reduce((n, x)=> n + x.data.length, 0) + att.data.length;
+      if(total > MAX_TOTAL_B64){ alert('مجموع المرفقات كبير زيادة فرسالة وحدة. صيفطهم على دفعتين.'); continue; }
+      pendingImages.push(att);
+      renderAttachPreview();
+    }catch(e){
+      alert(`ما قدرتش نقرا "${file.name}". جرب مرة ثانية.`);
+    }
+  }
 });
 
 function renderAttachPreview(){
@@ -2973,7 +3300,11 @@ function renderAttachPreview(){
   }
   attachBtn.classList.add('has-image');
   attachPreview.classList.add('show');
-  attachPreview.innerHTML = pendingImages.map((img, idx) => `
+  attachPreview.innerHTML = pendingImages.map((img, idx) => isPdfAtt(img) ? `
+    <div class="attach-thumb pdf" title="${escapeHtml(img.name || 'PDF')}">
+      <span class="pdf-ic">📄</span><span class="pdf-nm">${escapeHtml(img.name || 'PDF')}</span>
+      <button class="attach-remove" data-idx="${idx}">✕</button>
+    </div>` : `
     <div class="attach-thumb">
       <img src="data:${img.mime};base64,${img.data}">
       <button class="attach-remove" data-idx="${idx}">✕</button>
@@ -2987,7 +3318,84 @@ function renderAttachPreview(){
   });
 }
 
+/* PDF -> صور JPEG (غير لـ Groq الاحتياطي، حيت Gemini كيقرا PDF مباشرة). pdf.js كيتحمل غير ملي يحتاجو */
+let _pdfjsReady = null;
+const _PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+function _loadPdfJs(){
+  if(_pdfjsReady) return _pdfjsReady;
+  _pdfjsReady = (async ()=>{
+    if(!window.pdfjsLib){
+      await new Promise((res, rej)=>{
+        const sc = document.createElement('script');
+        sc.src = _PDFJS_BASE + 'pdf.min.js'; sc.onload = res; sc.onerror = ()=> rej(new Error('pdfjs'));
+        document.head.appendChild(sc);
+      });
+    }
+    try{
+      const blob = await (await fetch(_PDFJS_BASE + 'pdf.worker.min.js')).blob();
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+    }catch(e){ window.pdfjsLib.GlobalWorkerOptions.workerSrc = _PDFJS_BASE + 'pdf.worker.min.js'; }
+    return window.pdfjsLib;
+  })().catch(e=>{ _pdfjsReady = null; throw e; });
+  return _pdfjsReady;
+}
+async function _pdfToJpegs(b64, maxPages){
+  const lib = await _loadPdfJs();
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const pdf = await lib.getDocument({ data: bytes }).promise;
+  const urls = [], n = Math.min(pdf.numPages, Math.max(1, maxPages));
+  for(let p = 1; p <= n; p++){
+    const page = await pdf.getPage(p);
+    const v0 = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: Math.min(3, 1800 / Math.max(v0.width, v0.height)) });
+    const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    urls.push(c.toDataURL('image/jpeg', 0.85));
+  }
+  return { urls, total: pdf.numPages };
+}
+// مرفقات الرسالة -> أجزاء image_url لـ Groq (أقصى 5 صور؛ PDF كيتحول لصفحاتو الأولى)
+async function _groqImageParts(atts){
+  const parts = []; let note = '';
+  for(const a of atts){
+    if(parts.length >= 5) break;
+    if(isPdfAtt(a)){
+      try{
+        const { urls, total } = await _pdfToJpegs(a.data, Math.min(4, 5 - parts.length));
+        urls.forEach(u=> parts.push({ type:'image_url', image_url:{ url: u } }));
+        if(total > urls.length) note += ` (من ملف ${a.name || 'PDF'} قريت غير أول ${urls.length} صفحات من ${total})`;
+      }catch(e){ note += ` (ما قدرتش نقرا ملف PDF ${a.name || ''})`; }
+    }else{
+      parts.push({ type:'image_url', image_url:{ url: `data:${a.mime};base64,${a.data}` } });
+    }
+  }
+  return { parts, note };
+}
+// واش كاين مرفق فآخر رسائل المحادثة (باش المتابعة "والطابق الأول؟" تبقى كتشوف البلان)
+function _lastAttachmentIndex(msgs, windowSize){
+  const base = Math.max(0, msgs.length - windowSize);
+  for(let i = msgs.length - 1; i >= base; i--){
+    const m = msgs[i];
+    if(m && m.role === 'user' && ((m.images && m.images.length) || m.image)) return i;
+  }
+  return -1;
+}
+
 /* ---------- ترتيب المزودين ---------- */
+// الأسئلة الثقيلة (حساب/متري/محاسبة/قانون/تقرير) كتمشي لـ Gemini Pro أولاً باش الجواب يكون دقيق؛ الأسئلة العادية كتبقى على Groq (أسرع وبلا استهلاك الحصة).
+// باش توقف هاد الخاصية: بدّل القيمة لـ false.
+const HEAVY_GEMINI_FIRST = true;
+let _geminiQuotaUntil = 0; // إلا Gemini وصل لحدو، كنتفاداو نبداو بيه 10 دقايق
+const _HEAVY_RX = /(احسب|حساب|شحال|بشحال|كميات|الكمية|متري|métré|metre|béton|بيتون|خرسانة|حديد|إسمنت|السيمة|ciment|dalle|longrine|chaînage|poteau|semelle|مساحة|حجم|TVA|\bIS\b|\bIR\b|CNSS|AMO|PCGE|قيد|ميزانية|bilan|CPC|اهتلاك|إهتلاك|ضريبة|ضريبي|قانون|مادة|الفصل|مدونة|عقد|إنذار|صفقة|رخصة|تقرير|فاتورة|devis|décompte|retenue|ضمان|تحليل|قارن|دراسة|خطة|جدولة|ربح|خسارة|هامش|تكلفة)/i;
+function _isHeavyQuery(text, hasAtt){
+  if(hasAtt) return true;
+  const s = (text || '').trim();
+  if(s.length < 12) return false;
+  if(/\d\s*[x×*\/+\-]\s*\d/.test(s)) return true;
+  return s.length > 160 || _HEAVY_RX.test(s);
+}
 function buildProviderChain(hasImage){
   const gKey = getApiKey();
   const grKey = getGroqKey();
@@ -3018,13 +3426,13 @@ async function sendMessage(){
     return;
   }
   if(hasImage && !key && !getGroqKey()){
-    messages.push({role:'model', text:'تحليل الصور يحتاج مفتاح Gemini أو Groq مفعّل. ضيف واحد منهم من الإعدادات ⚙️.', time:Date.now()});
+    messages.push({role:'model', text:'تحليل الصور وملفات PDF يحتاج مفتاح Gemini أو Groq مفعّل. ضيف واحد منهم من الإعدادات ⚙️.', time:Date.now()});
     renderMessages();
     saveHistory();
     return;
   }
 
-  const msgObj = {role:'user', text, time:Date.now()};
+  const msgObj = {role:'user', text: text || (hasImage ? DEFAULT_ATTACH_PROMPT : ''), time:Date.now()};
   if(window._vnPending){ msgObj.voice = window._vnPending; window._vnPending = null; }
   if(pendingImages.length === 1) msgObj.image = pendingImages[0];
   else if(pendingImages.length > 1) msgObj.images = pendingImages.slice();
@@ -3039,7 +3447,13 @@ async function sendMessage(){
   sendBtn.disabled = true;
   showTyping();
 
-  const chain = buildProviderChain(hasImage);
+  let chain = buildProviderChain(hasImage);
+  // متابعة على بلان/PDF مصيفط قبل (فآخر 6 رسائل): Gemini أولاً باش يبقى كيشوف المرفق
+  const _heavy = !hasImage && HEAVY_GEMINI_FIRST && _isHeavyQuery(text, false) && Date.now() > _geminiQuotaUntil;
+  if(!hasImage && getApiKey() && (_lastAttachmentIndex(messages, 6) >= 0 || _heavy)){
+    chain = chain.filter(c=> c.name !== 'Gemini');
+    chain.unshift({fn: callGemini, key: getApiKey(), name: 'Gemini'});
+  }
 
   try{
     let lastErr = null; const errLog = [];
@@ -3060,6 +3474,7 @@ async function sendMessage(){
         break;
       }catch(err){
         lastErr = err;
+        if(name === 'Gemini' && err.message === 'QUOTA') _geminiQuotaUntil = Date.now() + 10*60000;
         errLog.push(name + ': ' + (err.message === 'QUOTA' ? 'حد الاستعمال' + (err.detail ? ' — ' + err.detail : '') : (err.detail || err.message)));
         // نكمل للمزود التالي بالسلسلة، أيًا كان نوع الخطأ
       }
@@ -3191,10 +3606,16 @@ function buildAccountingSnapshotText(){
 }
 
 async function callGemini(key, msgs){
-  const contents = msgs.slice(-14).map(m=>{
+  // الملفات (صور/PDF) كنصيفطوها غير من آخر رسالة فيها مرفق، والباقي كيتعوض بملاحظة — باش الطلب ما يتجاوزش 20MB
+  const _gBase = Math.max(0, msgs.length - 14);
+  const _gAttIdx = _lastAttachmentIndex(msgs, 14);
+  const contents = msgs.slice(-14).map((m, k)=>{
     const parts = [];
     if(m.text) parts.push({text: m.text});
-    if(m.images && m.images.length){
+    const hasAtt = (m.images && m.images.length) || m.image;
+    if(hasAtt && (_gBase + k) !== _gAttIdx){
+      parts.push({text: '[كان فهاد الرسالة مرفق (صورة/PDF) تصيفط قبل]'});
+    }else if(m.images && m.images.length){
       m.images.forEach(img=> parts.push({inlineData:{mimeType: img.mime, data: img.data}}));
     }else if(m.image){
       parts.push({inlineData:{mimeType: m.image.mime, data: m.image.data}});
@@ -3203,16 +3624,14 @@ async function callGemini(key, msgs){
     return { role: m.role === 'user' ? 'user' : 'model', parts };
   });
 
-  const now = new Date();
-  const todayStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
-  const dayName = now.toLocaleDateString('ar', {weekday:'long'});
-  const timeStr = now.toTimeString().slice(0,5);
-  const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
-  const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
-  const fullSystemPrompt = SYSTEM_PROMPT + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
+  const fullSystemPrompt = _yunusFullSystemPrompt(msgs);
+  const _gFresh = _gAttIdx >= 0 && _gAttIdx === msgs.length - 1; // رسالة جديدة فيها بلان/PDF/صورة
 
-  async function tryModel(modelId){
+  async function tryModel(modelId, noThink){
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`;
+    const gc = {temperature: _gFresh ? 0.1 : 0.2, maxOutputTokens: _gFresh ? 20000 : 10240};
+    // Pro كيفكر دائماً وكيستهلك من maxOutputTokens: كنحدو التفكير باش الجواب ما يتقطعش ولا يجي خاوي
+    if(!noThink && /gemini-2\.5-pro/.test(modelId)) gc.thinkingConfig = { thinkingBudget: _gFresh ? 8192 : 4096 };
     let res;
     try{
       res = await fetch(url, {
@@ -3221,7 +3640,7 @@ async function callGemini(key, msgs){
         body: JSON.stringify({
           system_instruction: {parts:[{text: fullSystemPrompt}]},
           contents,
-          generationConfig: {temperature:0.6, maxOutputTokens:2048}
+          generationConfig: gc
         })
       });
     }catch(e){
@@ -3230,10 +3649,20 @@ async function callGemini(key, msgs){
     return res;
   }
 
-  let res = await tryModel(MODEL);
-  // إذا النموذج الجديد مو متوفر بعد لحسابك، نرجع تلقائيًا للنموذج الاحتياطي
-  if(res.status === 404 && MODEL !== FALLBACK_MODEL){
-    res = await tryModel(FALLBACK_MODEL);
+  // سلم الموديلات: (Pro للبلانات) ← MODEL ← FALLBACK. أي موديل ما نجحش (404/400/403/429/5xx) كنعدّيو للموالي، وآخر واحد هو اللي كيحدد الخطأ.
+  const _order = [];
+  if(_gFresh) _order.push(PRO_MODEL);
+  [MODEL, FALLBACK_MODEL].forEach(m=>{ if(!_order.includes(m)) _order.push(m); });
+  let res = null;
+  for(let i = 0; i < _order.length; i++){
+    const isLast = i === _order.length - 1;
+    let r;
+    try{ r = await tryModel(_order[i]); }
+    catch(e){ if(isLast) throw e; continue; }
+    if(r.status === 400 && !isLast){ // مرات 400 كيكون بسبب thinkingConfig، نعاودو بلا هو قبل ما نغيرو الموديل
+      try{ const d = await r.clone().json(); if(/think|budget/i.test(d?.error?.message || '')){ const r2 = await tryModel(_order[i], true); if(r2.ok){ res = r2; break; } } }catch(e){}
+    }
+    if(r.ok || isLast){ res = r; break; }
   }
 
   if(res.status === 400 || res.status === 403){ throw new Error('AUTH'); }
@@ -3250,21 +3679,45 @@ async function callGemini(key, msgs){
   }
 
   const data = await res.json();
-  const parts = data?.candidates?.[0]?.content?.parts;
+  const cand = data?.candidates?.[0];
+  const parts = cand?.content?.parts;
   if(!parts || !parts.length){
-    const err = new Error('NETWORK'); err.detail = 'ما رجع Gemini أي رد.'; throw err;
+    const err = new Error('NETWORK');
+    err.detail = data?.promptFeedback?.blockReason ? ('Gemini رفض الطلب (' + data.promptFeedback.blockReason + ').')
+      : (cand?.finishReason === 'MAX_TOKENS' ? 'Gemini تقطع قبل ما يكتب الجواب (طويل بزاف).' : 'ما رجع Gemini أي رد.');
+    throw err;
   }
-  return parts.map(p=>p.text||'').join('').trim() || 'ما قدرت أجهز رد، جرب صياغة السؤال بشكل مختلف.';
+  let out = parts.filter(p=>!p.thought).map(p=>p.text||'').join('').trim();
+  if(!out){ const err = new Error('NETWORK'); err.detail = 'Gemini رجع رد خاوي.'; throw err; }
+  if(cand.finishReason === 'MAX_TOKENS') out += '\n\n⚠️ _الجواب تقطع حيت كان طويل بزاف. كتب "كمّل" باش نكمل من فين وقفت._';
+  return out;
 }
 
-function _yunusFullSystemPrompt(msgs){
+const YUNUS_DARIJA_RULE = '\n\nقاعدة ثابتة وتغلب أي قاعدة أخرى فاللغة: جاوب دائماً بالدارجة المغربية الطبيعية (ماشي فصحى ولا لهجة مصرية ولا خليجية)، حتى إلا كتب المستخدم بالفصحى. ما تجاوبش بالفرنسية إلا إذا كتب بيها المستخدم. المستندات الرسمية فقط (فواتير، عقود، تقارير للتسليم، إنذارات) كتكون بفصحى مبسطة أو فرنسية قانونية. وما تبدأش الجواب بـ "عذراً" ولا "آسف" ولا "لا أستطيع". عمرك ما تطلب من المستخدم يدير خدمة تقدر تديرها نتا (حساب، صياغة، بحث قانوني، تحليل صورة). الرسائل اللي جاية من تسجيل صوتي ممكن يكون فيها أخطاء فالتعرف على الكلام — ردّ الكلمات المشوّهة لأقرب معنى منطقي حسب سياق الشركة (بناء، محاسبة، قانون، أجور، سلفات، موردين، زبناء، مواعيد، مواد بناء، صفقات عمومية) وجاوب على أقرب تفسير معقول بلا ما تسأل. إلا بقى الطلب غامض فعلاً، قول بالدارجة شنو فهمتي وسول سؤال واحد قصير فقط.';
+// نسخة مضغوطة من البرومت لـ Groq وCerebras (حدود tokens صغيرة): نفس القواعد والأرقام القانونية/المحاسبية والكتل التقنية،
+// بلا الأمثلة الطويلة وبلا الأقسام العامة المكررة (BTP العامة، التسيير، المهام، لائحة القدرات). Gemini كيبقى بالنسخة الكاملة.
+let _yunusCompactCache = null;
+function _yunusCompactPrompt(){
+  if(_yunusCompactCache) return _yunusCompactCache;
+  let t = SYSTEM_PROMPT;
+  const cut = (from, to)=>{ const i = t.indexOf(from), j = t.indexOf(to); if(i >= 0 && j > i) t = t.slice(0, i) + t.slice(j); };
+  cut('## هويتك وقدراتك', '## القواعد الصارمة');          // لائحة القدرات (مكررة فـ ب وج)
+  cut('### أ. الهندسة المدنية والبناء', '### ب. المحاسبة المغربية');
+  cut('### د. التسيير والاستشارة', '## القواعد التقنية للتطبيق'); // د + المهام الأساسية
+  cut('**مثال حسابي صحيح (BTP)', '**⚠️ قاعدة صارمة فـ التنسيق');      // مثال BTP الطويل
+  t = t.replace(/\*\*مثال[^\n]*\*\*:?\n> [^\n]*\n+/g, '');   // الأمثلة الطويلة
+  t = t.replace('## القواعد الصارمة', '## هويتك\nمهندس دولة + محاسب معتمد + مستشار قانوني مغربي (BTP، PCGE، CGI، مدونة الشغل، الصفقات العمومية).\n\n## القواعد الصارمة');
+  _yunusCompactCache = t;
+  return t;
+}
+function _yunusFullSystemPrompt(msgs, compact){
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-CA');
   const dayName = now.toLocaleDateString('ar', {weekday:'long'});
   const timeStr = now.toTimeString().slice(0,5);
   const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
   const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
-  return SYSTEM_PROMPT + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot;
+  return (compact ? _yunusCompactPrompt() : SYSTEM_PROMPT) + YUNUS_DARIJA_RULE + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot + _metreContext(msgs);
 }
 
 async function _openAiStyleCall(url, apiKey, body, providerName){
@@ -3325,15 +3778,16 @@ async function callGroq(gKey, msgs){
   const recent = msgs.slice(voiceChatActive ? -8 : -14);
   const last = recent[recent.length-1] || {};
   const hasImg = last.role === 'user' && (last.image || (last.images && last.images.length));
-  const gMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs)}];
+  const gMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs, true)}];
+  const lastAtts = hasImg ? ((last.images && last.images.length) ? last.images : [last.image]) : [];
+  const gImg = hasImg ? await _groqImageParts(lastAtts) : { parts: [], note: '' };
   recent.forEach((m, idx)=>{
     const isLast = idx === recent.length - 1;
     if(m.role === 'user'){
       if(isLast && hasImg){
         const content = [];
-        content.push({type:'text', text: m.text || 'حلل هاد الصورة.'});
-        const imgs = (m.images && m.images.length) ? m.images : [m.image];
-        imgs.slice(0,5).forEach(img=> content.push({type:'image_url', image_url:{ url: `data:${img.mime};base64,${img.data}` }}));
+        content.push({type:'text', text: (m.text || 'حلل هاد الصورة.') + gImg.note});
+        gImg.parts.forEach(pt=> content.push(pt));
         gMessages.push({role:'user', content});
       }else{
         gMessages.push({role:'user', content: m.text || ''});
@@ -3343,9 +3797,22 @@ async function callGroq(gKey, msgs){
     }
   });
   const run = (model, ms)=>{
-    const body = { model, messages: ms, temperature: 0.7, max_completion_tokens: voiceChatActive ? 450 : 2048 };
-    if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
-    return _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gKey, body, 'Groq');
+    const heavy = !voiceChatActive && _isHeavyQuery(last.text, !!hasImg);
+    const body = { model, messages: ms, temperature: voiceChatActive ? 0.7 : 0.3, max_completion_tokens: voiceChatActive ? 450 : (heavy ? 4096 : 2048) };
+    const isOss = /^openai\/gpt-oss/.test(model);
+    if(isOss) body.reasoning_effort = heavy ? 'medium' : 'low';
+    const url = 'https://api.groq.com/openai/v1/chat/completions';
+    // البحث فالويب (browser_search) كيخدم غير مع gpt-oss، وماشي فالمكالمة الصوتية (باش تبقى سريعة)
+    if(isOss && !voiceChatActive){
+      body.tools = [{ type: 'browser_search' }];
+      return _openAiStyleCall(url, gKey, body, 'Groq').catch(async e=>{
+        // إلا الأداة ما تقبلاتش (400) ولا تجاوزات الحد (429/413) — نعاود بلا بحث باش يونس ما يوقفش
+        if(e.message === 'AUTH') throw e;
+        delete body.tools;
+        return _openAiStyleCall(url, gKey, body, 'Groq');
+      });
+    }
+    return _openAiStyleCall(url, gKey, body, 'Groq');
   };
   const cands = await groqModelCandidates(gKey, !!hasImg);
   if(!cands.length){ const e = new Error('NETWORK'); e.detail = 'ما لقيت حتى موديل ' + (hasImg ? 'رؤية' : 'نص') + ' متاح فـ Groq.'; throw e; }
@@ -3364,14 +3831,14 @@ async function callGroq(gKey, msgs){
 
 async function callCerebras(cKey, msgs){
   // Cerebras (مجاني) — نص فقط. الطبقة المجانية سياقها صغير (≈8K)، فكنقصرو التاريخ
-  const cMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs)}];
+  const cMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs, true)}];
   msgs.slice(-8).forEach(m=>{
     cMessages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text || '' });
   });
   return _openAiStyleCall('https://api.cerebras.ai/v1/chat/completions', cKey, {
     model: CEREBRAS_MODEL,
     messages: cMessages,
-    temperature: 0.7,
+    temperature: 0.3,
     max_completion_tokens: 2048,
     reasoning_effort: 'low'
   }, 'Cerebras');
@@ -3385,6 +3852,8 @@ function openModal(isFirstRun){
   apiKeyInput.value = getApiKey();
   groqKeyInput.value = getGroqKey();
   cerebrasKeyInput.value = getCerebrasKey();
+  document.getElementById('hfUrlInput').value = getHfUrl();
+  document.getElementById('hfKeyInput').value = getHfKey();
   document.getElementById('gcalClientIdInput').value = getGcalClientId();
   document.getElementById('gttsKeyInput').value = getGttsKey();
   document.getElementById('fbDbUrlInput').value = getFirebaseDbUrl();
@@ -3416,6 +3885,8 @@ function saveAllSettings(){
   setApiKey(val);
   setGroqKey(orVal);
   setCerebrasKey(cerebrasKeyInput.value.trim());
+  setHfUrl(document.getElementById('hfUrlInput').value.trim());
+  setHfKey(document.getElementById('hfKeyInput').value.trim());
   setGcalClientId(document.getElementById('gcalClientIdInput').value.trim());
   setGttsKey(document.getElementById('gttsKeyInput').value.trim());
   setFirebaseDbUrl(document.getElementById('fbDbUrlInput').value.trim());
@@ -3779,6 +4250,8 @@ function _applyCloudData(data){
     if(data.gemini && !getApiKey()) setApiKey(data.gemini);
     if(data.groq && !getGroqKey()) setGroqKey(data.groq);
     if(data.cerebras && !getCerebrasKey()) setCerebrasKey(data.cerebras);
+    if(data.hfKey && !getHfKey()) setHfKey(data.hfKey);
+    if(data.hfUrl && !getHfUrl()) setHfUrl(data.hfUrl);
     if(data.gcalClientId && !getGcalClientId()) setGcalClientId(data.gcalClientId);
     if(data.voicerss && !getGttsKey()) setGttsKey(data.voicerss);
 
@@ -3973,6 +4446,8 @@ function buildFullBackupObject(){
     gemini: getApiKey(),
     groq: getGroqKey(),
     cerebras: getCerebrasKey(),
+    hfKey: getHfKey(),
+    hfUrl: getHfUrl(),
     gcalClientId: getGcalClientId(),
     voicerss: getGttsKey(),
     exportedAt: new Date().toISOString()
@@ -4008,6 +4483,8 @@ document.getElementById('importSettingsFile')?.addEventListener('change', (e)=>{
       if(data.gemini) setApiKey(data.gemini);
       if(data.groq) setGroqKey(data.groq);
       if(data.cerebras) setCerebrasKey(data.cerebras);
+      if(data.hfKey) setHfKey(data.hfKey);
+      if(data.hfUrl) setHfUrl(data.hfUrl);
       if(data.gcalClientId) setGcalClientId(data.gcalClientId);
       if(data.voicerss) setGttsKey(data.voicerss);
       // كنطبقو كل مفتاح alioua_btp_* تلقائيًا (نفس آلية المزامنة السحابية) بلا الحاجة نتذكرو كل نوع بيانات يدويًا
@@ -4531,7 +5008,7 @@ const VC = (function(){
   const _AR = /[\u0600-\u06FF]/g, _LAT = /[A-Za-z\u00C0-\u024F]/g;
   const _looksArabic = t => { const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length; return a >= 2 && a >= l; };
   const _noise = t => !t || /اشتركوا|ترجمة نانسي|subscribe|^EMPTY\b/i.test(t);
-  const DARIJA_HINT = 'مرحبا يونس، بغيت نسجل فاتورة جديدة. شحال خلصنا للأجير فالورشة؟ دير ليا الحساب ديال السيمة والحديد، واش كاين شي كريدي؟ مسح هاد العملية وزيد وحدة أخرى، فين وصلنا دابا؟';
+  const DARIJA_HINT = 'مرحبا يونس، بغيت نسجل فاتورة جديدة. شحال خلصنا للأجير فالورشة؟ دير ليا الحساب ديال السيمة والحديد والرمل والبيتون، واش كاين شي كريدي؟ مسح هاد العملية وزيد وحدة أخرى، فين وصلنا دابا؟ عندي موعد مع الزبون غدا فالصباح.';
   let _gModels = null, _gModelsAt = 0;
   async function geminiAudioModels(key){
     if(!_gModels || Date.now() - _gModelsAt > 6*3600*1000){
@@ -4543,21 +5020,25 @@ const VC = (function(){
         _gModelsAt = Date.now();
       }catch(e){ _gModels = _gModels || []; }
     }
-    const lite = _gModels.filter(n => /lite/.test(n)).sort().reverse(), rest = _gModels.filter(n => !/lite/.test(n)).sort().reverse();
-    const order = lite.concat(rest); if(typeof MODEL === 'string' && !order.includes(MODEL)) order.push(MODEL);
-    return order.filter(m => !_isCool(m)).slice(0, 4);
+    const lite = _gModels.filter(n => /lite/.test(n)).sort().reverse(), rest = _gModels.filter(n => !/lite/.test(n)).sort((x, y)=> ((/preview/.test(x) ? 1 : 0) - (/preview/.test(y) ? 1 : 0)) || (x < y ? 1 : -1));
+    const order = rest.concat(lite); if(!order.includes(FALLBACK_MODEL)) order.push(FALLBACK_MODEL);
+    return order.filter(m => !_isCool(m)).slice(0, 3);
   }
+  const STT_PROMPT = 'هذا تسجيل صوتي بالدارجة المغربية لمسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر مع مساعدو يونس. اكتب بالضبط ما قيل بالحروف العربية وبالدارجة كما يُنطق، بدون تحويل للفصحى وبدون تصحيح لغوي. سياق الكلام: بناء وأشغال عمومية، محاسبة وفواتير، أجور العمال والسلفات، موردون وزبناء، مواعيد، مواد (سيمة، حديد، رمل، حجر، بريك، بيتون، خرسانة، كوفراج، أساس، سقف، دالة، شاحنة)، ومبالغ بالدرهم. كلمات دارجة شائعة: بغيت، دابا، واش، كيفاش، فين، شحال، علاش، ديرلي، جيب، خلص، كريدي، سلفة، الأجير، الورشة، الصفقة. الكلمات الفرنسية الشائعة (facture, devis, chantier, ciment, brique, situation, TVA, avance) اكتبها بحروفها اللاتينية، والأرقام اكتبها بالأرقام. إذا كان مقطع غير واضح فاختر أقرب كلمات منطقية حسب سياق الشركة، ولا تخترع جملاً لم تُقل. بدون شرح ولا إضافة ولا علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY';
   async function geminiTranscribe(m, key, b64, maxTok){
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, {
-      method:'POST', headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        contents:[{ role:'user', parts:[
-          { inlineData:{ mimeType:'audio/wav', data:b64 } },
-          { text:'هذا تسجيل صوتي لشخص مغربي يتكلم بالدارجة المغربية (وقد يخلط كلمات فرنسية). اكتب ما قاله حرفياً بالحروف العربية كما يُنطق (مثل: بغيت، دابا، واش، كيفاش، فين، شحال، ديرلي، علاش)، والكلمات الفرنسية الشائعة (facture, chantier, ciment...) اكتبها بحروفها اللاتينية. بدون أي شرح أو إضافة أو علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY' }
-        ] }],
-        generationConfig:{ temperature:0, maxOutputTokens:(maxTok || 1024) }
-      })
-    });
+    const call = async (noThink)=>{
+      const cfg = { temperature:0, maxOutputTokens:(maxTok || 1024) };
+      if(!noThink && /gemini-2\.5-flash/.test(m)) cfg.thinkingConfig = { thinkingBudget:0 };
+      return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, {
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          contents:[{ role:'user', parts:[ { inlineData:{ mimeType:'audio/wav', data:b64 } }, { text: STT_PROMPT } ] }],
+          generationConfig: cfg
+        })
+      });
+    };
+    let res = await call(false);
+    if(res.status === 400 && /gemini-2\.5-flash/.test(m)) res = await call(true);
     if(res.status === 429){ const tx = await res.text(); _setCool(m, /PerDay/i.test(tx) ? 360 : 5); throw new Error('HTTP 429'); }
     if(res.status === 404 || res.status === 400){ _setCool(m, 720); throw new Error('HTTP ' + res.status); }
     if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -4578,29 +5059,108 @@ const VC = (function(){
     if(!res.ok) throw new Error('HTTP ' + res.status);
     return String((await res.json()).text || '').trim();
   }
+  // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
+  async function repairTranscript(text, gk){
+    try{
+      const cands = await groqModelCandidates(gk, false);
+      if(!cands.length) return text;
+      const model = cands[0];
+      const body = { model, temperature:0, max_completion_tokens:300, messages:[
+        { role:'system', content:'أنت مصحّح تفريغ صوتي للدارجة المغربية. النص جاي من برنامج تعرّف على الكلام وفيه أخطاء (كلمات مشوّهة أو مبدّلة بكلمات مشابهة فالنطق). المتكلم مسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر عن: فواتير، أجور وسلفات العمال، موردين وزبناء، مواعيد، مواد البناء (سيمة، حديد، رمل، بيتون، بريك)، ومبالغ بالدرهم. أعد كتابة النص بالدارجة مع تصحيح الكلمات المشوّهة لأقرب معنى منطقي، بدون تحويل للفصحى، وبدون إضافة معلومات ما قيلتش، وبدون شرح. أخرج النص المصحّح فقط. إلا كان النص ما عندو معنى إطلاقاً ومستحيل تفهم منو شي حاجة، أخرج كلمة وحدة: EMPTY' },
+        { role:'user', content:text }
+      ] };
+      if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
+      const out = String(await _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gk, body, 'Groq') || '').trim();
+      if(!out) return text;
+      if(/^EMPTY\b/i.test(out)) return '';
+      return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
+    }catch(e){ return text; }
+  }
+  // ===== Hugging Face: كنبعثو WAV (16kHz، mono، 16-bit) مباشرة كـ body، والمفتاح فـ Authorization =====
+  async function transcribeHF(blob){
+    const url = getHfUrl(), key = getHfKey();           // HF_API_URL / HF_API_KEY
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    let lastErr = null;
+    for(let attempt = 0; attempt < 3; attempt++){
+      let res;
+      try{
+        res = await fetch(url, { method:'POST', headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'audio/wav' }, body: blob });
+      }catch(e){ lastErr = new Error('HF شبكة'); if(attempt < 2) await wait(1500); continue; }
+      if(res.status === 401 || res.status === 403){ const e = new Error('HF مفتاح غير صالح'); e.fatal = true; throw e; }
+      if(res.status === 503 || res.status === 429){
+        // 503 = النموذج كيتحمّل (cold start)، 429 = زيادة طلبات: كنعاودو شوية
+        let est = 0; try{ est = Number((await res.json()).estimated_time) || 0; }catch(e){}
+        lastErr = new Error('HF ' + res.status + (res.status === 503 ? ' (النموذج كيتحمّل)' : ' (حد الاستعمال)'));
+        if(attempt < 2) await wait(Math.min(Math.max(est * 1000, 2500), 10000));
+        continue;
+      }
+      if(!res.ok){ let d = ''; try{ d = (await res.text()).slice(0, 80); }catch(e){} throw new Error('HF ' + res.status + (d ? ': ' + d : '')); }
+      const j = await res.json();
+      return String(Array.isArray(j) ? ((j[0] && j[0].text) || '') : (j.text || '')).trim();
+    }
+    throw lastErr || new Error('HF');
+  }
+  // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
+  async function repairTranscript(text, gk){
+    try{
+      const cands = await groqModelCandidates(gk, false);
+      if(!cands.length) return text;
+      const model = cands[0];
+      const body = { model, temperature:0, max_completion_tokens:300, messages:[
+        { role:'system', content:'أنت مصحّح تفريغ صوتي للدارجة المغربية. النص جاي من برنامج تعرّف على الكلام وفيه أخطاء (كلمات مشوّهة أو مبدّلة بكلمات مشابهة فالنطق). المتكلم مسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر عن: فواتير، أجور وسلفات العمال، موردين وزبناء، مواعيد، مواد البناء (سيمة، حديد، رمل، بيتون، بريك)، ومبالغ بالدرهم. أعد كتابة النص بالدارجة مع تصحيح الكلمات المشوّهة لأقرب معنى منطقي، بدون تحويل للفصحى، وبدون إضافة معلومات ما قيلتش، وبدون شرح. أخرج النص المصحّح فقط. إلا كان النص ما عندو معنى إطلاقاً ومستحيل تفهم منو شي حاجة، أخرج كلمة وحدة: EMPTY' },
+        { role:'user', content:text }
+      ] };
+      if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
+      const out = String(await _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gk, body, 'Groq') || '').trim();
+      if(!out) return text;
+      if(/^EMPTY\b/i.test(out)) return '';
+      return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
+    }catch(e){ return text; }
+  }
+  // السلسلة: Hugging Face (إلا مفعّل) ← Gemini ← Groq Whisper + تصحيح نصي
   async function transcribe(blob, maxTok){
-    const gk = getGroqKey(), key = getApiKey();
-    if(!gk && !key) throw new Error('NOKEY');
-    let lastErr = null, sawText = false;
+    const gk = getGroqKey(), key = getApiKey(), hfOn = !!(getHfKey() && getHfUrl());
+    if(!gk && !key && !hfOn) throw new Error('NOKEY');
+    const fails = []; let sawText = false, gemResponded = false;
     const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
-    if(gk){
-      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
-        if(_isCool('groq:' + m)) continue;
-        try{ const r = accept(await transcribeGroq(blob, gk, m)); if(r) return r; }catch(e){ lastErr = e; }
+
+    // 1) Hugging Face — كيرجع النص ديالو مباشرة (إلا خاوي = ما كاين كلام)
+    if(hfOn && !_isCool('hf')){
+      try{
+        const t = await transcribeHF(blob);
+        if(!t) return '';
+        const r = accept(t); if(r) return r;
+      }catch(e){
+        fails.push(String(e.message || 'HF'));
+        _setCool('hf', e.fatal ? 30 : 2);   // ما نبقاوش نستناو نموذج طايح فكل جملة
       }
     }
+    // 2) Gemini — كل موديل عندو حصتو؛ إلا وصل لحدو كيتحيد مؤقتاً
     if(key){
       let b64 = null;
       let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
       for(const m of ms){
         try{
           b64 = b64 || await blobToB64(blob);
-          const r = accept(await geminiTranscribe(m, key, b64, maxTok)); if(r) return r;
-        }catch(e){ lastErr = e; }
+          const raw = await geminiTranscribe(m, key, b64, maxTok);
+          gemResponded = true;
+          const r = accept(raw); if(r) return r;
+        }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
+      }
+      if(gemResponded) return '';            // Gemini قال ما كاين كلام: ما نمشيوش لـ Whisper باش ما يهلوسش
+    }
+    // 3) احتياطي أخير: Groq Whisper + تصحيح نصي بالدارجة
+    if(gk){
+      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
+        if(_isCool('groq:' + m)) continue;
+        try{
+          const r = accept(await transcribeGroq(blob, gk, m));
+          if(r){ const fixed = await repairTranscript(r, gk); if(fixed && _looksArabic(fixed)) return fixed; return ''; }
+        }catch(e){ fails.push('Groq ' + String(e.message || '')); }
       }
     }
-    if(!sawText && lastErr) throw lastErr;   // كل المزودين فشلو (حد/شبكة) ماشي صمت
-    return '';                               // ما فهمناش الكلام: كنرجعو خاوي بدل نص مهلوس
+    if(!sawText && fails.length) throw new Error(fails.join(' | '));   // كلشي فشل: رسالة واضحة فيها السبب
+    return '';                                                          // ما فهمناش الكلام: خاوي بدل نص مهلوس
   }
   function endUtterance(){
     const buf = S.buf, voiced = S.voiced;
@@ -4638,7 +5198,7 @@ const VC = (function(){
     if(!getApiKey() && !getGroqKey() && !getCerebrasKey()){ openModal(true); return; }
     let brave = false;
     try{ brave = !!(navigator.brave && await navigator.brave.isBrave()); }catch(e){}
-    S.mode = (!SRClass() || brave || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
+    S.mode = (!SRClass() || brave || getApiKey() || getGroqKey() || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
     if(S.mode === 'rec' && !getApiKey() && !getGroqKey()){
       alert('في هذا المتصفح تحتاج المحادثة الصوتية إلى مفتاح Groq (لتفريغ الصوت). أضفه من الإعدادات، أو افتح التطبيق في Chrome.');
       return;
@@ -5281,6 +5841,7 @@ function speakViaGoogleTTS(text, onStatus){
       .replace(/```chart[\s\S]*?```/g, ' فيه رسم بياني بالرد. ')
       .replace(/```add_appointment[\s\S]*?```/g, ' تمت إضافة الموعد. ')
       .replace(/```report[\s\S]*?```/g, ' فيه تقرير بالرد. ')
+      .replace(/```metre[\s\S]*?```/g, ' فيه جدول متري بالرد. ')
       .replace(/```image:[\s\S]*?```/g, ' فيه صورة بالرد. ')
       .replace(/```image:.+/g, ' فيه صورة بالرد. ')
       .replace(/^\s*\|.*\|\s*$/gm, '')
