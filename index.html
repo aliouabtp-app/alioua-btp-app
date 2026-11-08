@@ -4991,7 +4991,7 @@ const VC = (function(){
   const _isCool = id => (_cool[id] || 0) > Date.now();
   const _setCool = (id, min) => { _cool[id] = Date.now() + min * 60000; };
   const _AR = /[\u0600-\u06FF]/g, _LAT = /[A-Za-z\u00C0-\u024F]/g;
-  const _looksArabic = t => { const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length; return a >= 2 && a >= l; };
+  const _looksArabic = t => { const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length; return a >= 2 && a >= l * 0.4; };
   const _noise = t => !t || /اشتركوا|ترجمة نانسي|subscribe|^EMPTY\b/i.test(t);
   const DARIJA_HINT = 'يونس، دير ليا الحساب ديال السيمة والحديد والرمل والبيتون والطبة واللونكرين. شحال خلصنا للأجير فالورشة؟ عطيت السلفة للمعلم، والكريدي ديال الفورنيسور باقي. زيد الفاتورة ديال الشانطي، والباقي بالدرهم.';
   let _gModels = null, _gModelsAt = 0;
@@ -5025,13 +5025,14 @@ const VC = (function(){
     let res = await call(false);
     if(res.status === 400 && /gemini-2\.5-flash/.test(m)) res = await call(true);
     if(res.status === 429){ const tx = await res.text(); _setCool(m, /PerDay/i.test(tx) ? 360 : 5); throw new Error('HTTP 429'); }
-    if(res.status === 404 || res.status === 400){ _setCool(m, 720); throw new Error('HTTP ' + res.status); }
+    if(res.status === 404){ _setCool(m, 720); throw new Error('HTTP 404'); }
+    if(res.status === 400){ let tx = ''; try{ tx = await res.text(); }catch(e){} const badKey = /API key|API_KEY_INVALID/i.test(tx); _setCool(m, badKey ? 30 : 10); throw new Error('HTTP 400' + (badKey ? ' (مفتاح Gemini غير صالح)' : '')); }
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
     const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
     return parts.map(p => p.text || '').join('').trim().replace(/^["«“]+|["»”]+$/g, '').trim();
   }
-  async function transcribeGroq(blob, gk, model){
+  async function transcribeGroq(blob, gk, model, usePrompt){
     const t = String((blob && blob.type) || '').toLowerCase();
     const ext = /webm/.test(t) ? 'webm' : /mp4|m4a|aac/.test(t) ? 'm4a' : /ogg/.test(t) ? 'ogg' : /mpeg|mp3/.test(t) ? 'mp3' : 'wav';
     const fd = new FormData();
@@ -5040,7 +5041,7 @@ const VC = (function(){
     fd.append('language', 'ar');
     fd.append('temperature', '0');
     fd.append('response_format', 'json');
-    fd.append('prompt', DARIJA_HINT);
+    if(usePrompt !== false) fd.append('prompt', DARIJA_HINT);
     const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method:'POST', headers:{ 'Authorization':'Bearer ' + gk }, body: fd });
     if(res.status === 429){ _setCool('groq:' + model, 3); throw new Error('HTTP 429'); }
     if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -5104,14 +5105,38 @@ const VC = (function(){
   }
   // السلسلة: Groq Whisper turbo (blob أصلي) ← Groq large-v3 ← Hugging Face (إلا مفعّل) ← Gemini
   // blob = الملف الأصلي (webm/mp4) إلا توفر، wav = نسخة WAV (كتستعملها Gemini/HF وكاحتياط إلا Groq رفض الملف الأصلي)
-  async function transcribe(blob, maxTok, wav){
+  /* ===== فحص جودة التفريغ (باش ما نفهمو والو غلط) ===== */
+  const _norm = t => String(t || '').replace(/[\u064B-\u0652\u0640]/g, '').replace(/[^\u0600-\u06FFA-Za-z\u00C0-\u024F0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const _words = t => _norm(t).split(' ').filter(Boolean);
+  const _HINT_WORDS = new Set(_words(DARIJA_HINT));
+  // Whisper كيعاود أحياناً نص الـ prompt بدل الكلام الحقيقي (خصوصاً إلا الصوت ضعيف)
+  const _isEcho = t => { const w = _words(t); return w.length >= 4 && w.filter(x => _HINT_WORDS.has(x)).length / w.length >= 0.8; };
+  // هلوسة بالتكرار (شكرا شكرا شكرا...)
+  const _isLoop = t => { const w = _words(t); if(w.length < 4) return false; const c = {}; let mx = 0; w.forEach(x => { c[x] = (c[x] || 0) + 1; if(c[x] > mx) mx = c[x]; }); return mx / w.length > 0.6; };
+  const _durOf = b => (b && /wav/i.test(b.type || '') && b.size > 44) ? (b.size - 44) / 32000 : 0;
+  // نص قصير بزاف بالنسبة لمدة التسجيل = غالباً ناقص
+  const _weakText = (t, dur) => _isLoop(t) || (dur >= 5 && _words(t).length < Math.floor(dur * 0.4));
+  const _okScript = (t, src) => {
+    const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length;
+    if(a >= 2 && a >= l * 0.4) return true;                                   // دارجة (+ كلمات فرنسية)
+    return src === 'gemini' && a === 0 && l >= 8 && _words(t).length >= 3;     // كلام كامل بالفرنسية
+  };
+  // السلسلة: Groq turbo ← Groq large-v3 ← Hugging Face (إلا مفعّل) ← Gemini. كل نتيجة كتتفحص، والضعيفة كنعاودو بالموالي.
+  // blob = الملف الأصلي (webm/mp4)، wav = نسخة WAV 16kHz (Gemini/HF + احتياط)، durSec = مدة التسجيل
+  async function transcribe(blob, maxTok, wav, durSec){
     const gk = getGroqKey(), key = getApiKey(), hfOn = !!(getHfKey() && getHfUrl());
     if(!gk && !key && !hfOn) throw new Error('NOKEY');
     const wavBlob = wav || blob;
-    const fails = []; let sawText = false, gemResponded = false;
-    const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
+    const dur = Number(durSec) || _durOf(wavBlob) || _durOf(blob);
+    const fails = []; const weak = []; let answered = false;
+    const judge = (t, src) => {
+      t = String(t || '').trim();
+      if(!t || _noise(t) || !_okScript(t, src)) return null;
+      if(_weakText(t, dur)){ weak.push(t); return null; }
+      return t;
+    };
 
-    // 1) Groq Whisper — الأول دائماً (الأسرع)
+    // 1) Groq Whisper — الأول (الأسرع)
     if(gk){
       for(const m of ['whisper-large-v3-turbo', 'whisper-large-v3']){
         if(_isCool('groq:' + m)) continue;
@@ -5119,41 +5144,44 @@ const VC = (function(){
           let raw;
           try{ raw = await transcribeGroq(blob, gk, m); }
           catch(e){
-            // الملف الأصلي ما تقبلش (400/413/415): كنعاودو بـ WAV
             if(wavBlob !== blob && /HTTP (400|413|415|422)/.test(String(e.message))) raw = await transcribeGroq(wavBlob, gk, m);
             else throw e;
           }
-          if(!raw) return '';                       // Whisper قال ما كاين كلام
-          const r = accept(raw); if(r) return r;
+          answered = true;
+          if(raw && _isEcho(raw)){
+            // رجّع نص الـ prompt (هلوسة): كنعاودو بلا prompt، وإلا ما تأكدش كنتجاهلوه
+            let again = ''; try{ again = await transcribeGroq(blob, gk, m, false); }catch(e){}
+            raw = again || '';
+          }
+          const r = judge(raw, 'groq'); if(r) return r;
         }catch(e){ fails.push('Groq ' + String(e.message || '')); }
       }
     }
     // 2) Hugging Face — إلا مفعّل
     if(hfOn && !_isCool('hf')){
       try{
-        const t = await transcribeHF(wavBlob);
-        if(!t) return '';
-        const r = accept(t); if(r) return r;
+        const t = await transcribeHF(wavBlob); answered = true;
+        const r = judge(t, 'hf'); if(r) return r;
       }catch(e){
         fails.push(String(e.message || 'HF'));
         _setCool('hf', e.fatal ? 30 : 2);
       }
     }
-    // 3) Gemini — احتياطي أخير
+    // 3) Gemini — أفهم للدارجة، كنوصلو ليه إلا الباقي فشل ولا جا ضعيف
     if(key){
       let b64 = null;
       let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
       for(const m of ms){
         try{
           b64 = b64 || await blobToB64(wavBlob);
-          const raw = await geminiTranscribe(m, key, b64, maxTok);
-          gemResponded = true;
-          const r = accept(raw); if(r) return r;
+          const raw = await geminiTranscribe(m, key, b64, maxTok); answered = true;
+          const r = judge(raw, 'gemini'); if(r) return r;
         }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
       }
-      if(gemResponded) return '';
     }
-    if(!sawText && fails.length) throw new Error(fails.join(' | '));
+    // ما لقينا نتيجة مقبولة: أحسن نتيجة ضعيفة أحسن من لا شيء
+    if(weak.length) return weak.sort((x, y) => y.length - x.length)[0];
+    if(!answered && fails.length) throw new Error(fails.join(' | '));
     return '';
   }
   function endUtterance(){
@@ -5176,7 +5204,7 @@ const VC = (function(){
       S.busy = false;
       if(!voiceChatActive || tok !== S.token) return;
       const m = String((err && err.message) || '');
-      const msg = m === 'NOKEY' ? 'ما كاين حتى مفتاح للتفريغ الصوتي (Groq).' : (/429/.test(m) ? 'تجاوزت حدّ الاستعمال المجاني للتفريغ الصوتي، انتظر قليلاً.' : 'تعذّر فهم الصوت (' + m + '). تأكد من الإنترنت.');
+      const msg = m === 'NOKEY' ? 'ما كاين حتى مفتاح للتفريغ الصوتي (Groq).' : (/HTTP 40[13]|غير صالح/.test(m) ? 'مفتاح التفريغ الصوتي غير صالح، حدّثه من الإعدادات ⚙️.' : /429/.test(m) ? 'تجاوزت حدّ الاستعمال المجاني للتفريغ الصوتي، انتظر قليلاً.' : 'تعذّر فهم الصوت (' + m + '). تأكد من الإنترنت.');
       setState('thinking', msg);
       setTimeout(()=>{ if(voiceChatActive && tok === S.token) startListening(); }, 2200);
     });
@@ -5436,6 +5464,8 @@ const VN = (function(){
     setUI(false);
     if(!send) return;
     if(dur < MIN_SEC){ note('الرسالة قصيرة جدًا.'); return; }
+    const peak = levels.length ? Math.max.apply(null, levels) : 0;
+    if(peak < 0.03 && !(recBlob && recBlob.size > 2000)){ note('🎙️ المايكروفون ما سجّل أي صوت. تأكد من إذن المايكروفون وعاود.'); return; }
     const id = 'vn' + Date.now();
     const wav = pcmToWav(pcm);
     const playBlob = (recBlob && recBlob.size > 0) ? recBlob : wav;
@@ -5535,10 +5565,11 @@ const VN = (function(){
       ph.appendChild(r); ph.appendChild(d);
     };
     let text = '';
-    try{ text = await VC.transcribe((raw && raw.size > 0) ? raw : wav, 4096, wav); }
+    try{ text = await VC.transcribe((raw && raw.size > 0) ? raw : wav, 4096, wav, meta.dur); }
     catch(err){
       const m = String((err && err.message) || '');
       fail(m === 'NOKEY' ? 'التفريغ الصوتي يحتاج مفتاح Groq (أضفه من الإعدادات ⚙️).'
+          : /HTTP 40[13]|غير صالح/.test(m) ? 'مفتاح التفريغ الصوتي غير صالح، حدّثه من الإعدادات ⚙️ ثم أعد المحاولة.'
           : /429/.test(m) ? 'تجاوزت حدّ الاستعمال المجاني للتفريغ الصوتي، انتظر قليلاً ثم أعد المحاولة.'
           : 'تعذّر تفريغ الصوت (' + m + '). تأكد من الإنترنت.');
       return;
