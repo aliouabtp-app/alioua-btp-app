@@ -2189,48 +2189,53 @@ const modalErr = document.getElementById('modalErr');
 const modalDesc = document.getElementById('modalDesc');
 const modalTitle = document.getElementById('modalTitle');
 
-const SYSTEM_PROMPT = `اسمك "يونس"، وأنت المساعد الذكي الخاص بـ "ALIOUA BTP"، شركة بناء وأشغال عمومية (BTP) مغربية. إذا سألك المستخدم شو اسمك أو ناداك باسم يونس، تجاوب بشكل طبيعي إنك يونس، مساعده الشخصي.
-مهمتك مساعدة مسير الشركة في مهامه اليومية: صياغة عروض أسعار وفواتير ومراسلات، حساب كميات المواد وتقدير التكاليف، تحضير تقارير متابعة المشاريع والورشات، صياغة عقود ودفاتر شروط، وتنظيم المهام اليومية.
+const SYSTEM_PROMPT = `اسمك "يونس"، وأنت المساعد الذكي والمهندس الخبير الخاص بـ "ALIOUA BTP"، شركة بناء وأشغال عمومية (BTP) مغربية. أنت بمثابة المهندس والمدير التقني والإداري ديال الشركة، وكتفهم فـ البناء، المحاسبة، والتقارير. إلا ناداك المستخدم باسم يونس، جاوبو بشكل طبيعي إنك يونس.
 
-مهم جدًا بخصوص اللغة: تكلم دائمًا بنفس اللغة أو اللهجة اللي كيكتب بيها المستخدم. إلا كتب بالدارجة المغربية، جاوب بالدارجة المغربية بطلاقة وبشكل طبيعي (زي ما كيهضر مغربي بلا تكلف). إلا كتب بالفرنسية جاوب بالفرنسية، وإلا كتب بالعربية الفصحى جاوب بيها. للمصطلحات التقنية أو الرسمية (فواتير، عقود، مستندات رسمية) استعمل عربية فصحى مبسطة أو فرنسية واضحة حسب السياق، حتى لو كانت المحادثة بالدارجة.
+مهمتك الأساسية هي مساعدة مسير الشركة فـ **كلشي** كيتعلق بالخدمة:
+1. حساب الكميات (Métré): التبنيات، الخرسانة، الحديد، الصباغة، إلخ.
+2. تحليل المخططات والبلانات (قراءة الأبعاد وحساب المساحات والكميات).
+3. المحاسبة: جمع المصاريف، حساب المداخيل، الفواتير، وتلخيص الأرباح.
+4. صياغة التقارير: تقارير تقدم الأشغال، تقارير للموردين، مراسلات إدارية.
+5. إدارة المشاريع: تتبع الأجراء، المواد، والمواعيد.
 
-مهم جدًا بخصوص طريقة العرض: لما يكون بالرد بيانات رقمية مقارنة (مصاريف، كميات، تقدم مشروع عبر فترات) استعمل رسم بياني بهاد الشكل بالضبط (كتلة كود لغتها chart، وJSON صحيح جوّاها بس):
+**قواعد صارمة جداً (خاصك تتبعها حرفياً):**
+- **اللغة:** جاوب دائماً بالدارجة المغربية الطبيعية 100% (بحال ما كيهضر مغربي: بغيت، دابا، واش، كاين، شنو، فين، شحال، غادي، ديال). ممنوع تماماً تستعمل الإنجليزية أو الفرنسية فـ كلامك مع المستخدم، إلا المصطلحات التقنية بحال Béton, Double Cloison, Métré, facture. الاستثناء الوحيد: المستندات الرسمية (فاتورة، عقد، رسالة رسمية) كتكتبها بالفرنسية أو العربية الفصحى المبسطة إلا طلبها المستخدم، وكتشرح ليه بالدارجة.
+- **الحسابات والبلانات:** إلا صيفط ليك المستخدم تصويرة ديال بلان أو طلب منك تحسب شي حاجة، **ممنوع تماماً** تكتب "خطة العمل" ديالك أو تشرح كيفاش غادي تحسب بالإنجليزية أو الفرنسية (متل Explain, Break down, Assumption). دير الحساب ديريكت بالدارجة، **خطوة بخطوة** (كل عملية بأرقامها)، وفالأخير عطي النتيجة النهائية واضحة.
+- **قراءة البلان:** قرا غير الأرقام الظاهرة فالصورة بوضوح. ممنوع تخمن قياس مابانش (سمك الحيط، الارتفاع، العمق...). إلا كانت المعطيات ناقصة، وقف وسول المستخدم بالدارجة (مثلاً: "عطيني سمك الحيط والارتفاع باش نحسب ليك"). إلا كانت الصورة مشوشة أو جزء منها مقطوع، قولها صراحة وعطي تقدير بمجال (بحال "بين 40 و 50") وطلب صورة أوضح.
+- **عد الأشياء فالصور:** إلا طلب منك تعد مواد أو أشياء فصورة، قسّمها لمجموعات صغيرة (صفوف، طبقات، أكوام)، احسب كل مجموعة، ثم اجمعهم.
+- **المحاسبة:** إلا عطاك أرقام ديال المصاريف أو المداخيل، حسبها ليه وجمعها وطرح وعطيه الصافي، وقولو ليه فين خاصو يقلب على الربح. راجع جموعك مرتين قبل ما تعطي الجواب.
+- **بيانات الشركة الحالية:** إلا توفرات ليك "بيانات الشركة الحالية" تحت رسالة المستخدم (موردين، عملاء، مصاريف، سيولة، مشاريع، أجراء)، اعتبرها المصدر الرسمي والدقيق، واستعملها مباشرة فـ الحساب والتقارير بلا ما تسول المستخدم يعطيك الأرقام يدويًا.
+- **التقارير:** إلا طلب منك تقرير، نظمو ليه فـ جداول مفهومة (Markdown) ولا فـ كتلة report.
+- **الفواتير:** إلا طلب منك فاتورة، عطيه تفاصيل الحساب بوضوح (الكمية × الثمن، المجموع بدون ضريبة، TVA، المجموع بالضريبة).
+- **الأرقام:** لا تخترع أرقامًا أو حقائق عن الشركة إن لم تُعطَ لك.
+
+**قوانين هندسية أساسية (استعملها فـ الحساب، وإلا عطاك المستخدم قياسات أو نسب مختلفة استعمل ديالو):**
+- المتر المكعب ديال الخرسانة (Béton) كياخد 350 كيلو سيمان (7 صاكة ديال 50 كيلو)، تقريباً 400 لتر ديال الرمل و800 لتر ديال الحصى و175 لتر ديال الما.
+- المتر المربع ديال الطوب (الحيط) كياخد تقريباً 12.5 حجرة (حسب مقاس الحجرة).
+- الحجم = الطول × العرض × الارتفاع. مساحة الحيط = الطول × الارتفاع، وكتنقص منها الأبواب والنوافذ.
+- زيد 5% حتى 10% ديال الضياع فـ المواد، وقول هاد النسبة للمستخدم.
+
+**ميزات التطبيق (خاصك تستعملهم بالضبط بهاد الشكل، وJSON صحيح جوّاهم):**
+- إلا كان الجواب فيه أرقام للمقارنة (مصاريف، كميات، تقدم مشروع)، استعمل الرسم البياني. النوع يكون "bar" أو "line" أو "pie":
 \`\`\`chart
 {"type":"bar","title":"عنوان الرسم","labels":["يناير","فبراير"],"datasets":[{"label":"المصاريف","data":[1200,1500]}]}
 \`\`\`
-النوع (type) يكون "bar" أو "line" أو "pie". استعمل جدول ماركداون عادي (| عمود | عمود |) للفواتير وقوائم المواد والبيانات التفصيلية.
-
-لما المستخدم يطلب صورة أو تصور بصري أو رسمة (متل "ارسم لي"، "صورة لـ"، "شكل تصميم")، استعمل بالضبط هاد الشكل بسطر لحاله:
-\`\`\`image: وصف دقيق ومفصل بالإنجليزية للصورة المطلوبة
+- إلا طلب منك تقرير قابل للتحميل (Excel/PDF/Word) استعمل (formats اختياري، افتراضياً excel وpdf، وزيد word إلا طلبو المستخدم):
+\`\`\`report
+{"title":"عنوان التقرير", "columns":["عمود1","عمود2"], "rows":[["قيمة1","قيمة2"]], "summary":"ملخص أو مجموع اختياري", "formats":["excel","pdf"]}
 \`\`\`
-لا تستعمل الرسم البياني أو الصورة إلا إذا كانا يخدمون الطلب فعلاً، ولا تكررهم بلا داعي.
-
-لما المستخدم يطلب منك تضيف موعد، تذكير، أو تحدد له وقت لشي (متل "ذكرني بـ..."، "ضيف موعد..."، "عندي اجتماع يوم...")، استعمل بالضبط هاد الشكل بسطر لحاله، وJSON صحيح جوّاه، بعد ما تأكد فاهم التاريخ والوقت المطلوبين (استعمل التاريخ الحالي المعطى لك تحت لحساب "غدا"، "بعد غد"، أسماء الأيام، إلخ):
+بعد الكتلة، قول ليه بجملة قصيرة إن التقرير واجد للتحميل.
+- إلا طلب منك تضيف موعد أو تذكير ("ذكرني"، "ضيف موعد"، "عندي اجتماع يوم..."): استعمل التاريخ الحالي المعطى لك تحت باش تحسب "غدا" و"بعد غد" وأسماء الأيام. إلا التاريخ أو الوقت ماواضحينش، سولو قبل. ومن بعد أكد ليه بجملة قصيرة:
 \`\`\`add_appointment
 {"title":"عنوان الموعد", "date":"YYYY-MM-DD", "time":"HH:MM", "notes":"ملاحظات اختيارية"}
 \`\`\`
-بعد ما تولّد هاد الكتلة، أكّد للمستخدم بجملة قصيرة إنك ضفت الموعد. إذا التاريخ أو الوقت مو واضحين من كلام المستخدم، اسأله يحددهم قبل ما تولّد الكتلة.
-
-إذا المستخدم بعث جدول أو لائحة فيها عدة تواريخ (مثلاً جدول Excel، صورة جدول، أو نص فيه أكثر من موعد) وطلب منك تحولهم لمواعيد أو تذكيرات، ولّد كتلة \`add_appointment\` منفصلة لكل موعد فنفس الرد، وحدة تلو الأخرى، بلا ما تسأل تأكيد لكل وحدة على حدة. بعد كل الكتل، لخّص للمستخدم بجملة وحدة عدد المواعيد لي تزادو (مثلاً "ضفت 5 مواعيد من الجدول").
-
-لما المستخدم يطلب منك "تقرير"، "استخرج ليا ملف"، "صيفط ليا فExcel/Word/PDF"، "لخص ليا فملف"، أو أي طلب فيه بيانات جدولية محتاجة تتصدر كملف قابل للتحميل، استعمل بالضبط هاد الشكل بسطر لحاله، وJSON صحيح جوّاه:
-\`\`\`report
-{"title":"عنوان التقرير", "columns":["عمود1","عمود2"], "rows":[["قيمة1","قيمة2"],["قيمة3","قيمة4"]], "summary":"ملخص أو مجموع اختياري", "formats":["excel","pdf","word"]}
+- إلا بعث ليك جدول أو لائحة فيها بزاف ديال المواعيد، ولّد كتلة add_appointment منفصلة لكل موعد فنفس الجواب بلا ما تسول فكل وحدة، وفالأخير لخص عددهم بجملة وحدة.
+- إلا طلب منك صورة أو تصور بصري ("ارسم ليا"، "صورة ديال..."، "تصميم")، استعمل هاد الشكل (الوصف داخل الكتلة خاص يكون بالإنجليزية، حيت كيمشي لمولد الصور، وباقي كلامك بالدارجة):
+\`\`\`image: detailed English description of the requested image
 \`\`\`
-- "formats" اختياري، افتراضيًا ["excel","pdf"]. زيد "word" إذا طلب المستخدم Word بالتحديد.
-- استعمل بيانات حقيقية من المحادثة، أو من الصورة/الملف لي بعثها المستخدم، أو من "بيانات الشركة الحالية" لي غادي تتوفر ليك تلقائيًا تحت رسالة المستخدم كل ما السؤال كان عن الموردين/العملاء/المصاريف/السيولة/المشاريع/الأجراء — لا تخترع أرقام إطلاقًا.
-- إذا توفرات ليك "بيانات الشركة الحالية"، اعتبرها المصدر الرسمي والدقيق، واستعملها مباشرة لبناء الجداول والتقارير والأجوبة (مجموع مورد معين، قائمة العملاء، رصيد الصندوق، أداء مشروع، إلخ) بلا ما تسأل المستخدم يعطيك الأرقام يدويًا.
-- بعد الكتلة، أكّد بجملة قصيرة إن التقرير جاهز للتحميل.
+لا تستعمل الرسم البياني ولا الصورة إلا إلا كانو كيخدمو الطلب فعلاً.
 
-مهم جدًا بخصوص تحليل الصور (خصوصًا حساب الكميات، عد المواد أو الأشياء، القياسات): لا تعطي الرقم النهائي مباشرة من غير ما تفكر بصوت عالي. اتبع هاد الخطوات بالضبط:
-1. وصف الصورة بإيجاز: شنو كاين فيها، الجودة (واضحة، بعيدة، ضوء ضعيف...)، وأي عوائق كتصعب الحساب (تراكب، جزء مخفي، زاوية...).
-2. قسّم المنطقة أو المواد لمجموعات صغيرة وسهلة العد (صفوف، طبقات، أكوام)، واحسب كل مجموعة لحالها، وبيّن حسابك رقم برقم.
-3. اجمع المجموعات فالنهاية وأعطي الرقم الكلي.
-4. إذا الصورة مو واضحة بزاف، الإضاءة ضعيفة، أو جزء من العنصر مخفي/مقطوع، قول هذا صراحة وأعطي تقدير تقريبي (بمجال، متل "بين 40 و 50") بدل رقم دقيق كاذب، واقترح على المستخدم يرسل صورة أوضح أو من زاوية ثانية إذا أمكن.
-5. لا تخمن قياسات أو كميات مو ظاهرة فالصورة إطلاقًا (متل السماكة أو العمق) — قول إنها مو قابلة للتحديد من الصورة وحدها.
-هاد الأسلوب (وصف ثم تقسيم ثم جمع) ينطبق بغض النظر شكون كيجاوب (Gemini، Groq، أو Cerebras).
-
-خلي أسلوبك مهني ومباشر ومختصر يناسب رجل أعمال مشغول. رتب الأرقام والجداول بوضوح عند الحاجة. لا تخترع أرقامًا أو حقائق عن الشركة إن لم تُعطَ لك.`;
+خلي أسلوبك مهني، مباشر، ومختصر يناسب رجل أعمال مشغول.`;
 
 let messages = []; // {role: 'user'|'model', text, time}
 
@@ -3317,7 +3322,7 @@ async function groqModelCandidates(gKey, vision){
 
 async function callGroq(gKey, msgs){
   // Groq (مجاني) — نص بـ gpt-oss، وإذا الرسالة الأخيرة فيها صورة كنستعمل موديل رؤية متاح
-  const recent = msgs.slice(-14);
+  const recent = msgs.slice(voiceChatActive ? -8 : -14);
   const last = recent[recent.length-1] || {};
   const hasImg = last.role === 'user' && (last.image || (last.images && last.images.length));
   const gMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs)}];
@@ -3338,7 +3343,7 @@ async function callGroq(gKey, msgs){
     }
   });
   const run = (model, ms)=>{
-    const body = { model, messages: ms, temperature: 0.7, max_completion_tokens: 2048 };
+    const body = { model, messages: ms, temperature: 0.7, max_completion_tokens: voiceChatActive ? 450 : 2048 };
     if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
     return _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gKey, body, 'Groq');
   };
@@ -4146,10 +4151,103 @@ const VC = (function(){
     try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
     try{ window._ttsAudio && window._ttsAudio.pause(); }catch(e){}
   }
+  /* ---------- صوت دارجة سحابي (Gemini TTS) — ما كيحتاج حتى حزمة لغة فالهاتف ---------- */
+  let _gtCool = 0, _gtModels = null, _gtModelsAt = 0;
+  async function geminiTtsModels(key){
+    if(!_gtModels){
+      _gtModels = ['gemini-2.5-flash-preview-tts']; _gtModelsAt = Date.now();
+      (async()=>{ try{
+        const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + key);
+        const j = await r.json();
+        const l = (j.models || []).filter(m => /tts/i.test(m.name) && (m.supportedGenerationMethods || []).includes('generateContent'))
+          .map(m => m.name.replace('models/', '')).sort((a,b)=> (/pro/.test(a) ? 1 : 0) - (/pro/.test(b) ? 1 : 0));
+        if(l.length) _gtModels = l;
+      }catch(e){} })();
+    }
+    return _gtModels;
+  }
+  function pcmToWavBlob(b64, rate){
+    const bin = atob(b64), n = bin.length, u8 = new Uint8Array(44 + n);
+    const dv = new DataView(u8.buffer);
+    const w = (o, t)=>{ for(let i = 0; i < t.length; i++) dv.setUint8(o + i, t.charCodeAt(i)); };
+    w(0,'RIFF'); dv.setUint32(4, 36 + n, true); w(8,'WAVE'); w(12,'fmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+    w(36,'data'); dv.setUint32(40, n, true);
+    for(let i = 0; i < n; i++) u8[44 + i] = bin.charCodeAt(i);
+    return new Blob([u8], { type:'audio/wav' });
+  }
+  async function geminiTtsChunk(text, key){
+    let lastErr = null;
+    for(const m of await geminiTtsModels(key)){
+      try{
+        const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + key, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            contents:[{ parts:[{ text: 'Say the following in natural, fluent Moroccan Darija (Moroccan Arabic dialect, Casablanca accent), in a calm, friendly, professional tone, at a natural pace. Pronounce Moroccan words the Moroccan way and French words in French: ' + text }] }],
+            generationConfig:{ responseModalities:['AUDIO'], speechConfig:{ voiceConfig:{ prebuiltVoiceConfig:{ voiceName:'Orus' } } } }
+          })
+        });
+        if(res.status === 429){ _gtCool = Date.now() + 90000; throw new Error('429'); }
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        const part = (((j.candidates||[])[0]||{}).content||{}).parts;
+        const inl = part && part.map(x=>x.inlineData).find(Boolean);
+        if(!inl || !inl.data) throw new Error('NOAUDIO');
+        const rm = /rate=(\d+)/.exec(inl.mimeType || '');
+        return pcmToWavBlob(inl.data, rm ? +rm[1] : 24000);
+      }catch(e){ lastErr = e; if(String(e.message) === '429') break; }
+    }
+    throw lastErr || new Error('TTS');
+  }
+  // يرجع النص اللي ما تنطقش (فاش كيفشل الصوت السحابي) باش الصوت المحلي يكمّل
+  async function geminiSpeak(text, key, id){
+    const parts = []; let rest = text.trim();
+    // أول مقطع قصير (جملة وحدة) باش يبدا الصوت فأسرع وقت، والباقي كيتحضّر بالتوازي
+    { const m = /^[^.!?؟\n]{15,140}[.!?؟]/.exec(rest);
+      let cut = m ? m[0].length : (rest.length > 150 ? rest.lastIndexOf(' ', 130) : rest.length);
+      if(cut <= 0) cut = Math.min(rest.length, 130);
+      parts.push(rest.slice(0, cut).trim()); rest = rest.slice(cut).trim(); }
+    while(rest.length){
+      if(rest.length <= 400){ parts.push(rest); break; }
+      let cut = Math.max(rest.lastIndexOf('. ', 400), rest.lastIndexOf('؟', 400), rest.lastIndexOf('! ', 400), rest.lastIndexOf(' ', 400));
+      if(cut <= 80) cut = 400;
+      parts.push(rest.slice(0, cut + 1).trim()); rest = rest.slice(cut + 1).trim();
+    }
+    const jobs = parts.map((t, k)=>{ if(k >= 4) return null; const pr = geminiTtsChunk(t, key); pr.catch(()=>{}); return pr; });
+    for(let i = 0; i < parts.length; i++){
+      let blob;
+      if(!jobs[i]){ jobs[i] = geminiTtsChunk(parts[i], key); jobs[i].catch(()=>{}); }
+      try{ blob = await jobs[i]; }catch(e){ return parts.slice(i).join(' '); }
+      if(id !== S.spk || window._ttsStop) return '';
+      const url = URL.createObjectURL(blob);
+      const ok = await new Promise(resolve=>{
+        const a = new Audio(url); window._ttsAudio = a;
+        a.addEventListener('ended', ()=>{ URL.revokeObjectURL(url); resolve(true); });
+        a.addEventListener('pause', ()=>{ resolve(true); });
+        a.addEventListener('error', ()=>{ URL.revokeObjectURL(url); resolve(false); });
+        a.play().catch(()=>{ URL.revokeObjectURL(url); resolve(false); });
+      });
+      if(!ok) return parts.slice(i).join(' ');
+    }
+    return '';
+  }
   function speak(text, done){
     const id = ++S.spk;
     window._ttsStop = false;
     const fin = ()=>{ if(id === S.spk && done) done(); };
+    const gk = getApiKey();
+    if(gk && Date.now() > _gtCool){
+      geminiSpeak(text, gk, id).then(rest=>{
+        if(id !== S.spk) return;
+        if(!rest) return fin();
+        speakLocal(rest, id, fin);
+      }).catch(()=> speakLocal(text, id, fin));
+      return;
+    }
+    speakLocal(text, id, fin);
+  }
+  function speakLocal(text, id, fin){
     const synth = window.speechSynthesis;
     let voice = null;
     try{
@@ -4296,7 +4394,7 @@ const VC = (function(){
       S.lastDisplay = display;
       const tx = $('vcTranscript'); if(tx) tx.textContent = display;
       clearTimeout(S.silenceT);
-      if(display) S.silenceT = setTimeout(()=>finalizeTurn(S.lastDisplay), 1400);
+      if(display) S.silenceT = setTimeout(()=>finalizeTurn(S.lastDisplay), 900);
     };
     r.onerror = (e)=>{
       const er = e && e.error;
@@ -4392,7 +4490,7 @@ const VC = (function(){
     }else{
       S.buf.push(f);
       if(rms > S.thr){ S.lastVoice = now; S.voiced++; }
-      if(now - S.lastVoice > 1200 || now - S.speechStart > 30000) endUtterance();
+      if(now - S.lastVoice > 850 || now - S.speechStart > 30000) endUtterance();
     }
   }
   function encodeWav(chunks, srcRate){
@@ -4485,6 +4583,12 @@ const VC = (function(){
     if(!gk && !key) throw new Error('NOKEY');
     let lastErr = null, sawText = false;
     const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
+    if(gk){
+      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
+        if(_isCool('groq:' + m)) continue;
+        try{ const r = accept(await transcribeGroq(blob, gk, m)); if(r) return r; }catch(e){ lastErr = e; }
+      }
+    }
     if(key){
       let b64 = null;
       let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
@@ -4493,12 +4597,6 @@ const VC = (function(){
           b64 = b64 || await blobToB64(blob);
           const r = accept(await geminiTranscribe(m, key, b64, maxTok)); if(r) return r;
         }catch(e){ lastErr = e; }
-      }
-    }
-    if(gk){
-      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
-        if(_isCool('groq:' + m)) continue;
-        try{ const r = accept(await transcribeGroq(blob, gk, m)); if(r) return r; }catch(e){ lastErr = e; }
       }
     }
     if(!sawText && lastErr) throw lastErr;   // كل المزودين فشلو (حد/شبكة) ماشي صمت
