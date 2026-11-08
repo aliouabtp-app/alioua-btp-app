@@ -3419,6 +3419,20 @@ async function sendMessage(){
   const text = inputEl.value.trim();
   if(!text && !pendingImages.length) return;
 
+  // مرفق (PDF/صورة) بلا نص: كنسجلو فالمحادثة فقط بلا ما نصيفطو للذكاء الاصطناعي. المستخدم هو اللي كيكتب من بعد شنو بغا (تحليل، متري، تلخيص...) والمرفق كيبقى حاضر.
+  if(!text && pendingImages.length && !window._vnPending){
+    const stageMsg = {role:'user', text:'', time:Date.now()};
+    if(pendingImages.length === 1) stageMsg.image = pendingImages[0];
+    else stageMsg.images = pendingImages.slice();
+    messages.push(stageMsg);
+    pendingImages = [];
+    renderAttachPreview();
+    autoGrow();
+    renderMessages();
+    saveHistory();
+    return;
+  }
+
   const key = getApiKey();
   const hasImage = pendingImages.length > 0;
   if(!key && !getGroqKey() && !getCerebrasKey()){
@@ -3495,7 +3509,11 @@ async function sendMessage(){
           friendly += '\n💡 يمكنك تضيف مفتاح Cerebras احتياطي مجاني من الإعدادات ⚙️.';
         }
       }else{
-        friendly = 'صار في خطأ بالاتصال.\n' + (lastErr.detail || 'تأكد من الإنترنت وحاول مرة ثانية.');
+        let attMB = 0;
+        try{ const la = messages.slice(-4).filter(m=> m.role === 'user' && (m.image || (m.images && m.images.length))).pop();
+          if(la) attMB = (la.images && la.images.length ? la.images : [la.image]).reduce((n, x)=> n + ((x && x.data) || '').length, 0) / 1048576; }catch(e){}
+        friendly = '⚠️ ما قدرتش نوصل للمزودين.' + (navigator.onLine === false ? '\nالهاتف ماشي متصل بالإنترنت.'
+          : (attMB > 4 ? `\nالمرفق كبير (≈${attMB.toFixed(1)} ميجا) والاتصال ما قدرش يرفعو. جرب بـ WiFi، ولا قسّم/صغّر الملف.` : '\nتأكد من الإنترنت وعاود كتب طلبك.'));
       }
       if(errLog.length) friendly += '\n🔎 ' + errLog.join('\n🔎 ');
       messages.push({role:'model', text:friendly, time:Date.now()});
@@ -3625,7 +3643,15 @@ async function callGemini(key, msgs){
   });
 
   const fullSystemPrompt = _yunusFullSystemPrompt(msgs);
-  const _gFresh = _gAttIdx >= 0 && _gAttIdx === msgs.length - 1; // رسالة جديدة فيها بلان/PDF/صورة
+  // رسالة جديدة فيها بلان/PDF/صورة (ولا مرفق تسجل بلا نص والمستخدم كتب التعليمات فالرسالة اللي بعدو)
+  const _gFresh = _gAttIdx >= 0 && (_gAttIdx === msgs.length - 1 || (_gAttIdx === msgs.length - 2 && !msgs[_gAttIdx].text && msgs[msgs.length - 1].role === 'user'));
+  // Gemini كيبغي أدوار متناوبة: كندمجو الرسائل المتتالية ديال نفس الدور (المرفق + التعليمات) فرسالة وحدة
+  const _contents = [];
+  contents.forEach(c=>{
+    const prev = _contents[_contents.length - 1];
+    if(prev && prev.role === c.role) prev.parts = prev.parts.concat(c.parts.filter(pt=> pt.text !== ''));
+    else _contents.push({ role: c.role, parts: c.parts.slice() });
+  });
 
   async function tryModel(modelId, noThink){
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`;
@@ -3639,7 +3665,7 @@ async function callGemini(key, msgs){
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           system_instruction: {parts:[{text: fullSystemPrompt}]},
-          contents,
+          contents: _contents,
           generationConfig: gc
         })
       });
@@ -3777,12 +3803,16 @@ async function callGroq(gKey, msgs){
   // Groq (مجاني) — نص بـ gpt-oss، وإذا الرسالة الأخيرة فيها صورة كنستعمل موديل رؤية متاح
   const recent = msgs.slice(voiceChatActive ? -8 : -14);
   const last = recent[recent.length-1] || {};
-  const hasImg = last.role === 'user' && (last.image || (last.images && last.images.length));
+  const _hasAttM = m => !!m && m.role === 'user' && !!(m.image || (m.images && m.images.length));
+  const _prevM = recent[recent.length-2];
+  const _attSrc = (!_hasAttM(last) && _hasAttM(_prevM) && !_prevM.text) ? _prevM : last; // مرفق مسجل بلا نص قبل التعليمات
+  const hasImg = _hasAttM(_attSrc);
   const gMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs, true)}];
-  const lastAtts = hasImg ? ((last.images && last.images.length) ? last.images : [last.image]) : [];
+  const lastAtts = hasImg ? ((_attSrc.images && _attSrc.images.length) ? _attSrc.images : [_attSrc.image]) : [];
   const gImg = hasImg ? await _groqImageParts(lastAtts) : { parts: [], note: '' };
   recent.forEach((m, idx)=>{
     const isLast = idx === recent.length - 1;
+    if(m === _attSrc && _attSrc !== last) return; // المرفق غادي يتصيفط مع التعليمات
     if(m.role === 'user'){
       if(isLast && hasImg){
         const content = [];
@@ -3790,7 +3820,7 @@ async function callGroq(gKey, msgs){
         gImg.parts.forEach(pt=> content.push(pt));
         gMessages.push({role:'user', content});
       }else{
-        gMessages.push({role:'user', content: m.text || ''});
+        gMessages.push({role:'user', content: m.text || (_hasAttM(m) ? '[مرفق تصيفط قبل]' : '')});
       }
     }else{
       gMessages.push({role:'assistant', content: m.text || ''});
@@ -3833,7 +3863,8 @@ async function callCerebras(cKey, msgs){
   // Cerebras (مجاني) — نص فقط. الطبقة المجانية سياقها صغير (≈8K)، فكنقصرو التاريخ
   const cMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs, true)}];
   msgs.slice(-8).forEach(m=>{
-    cMessages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text || '' });
+    if(!m.text) return;
+    cMessages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text });
   });
   return _openAiStyleCall('https://api.cerebras.ai/v1/chat/completions', cKey, {
     model: CEREBRAS_MODEL,
