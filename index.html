@@ -2352,7 +2352,10 @@ const SYSTEM_PROMPT = `أنت "يونس"، المساعد الشخصي الذك�
 الأنواع t: terrassement(L,l,h) | beton_proprete(S أو L,l وe) | semelle_isolee، semelle_filante، longrine، poteau، poutre، chainage (n,L,l,h = الطول×العرض×الارتفاع؛ فالعمود L وl هوما مقطع العمود وh الارتفاع) | voile(L,h,e) | dalle_pleine، dallage، dalle_hourdis (S أو L,l، وe السمك) | escalier(V) | mur_brique، cloison (L,h أو S، ouv=مساحة الفتحات، e) | enduit، carrelage، faience، etancheite (S) | peinture(S,couches) | divers(nom,q,u). تقدر تعوض الأبعاد بـ S (م²) أو V (م³)، و n هو عدد العناصر المتشابهة. كل عنصر كتكتبو مرة وحدة بعدد n. مثلاً 6 longrines بطول 9.96: عنصر واحد n=6.
 4. بعد الكتلة قول بجملة إن الجدول جاهز. ما تكتب حتى نتيجة (إسمنت، حديد، طوب...) بيدك، حيت التطبيق كيحسبها ويعرضها فالجدول مع هدر 5%.
 
-كل رقم كتعطيه لازم يجي من البلان، من كلام المستخدم، من "بيانات الشركة الحالية" المتوفرة ليك تحت الرسالة، أو من قاعدة قانونية/محاسبية معروفة. إلا كان قياس ما باينش فالبلان (بحال السمك أو العمق)، قولو بوضوح وحط فرضية معقولة سميها "فرضية" وكمل الحساب. رتب الأرقام والجداول بوضوح، ولا تخترع حقائق عن الشركة إن لم تُعطَ لك.`;
+كل رقم كتعطيه لازم يجي من البلان، من كلام المستخدم، من "بيانات الشركة الحالية" المتوفرة ليك تحت الرسالة، أو من قاعدة قانونية/محاسبية معروفة. إلا كان قياس ما باينش فالبلان (بحال السمك أو العمق)، قولو بوضوح وحط فرضية معقولة سميها "فرضية" وكمل الحساب. رتب الأرقام والجداول بوضوح، ولا تخترع حقائق عن الشركة إن لم تُعطَ لك.
+
+## قاعدة المكالمات والرسائل الصوتية (صارمة)
+فالمكالمات الصوتية والرسائل الصوتية، جاوب بجمل قصيرة جداً (جوج ولا ثلاثة جمل). ماتستعملش القوائم ولا الجداول، هضر بحال بنادم كيهضر فالتليفون. الاستثناء الوحيد: إلا طلب المستخدم موعد أو تقرير أو رسم أو متري، كتب جملة قصيرة ثم الكتلة المطلوبة بصيغتها كاملة بلا ما تقطعها.`;
 
 let messages = []; // {role: 'user'|'model', text, time}
 
@@ -3751,6 +3754,8 @@ function _yunusCompactPrompt(){
   _yunusCompactCache = t;
   return t;
 }
+const VOICE_NOTE_HINT = '\n\n[الرسالة الأخيرة جات من تسجيل صوتي: جاوب بجمل قصيرة (جوج ولا ثلاثة) بلا قوائم ولا جداول، إلا إذا طلب تقرير أو موعد أو رسم فاحترم الكتلة المطلوبة بصيغتها.]';
+function _lastUserIsVoice(msgs){ const u = (msgs || []).slice().reverse().find(m => m.role === 'user'); return !!(u && u.voice); }
 function _yunusFullSystemPrompt(msgs, compact){
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-CA');
@@ -3758,7 +3763,7 @@ function _yunusFullSystemPrompt(msgs, compact){
   const timeStr = now.toTimeString().slice(0,5);
   const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
   const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
-  return (compact ? _yunusCompactPrompt() : SYSTEM_PROMPT) + YUNUS_DARIJA_RULE + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot + _metreContext(msgs);
+  return (compact ? _yunusCompactPrompt() : SYSTEM_PROMPT) + YUNUS_DARIJA_RULE + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot + _metreContext(msgs) + (_lastUserIsVoice(msgs) ? VOICE_NOTE_HINT : '');
 }
 
 async function _openAiStyleCall(url, apiKey, body, providerName){
@@ -3814,6 +3819,8 @@ async function groqModelCandidates(gKey, vision){
   return out.slice(0, 4);
 }
 
+const VC_STOP = ["\n\n", ". ", "؟ ", "! "];   // وقف التوليد عند نهاية الجملة (المكالمة الصوتية فقط)
+const VC_ACTION_RE = /موعد|مواعيد|ذكر|تذكير|اجتماع|rdv|rappel|ضيف|زيد|سجل|تقرير|استخرج|ملف|excel|pdf|word|اكسل|إكسل|متري|كميات|ارسم|رسم|صورة|جدول|بلان|مخطط|chart/i;
 async function callGroq(gKey, msgs){
   // Groq (مجاني) — نص بـ gpt-oss، وإذا الرسالة الأخيرة فيها صورة كنستعمل موديل رؤية متاح
   const recent = msgs.slice(voiceChatActive ? -8 : -14);
@@ -3837,8 +3844,12 @@ async function callGroq(gKey, msgs){
       gMessages.push({role:'assistant', content: m.text || ''});
     }
   });
-  const run = (model, ms)=>{
-    const body = { model, messages: ms, temperature: 0.7, max_completion_tokens: voiceChatActive ? 450 : 2048 };
+  // مكالمة صوتية: جواب قصير وسريع. الطلبات اللي فيها كتلة أمر (موعد/تقرير/رسم...) كتخدم بلا stop وبحد أكبر باش الكتلة ما تتقطعش
+  const vcFast = voiceChatActive && !VC_ACTION_RE.test(String(last.text || ''));
+  const run = (model, ms, relaxed)=>{
+    const fast = vcFast && !relaxed;
+    const body = { model, messages: ms, temperature: 0.7, max_completion_tokens: voiceChatActive ? (fast ? 250 : 700) : 2048 };
+    if(fast) body.stop = VC_STOP;
     const isOss = /^openai\/gpt-oss/.test(model);
     if(isOss) body.reasoning_effort = 'low';
     const url = 'https://api.groq.com/openai/v1/chat/completions';
@@ -3860,7 +3871,13 @@ async function callGroq(gKey, msgs){
   for(let i = 0; i < cands.length; i++){
     try{
       // الموديلات الاحتياطية كتاخد تاريخ أقصر باش تدوز حتى مع الحدود الصغيرة
-      return await run(cands[i], i === 0 ? gMessages : [gMessages[0]].concat(gMessages.slice(-6)));
+      const ms = i === 0 ? gMessages : [gMessages[0]].concat(gMessages.slice(-6));
+      try{ return await run(cands[i], ms, false); }
+      catch(e1){
+        // جواب خاوي (حد tokens/stop قطع قبل ما يبدا النص): نعاودو مرة وحدة بلا stop وبحد أكبر
+        if(vcFast && e1.message !== 'AUTH' && /ما رجع/.test(String(e1.detail || ''))) return await run(cands[i], ms, true);
+        throw e1;
+      }
     }catch(e){
       if(e.message === 'AUTH') throw e;
       lastErr = e; e.detail = (cands[i] + ': ' + (e.detail || e.message)).slice(0, 160);
@@ -4586,14 +4603,14 @@ const VOICE_CALL_RULE = '\n\nالمستخدم الآن في مكالمة صوت�
 const VC = (function(){
   const $ = id => document.getElementById(id);
   const S = {
-    state:'idle', muted:false, mode:'sr', lang:'ar-MA', rec:null, srTimes:[],
-    turnBase:'', lastDisplay:'', silenceT:null, token:0, spk:0, turning:false,
+    state:'idle', muted:false, mode:'rec',
+    silenceT:null, token:0, spk:0, turning:false,
     prevVoice:false, wake:null,
     stream:null, ctx:null, proc:null, src:null, sink:null, sampleRate:48000,
     pre:[], buf:[], inSpeech:false, hot:0, voiced:0, speechStart:0, lastVoice:0,
     calib:[], thr:0.02, level:0, busy:false
   };
-  const SRClass = () => window.SpeechRecognition || window.webkitSpeechRecognition;
+  const VC_SILENCE_MS = 550;   // مدة السكوت قبل نهاية الجملة (ms)
 
   /* ---------- الواجهة ---------- */
   function setState(st, text){
@@ -4614,7 +4631,7 @@ const VC = (function(){
     b.title = S.muted ? 'تشغيل الميكروفون' : 'كتم الميكروفون';
   }
   function fatal(msg){
-    clearTimeout(S.silenceT); stopRecognizer(); cancelSpeech();
+    clearTimeout(S.silenceT); cancelSpeech();
     S.state = 'idle';
     const ov = $('voiceChatOverlay');
     if(ov){ ov.classList.remove('listening','speaking','thinking','muted'); ov.classList.add('idle'); }
@@ -4801,13 +4818,10 @@ const VC = (function(){
   function startListening(){
     if(!voiceChatActive) return;
     clearTimeout(S.silenceT);
-    S.turning = false; S.turnBase = ''; S.lastDisplay = '';
+    S.turning = false;
     setState('listening');
     if(S.muted) return;
-    if(S.mode === 'sr') srStart();
-    else{
-      S.pre = []; S.buf = []; S.inSpeech = false; S.hot = 0; S.voiced = 0; S.calib = []; S.busy = false;
-    }
+    S.pre = []; S.buf = []; S.inSpeech = false; S.hot = 0; S.voiced = 0; S.calib = []; S.busy = false;
   }
 
   async function finalizeTurn(text){
@@ -4815,7 +4829,6 @@ const VC = (function(){
     if(!text || !voiceChatActive || S.turning) return;
     S.turning = true;
     clearTimeout(S.silenceT);
-    stopRecognizer();
     const tok = ++S.token;
     setState('thinking');
     const tx = $('vcTranscript'); if(tx) tx.textContent = text;
@@ -4849,7 +4862,7 @@ const VC = (function(){
     const spoken = cleanForSpeech(cleanForDisplay(reply).replace(/📋[^\n]*/g, ''));
     if(!spoken){ startListening(); return; }
     // الميكروفون كيتسد وقت ما يونس كيهضر باش ما يسمعش راسو
-    clearTimeout(S.silenceT); stopRecognizer();
+    clearTimeout(S.silenceT);
     S.inSpeech = false; S.buf = []; S.pre = [];
     const tok = ++S.token;
     setState('speaking');
@@ -4860,8 +4873,7 @@ const VC = (function(){
     if(S.state === 'speaking'){ cancelSpeech(); S.token++; startListening(); return; }
     if(S.state === 'listening'){
       if(S.muted){ toggleMute(); return; }
-      if(S.mode === 'sr'){ if(S.lastDisplay) finalizeTurn(S.lastDisplay); }
-      else if(S.inSpeech){ endUtterance(); }
+      if(S.inSpeech){ endUtterance(); }
     }
   }
   function toggleMute(){
@@ -4869,7 +4881,7 @@ const VC = (function(){
     S.muted = !S.muted;
     updateMuteUI();
     if(S.muted){
-      clearTimeout(S.silenceT); stopRecognizer();
+      clearTimeout(S.silenceT);
       S.inSpeech = false; S.buf = []; S.pre = [];
       if(S.state === 'listening') setState('listening');
       else{ const ov = $('voiceChatOverlay'); if(ov) ov.classList.add('muted'); }
@@ -4879,55 +4891,7 @@ const VC = (function(){
     }
   }
 
-  /* ---------- التعرّف على الصوت (Web Speech) ---------- */
-  function stopRecognizer(){
-    if(S.rec){
-      const r = S.rec; S.rec = null;
-      r.onresult = r.onerror = r.onend = null;
-      try{ r.abort(); }catch(e){}
-    }
-  }
-  function srStart(){
-    if(!voiceChatActive || S.state !== 'listening' || S.muted || S.mode !== 'sr') return;
-    const R = SRClass();
-    if(!R){ switchToRec(); return; }
-    const now = Date.now();
-    S.srTimes = S.srTimes.filter(t => now - t < 6000); S.srTimes.push(now);
-    if(S.srTimes.length > 10){ S.srTimes = []; switchToRec('التعرّف على الصوت غير مستقر في هذا المتصفح، سأستعمل التسجيل بدلاً منه.'); return; }
-    stopRecognizer();
-    const r = new R(); S.rec = r;
-    r.lang = S.lang; r.continuous = false; r.interimResults = true; r.maxAlternatives = 1;
-    r.onresult = (e)=>{
-      if(S.state !== 'listening' || S.muted) return;
-      let sess = '';
-      for(let i = 0; i < e.results.length; i++) sess += e.results[i][0].transcript + ' ';
-      const display = ((S.turnBase ? S.turnBase + ' ' : '') + sess).replace(/\s+/g, ' ').trim();
-      S.lastDisplay = display;
-      const tx = $('vcTranscript'); if(tx) tx.textContent = display;
-      clearTimeout(S.silenceT);
-      if(display) S.silenceT = setTimeout(()=>finalizeTurn(S.lastDisplay), 900);
-    };
-    r.onerror = (e)=>{
-      const er = e && e.error;
-      if(er === 'no-speech' || er === 'aborted') return;
-      if(er === 'language-not-supported' && S.lang !== 'ar-SA'){ S.lang = 'ar-SA'; return; }
-      if(er === 'network' || er === 'service-not-allowed' || er === 'language-not-supported'){
-        switchToRec('خدمة التعرّف على الصوت غير متاحة في هذا المتصفح، سأستعمل التسجيل بدلاً منها.'); return;
-      }
-      if(er === 'not-allowed'){ fatal('إذن المايكروفون مرفوض. فعّله من إعدادات المتصفح للموقع ثم أعد المحاولة.'); return; }
-      if(er === 'audio-capture'){ fatal('لم أجد مايكروفوناً يعمل. تأكد أن تطبيقاً آخر لا يستعمله.'); return; }
-    };
-    r.onend = ()=>{
-      if(S.rec !== r) return;
-      S.rec = null;
-      if(!voiceChatActive || S.state !== 'listening' || S.muted || S.mode !== 'sr') return;
-      S.turnBase = S.lastDisplay;
-      setTimeout(srStart, 200);
-    };
-    try{ r.start(); }catch(e){ setTimeout(srStart, 400); }
-  }
-
-  /* ---------- بديل: تسجيل + كشف الصمت + تفريغ عبر Gemini ---------- */
+  /* ---------- تسجيل + كشف الصمت + تفريغ (Groq Whisper) ---------- */
   async function recInit(){
     if(S.ctx) return true;
     try{
@@ -4959,19 +4923,6 @@ const VC = (function(){
     S.stream = S.ctx = S.proc = S.src = S.sink = null;
     S.pre = []; S.buf = []; S.inSpeech = false;
   }
-  async function switchToRec(msg){
-    if(S.mode === 'rec') return;
-    stopRecognizer();
-    if(!getApiKey() && !getGroqKey()){
-      fatal('هذا المتصفح لا يدعم التعرّف على الصوت. أضف مفتاح Groq من الإعدادات لاستعمال التسجيل بدلاً منه، أو افتح التطبيق في Chrome.');
-      return;
-    }
-    S.mode = 'rec';
-    try{ sessionStorage.setItem('alioua_vc_mode', 'rec'); }catch(e){}
-    const bt = $('vcBotText'); if(bt && msg) bt.textContent = msg;
-    const ok = await recInit();
-    if(ok && voiceChatActive) startListening();
-  }
   function onAudio(e){
     if(!voiceChatActive || S.mode !== 'rec' || S.state !== 'listening' || S.muted || S.busy) return;
     const d = e.inputBuffer.getChannelData(0);
@@ -5001,7 +4952,7 @@ const VC = (function(){
     }else{
       S.buf.push(f);
       if(rms > S.thr){ S.lastVoice = now; S.voiced++; }
-      if(now - S.lastVoice > 850 || now - S.speechStart > 30000) endUtterance();
+      if(now - S.lastVoice > VC_SILENCE_MS || now - S.speechStart > 30000) endUtterance();
     }
   }
   function encodeWav(chunks, srcRate){
@@ -5042,7 +4993,7 @@ const VC = (function(){
   const _AR = /[\u0600-\u06FF]/g, _LAT = /[A-Za-z\u00C0-\u024F]/g;
   const _looksArabic = t => { const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length; return a >= 2 && a >= l; };
   const _noise = t => !t || /اشتركوا|ترجمة نانسي|subscribe|^EMPTY\b/i.test(t);
-  const DARIJA_HINT = 'مرحبا يونس، بغيت نسجل فاتورة جديدة. شحال خلصنا للأجير فالورشة؟ دير ليا الحساب ديال السيمة والحديد والرمل والبيتون، واش كاين شي كريدي؟ مسح هاد العملية وزيد وحدة أخرى، فين وصلنا دابا؟ عندي موعد مع الزبون غدا فالصباح.';
+  const DARIJA_HINT = 'يونس، دير ليا الحساب ديال السيمة والحديد والرمل والبيتون والطبة واللونكرين. شحال خلصنا للأجير فالورشة؟ عطيت السلفة للمعلم، والكريدي ديال الفورنيسور باقي. زيد الفاتورة ديال الشانطي، والباقي بالدرهم.';
   let _gModels = null, _gModelsAt = 0;
   async function geminiAudioModels(key){
     if(!_gModels || Date.now() - _gModelsAt > 6*3600*1000){
@@ -5081,8 +5032,10 @@ const VC = (function(){
     return parts.map(p => p.text || '').join('').trim().replace(/^["«“]+|["»”]+$/g, '').trim();
   }
   async function transcribeGroq(blob, gk, model){
+    const t = String((blob && blob.type) || '').toLowerCase();
+    const ext = /webm/.test(t) ? 'webm' : /mp4|m4a|aac/.test(t) ? 'm4a' : /ogg/.test(t) ? 'ogg' : /mpeg|mp3/.test(t) ? 'mp3' : 'wav';
     const fd = new FormData();
-    fd.append('file', blob, 'audio.wav');
+    fd.append('file', blob, 'audio.' + ext);
     fd.append('model', model);
     fd.append('language', 'ar');
     fd.append('temperature', '0');
@@ -5093,22 +5046,37 @@ const VC = (function(){
     if(!res.ok) throw new Error('HTTP ' + res.status);
     return String((await res.json()).text || '').trim();
   }
-  // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
-  async function repairTranscript(text, gk){
+  /* تصحيح فوري للدارجة (Groq gpt-oss-120b). كيرجع النص الأصلي بلا أي ضرر إلا تأخر، فشل، ولا جا الناتج مشكوك فيه
+     (طول غير معقول، ماشي عربية، أرقام/مبالغ تبدلات). */
+  const FIX_SYSTEM = 'أنت خبير فـ الدارجة المغربية ومصطلحات البناء (BTP). أعد كتابة النص بالدارجة الصافية، وصلح الكلمات المشوهة (مثلاً: الطبة، اللونكرين، السيمة، الكريدي). ممنوع تحول للفصحى. أخرج النص فقط. لا تغيّر الأرقام والمبالغ والأسماء، ولا تزد أي معلومة، ولا تجاوب على الكلام: مهمتك التصحيح فقط.';
+  const _digits = t => String(t || '').replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 1776)).match(/\d+/g) || [];
+  async function fixDarija(text, timeoutMs){
+    const gk = getGroqKey();
+    text = String(text || '').trim();
+    if(!gk || text.length < 4) return text;
+    const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const to = setTimeout(()=>{ try{ ctl && ctl.abort(); }catch(e){} }, timeoutMs || 2500);
     try{
-      const cands = await groqModelCandidates(gk, false);
-      if(!cands.length) return text;
-      const model = cands[0];
-      const body = { model, temperature:0, max_completion_tokens:300, messages:[
-        { role:'system', content:'أنت مصحّح تفريغ صوتي للدارجة المغربية. النص جاي من برنامج تعرّف على الكلام وفيه أخطاء (كلمات مشوّهة أو مبدّلة بكلمات مشابهة فالنطق). المتكلم مسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر عن: فواتير، أجور وسلفات العمال، موردين وزبناء، مواعيد، مواد البناء (سيمة، حديد، رمل، بيتون، بريك)، ومبالغ بالدرهم. أعد كتابة النص بالدارجة مع تصحيح الكلمات المشوّهة لأقرب معنى منطقي، بدون تحويل للفصحى، وبدون إضافة معلومات ما قيلتش، وبدون شرح. أخرج النص المصحّح فقط. إلا كان النص ما عندو معنى إطلاقاً ومستحيل تفهم منو شي حاجة، أخرج كلمة وحدة: EMPTY' },
-        { role:'user', content:text }
-      ] };
-      if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
-      const out = String(await _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gk, body, 'Groq') || '').trim();
-      if(!out) return text;
-      if(/^EMPTY\b/i.test(out)) return '';
-      return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method:'POST', headers:{ 'Authorization':'Bearer ' + gk, 'Content-Type':'application/json' },
+        signal: ctl ? ctl.signal : undefined,
+        body: JSON.stringify({
+          model:'openai/gpt-oss-120b', temperature:0, reasoning_effort:'low',
+          max_completion_tokens: Math.min(3000, 300 + Math.round(text.length * 1.5)),
+          messages:[ { role:'system', content: FIX_SYSTEM }, { role:'user', content: text } ]
+        })
+      });
+      if(!res.ok) return text;
+      const j = await res.json();
+      let out = String((((j.choices || [])[0] || {}).message || {}).content || '').trim();
+      out = out.replace(/^```[a-z]*\s*|\s*```$/gi, '').replace(/^["«“]+|["»”]+$/g, '').trim();
+      if(!out || _noise(out) || !_looksArabic(out)) return text;
+      const r = out.length / text.length;
+      if(r < 0.6 || r > 1.6) return text;
+      if(_digits(out).join('|') !== _digits(text).join('|')) return text;
+      return out;
     }catch(e){ return text; }
+    finally{ clearTimeout(to); }
   }
   // ===== Hugging Face: كنبعثو WAV (16kHz، mono، 16-bit) مباشرة كـ body، والمفتاح فـ Authorization =====
   async function transcribeHF(blob){
@@ -5134,78 +5102,72 @@ const VC = (function(){
     }
     throw lastErr || new Error('HF');
   }
-  // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
-  async function repairTranscript(text, gk){
-    try{
-      const cands = await groqModelCandidates(gk, false);
-      if(!cands.length) return text;
-      const model = cands[0];
-      const body = { model, temperature:0, max_completion_tokens:300, messages:[
-        { role:'system', content:'أنت مصحّح تفريغ صوتي للدارجة المغربية. النص جاي من برنامج تعرّف على الكلام وفيه أخطاء (كلمات مشوّهة أو مبدّلة بكلمات مشابهة فالنطق). المتكلم مسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر عن: فواتير، أجور وسلفات العمال، موردين وزبناء، مواعيد، مواد البناء (سيمة، حديد، رمل، بيتون، بريك)، ومبالغ بالدرهم. أعد كتابة النص بالدارجة مع تصحيح الكلمات المشوّهة لأقرب معنى منطقي، بدون تحويل للفصحى، وبدون إضافة معلومات ما قيلتش، وبدون شرح. أخرج النص المصحّح فقط. إلا كان النص ما عندو معنى إطلاقاً ومستحيل تفهم منو شي حاجة، أخرج كلمة وحدة: EMPTY' },
-        { role:'user', content:text }
-      ] };
-      if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
-      const out = String(await _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gk, body, 'Groq') || '').trim();
-      if(!out) return text;
-      if(/^EMPTY\b/i.test(out)) return '';
-      return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
-    }catch(e){ return text; }
-  }
-  // السلسلة: Hugging Face (إلا مفعّل) ← Gemini ← Groq Whisper + تصحيح نصي
-  async function transcribe(blob, maxTok){
+  // السلسلة: Groq Whisper turbo (blob أصلي) ← Groq large-v3 ← Hugging Face (إلا مفعّل) ← Gemini
+  // blob = الملف الأصلي (webm/mp4) إلا توفر، wav = نسخة WAV (كتستعملها Gemini/HF وكاحتياط إلا Groq رفض الملف الأصلي)
+  async function transcribe(blob, maxTok, wav){
     const gk = getGroqKey(), key = getApiKey(), hfOn = !!(getHfKey() && getHfUrl());
     if(!gk && !key && !hfOn) throw new Error('NOKEY');
+    const wavBlob = wav || blob;
     const fails = []; let sawText = false, gemResponded = false;
     const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
 
-    // 1) Hugging Face — كيرجع النص ديالو مباشرة (إلا خاوي = ما كاين كلام)
+    // 1) Groq Whisper — الأول دائماً (الأسرع)
+    if(gk){
+      for(const m of ['whisper-large-v3-turbo', 'whisper-large-v3']){
+        if(_isCool('groq:' + m)) continue;
+        try{
+          let raw;
+          try{ raw = await transcribeGroq(blob, gk, m); }
+          catch(e){
+            // الملف الأصلي ما تقبلش (400/413/415): كنعاودو بـ WAV
+            if(wavBlob !== blob && /HTTP (400|413|415|422)/.test(String(e.message))) raw = await transcribeGroq(wavBlob, gk, m);
+            else throw e;
+          }
+          if(!raw) return '';                       // Whisper قال ما كاين كلام
+          const r = accept(raw); if(r) return r;
+        }catch(e){ fails.push('Groq ' + String(e.message || '')); }
+      }
+    }
+    // 2) Hugging Face — إلا مفعّل
     if(hfOn && !_isCool('hf')){
       try{
-        const t = await transcribeHF(blob);
+        const t = await transcribeHF(wavBlob);
         if(!t) return '';
         const r = accept(t); if(r) return r;
       }catch(e){
         fails.push(String(e.message || 'HF'));
-        _setCool('hf', e.fatal ? 30 : 2);   // ما نبقاوش نستناو نموذج طايح فكل جملة
+        _setCool('hf', e.fatal ? 30 : 2);
       }
     }
-    // 2) Gemini — كل موديل عندو حصتو؛ إلا وصل لحدو كيتحيد مؤقتاً
+    // 3) Gemini — احتياطي أخير
     if(key){
       let b64 = null;
       let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
       for(const m of ms){
         try{
-          b64 = b64 || await blobToB64(blob);
+          b64 = b64 || await blobToB64(wavBlob);
           const raw = await geminiTranscribe(m, key, b64, maxTok);
           gemResponded = true;
           const r = accept(raw); if(r) return r;
         }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
       }
-      if(gemResponded) return '';            // Gemini قال ما كاين كلام: ما نمشيوش لـ Whisper باش ما يهلوسش
+      if(gemResponded) return '';
     }
-    // 3) احتياطي أخير: Groq Whisper + تصحيح نصي بالدارجة
-    if(gk){
-      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
-        if(_isCool('groq:' + m)) continue;
-        try{
-          const r = accept(await transcribeGroq(blob, gk, m));
-          if(r){ const fixed = await repairTranscript(r, gk); if(fixed && _looksArabic(fixed)) return fixed; return ''; }
-        }catch(e){ fails.push('Groq ' + String(e.message || '')); }
-      }
-    }
-    if(!sawText && fails.length) throw new Error(fails.join(' | '));   // كلشي فشل: رسالة واضحة فيها السبب
-    return '';                                                          // ما فهمناش الكلام: خاوي بدل نص مهلوس
+    if(!sawText && fails.length) throw new Error(fails.join(' | '));
+    return '';
   }
   function endUtterance(){
     const buf = S.buf, voiced = S.voiced;
     S.buf = []; S.pre = []; S.inSpeech = false; S.hot = 0; S.voiced = 0;
     if(voiced < 5) return;
     S.busy = true;
-    setState('thinking', 'أفهم كلامك…');
+    setState('thinking', '✍️ كنكتب كلامك...');
+    // تسخين موديلات صوت Gemini فالخلفية بالتوازي مع التفريغ، باش يكون الرد جاهز
+    try{ const gk0 = getApiKey(); if(gk0) Promise.resolve(geminiTtsModels(gk0)).catch(()=>{}); }catch(e){}
     const tok = ++S.token;
     let blob;
     try{ blob = encodeWav(buf, S.sampleRate); }catch(e){ S.busy = false; startListening(); return; }
-    transcribe(blob).then(text=>{
+    transcribe(blob).then(text => text ? fixDarija(text, 1500) : text).then(text=>{
       S.busy = false;
       if(!voiceChatActive || tok !== S.token) return;
       if(!text){ startListening(); return; }
@@ -5230,29 +5192,27 @@ const VC = (function(){
     if(voiceChatActive) return;
     if(!window.isSecureContext){ alert('المحادثة الصوتية تحتاج رابط https.'); return; }
     if(!getApiKey() && !getGroqKey() && !getCerebrasKey()){ openModal(true); return; }
-    let brave = false;
-    try{ brave = !!(navigator.brave && await navigator.brave.isBrave()); }catch(e){}
-    S.mode = (!SRClass() || brave || getApiKey() || getGroqKey() || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
-    if(S.mode === 'rec' && !getApiKey() && !getGroqKey()){
-      alert('في هذا المتصفح تحتاج المحادثة الصوتية إلى مفتاح Groq (لتفريغ الصوت). أضفه من الإعدادات، أو افتح التطبيق في Chrome.');
+    S.mode = 'rec';
+    if(!getApiKey() && !getGroqKey()){
+      alert('المحادثة الصوتية تحتاج مفتاح Groq (لتفريغ الصوت). أضفه من الإعدادات ⚙️.');
       return;
     }
     voiceChatActive = true; vcSessionId++;
     S.prevVoice = voiceReplyOn; voiceReplyOn = false; updateVoiceToggleUI();
-    S.muted = false; S.turning = false; S.srTimes = []; S.lang = 'ar-MA'; updateMuteUI();
+    S.muted = false; S.turning = false; updateMuteUI();
     $('voiceChatOverlay').classList.add('active');
     $('vcTranscript').textContent = ''; $('vcBotText').textContent = 'هضر معايا بالدارجة وغادي نجاوبك بالصوت 👇';
     try{ inputEl.blur(); }catch(e){}
     requestWake();
     setState('idle');
-    if(S.mode === 'rec'){ const ok = await recInit(); if(!ok) return; }
+    { const ok = await recInit(); if(!ok) return; }
     if(voiceChatActive) startListening();
   }
   function exit(){
     const wasActive = voiceChatActive;
     voiceChatActive = false; vcSessionId++; S.token++; S.turning = false; S.busy = false;
     clearTimeout(S.silenceT);
-    cancelSpeech(); stopRecognizer(); recTeardown(); releaseWake();
+    cancelSpeech(); recTeardown(); releaseWake();
     if(wasActive){ voiceReplyOn = S.prevVoice; updateVoiceToggleUI(); }
     const ov = $('voiceChatOverlay');
     if(ov){ ov.classList.remove('active','listening','speaking','thinking','idle','muted'); }
@@ -5263,7 +5223,7 @@ const VC = (function(){
   document.addEventListener('visibilitychange', ()=>{
     if(!voiceChatActive) return;
     if(document.visibilityState === 'hidden'){
-      clearTimeout(S.silenceT); stopRecognizer();
+      clearTimeout(S.silenceT);
       S.inSpeech = false; S.buf = []; S.pre = [];
     }else{
       requestWake();
@@ -5277,7 +5237,7 @@ const VC = (function(){
   $('vcOrb') && $('vcOrb').addEventListener('click', onOrbTap);
   $('vcMute') && $('vcMute').addEventListener('click', toggleMute);
 
-  return { enter, exit, onReply, setState, toggleMute, onOrbTap, transcribe, _S:S, _encodeWav:encodeWav, _cleanForSpeech:cleanForSpeech, _splitSentences:splitSentences };
+  return { enter, exit, onReply, setState, toggleMute, onOrbTap, transcribe, fixDarija, _S:S, _encodeWav:encodeWav, _cleanForSpeech:cleanForSpeech, _splitSentences:splitSentences };
 })();
 
 /* ===== الرسائل الصوتية (مثل واتساب) ===== */
@@ -5481,7 +5441,7 @@ const VN = (function(){
     const playBlob = (recBlob && recBlob.size > 0) ? recBlob : wav;
     const meta = { id, dur:Math.round(dur), bars:makeBars(levels) };
     VNStore.put(id, playBlob);
-    processNote(meta, wav);
+    processNote(meta, wav, recBlob);
   }
   function makeBars(levels){
     const out = [];
@@ -5557,25 +5517,25 @@ const VN = (function(){
   }
 
   /* ---------- التفريغ ثم الإرسال إلى يونس ---------- */
-  async function processNote(meta, wav){
+  async function processNote(meta, wav, raw){
     const chat = $('chat');
     if(chat && typeof messages !== 'undefined' && messages.length === 0) chat.innerHTML = '';
     const ph = document.createElement('div');
     ph.className = 'msg user vn-pending'; ph.setAttribute('dir', 'auto');
     ph.appendChild(buildContent(meta, ''));
-    const st = document.createElement('div'); st.className = 'vn-status'; st.textContent = '⏳ جاري تفريغ الصوت…';
+    const st = document.createElement('div'); st.className = 'vn-status'; st.textContent = '⚡ كنحول الصوت لنص...';
     ph.appendChild(st);
     if(chat){ chat.appendChild(ph); chat.scrollTop = chat.scrollHeight; }
     const fail = (msg)=>{
       st.textContent = '⚠️ ' + msg;
       const r = document.createElement('button'); r.type = 'button'; r.className = 'vn-retry'; r.textContent = '🔄 إعادة المحاولة';
-      r.addEventListener('click', ()=>{ ph.remove(); processNote(meta, wav); });
+      r.addEventListener('click', ()=>{ ph.remove(); processNote(meta, wav, raw); });
       const d = document.createElement('button'); d.type = 'button'; d.className = 'vn-retry'; d.textContent = '🗑 حذف';
       d.addEventListener('click', ()=> ph.remove());
       ph.appendChild(r); ph.appendChild(d);
     };
     let text = '';
-    try{ text = await VC.transcribe(wav, 4096); }
+    try{ text = await VC.transcribe((raw && raw.size > 0) ? raw : wav, 4096, wav); }
     catch(err){
       const m = String((err && err.message) || '');
       fail(m === 'NOKEY' ? 'التفريغ الصوتي يحتاج مفتاح Groq (أضفه من الإعدادات ⚙️).'
@@ -5584,6 +5544,8 @@ const VN = (function(){
       return;
     }
     if(!text){ fail('لم أسمع كلاماً واضحاً في التسجيل.'); return; }
+    st.textContent = '✍️ كنصحح الكلام...';
+    try{ text = await VC.fixDarija(text, 4000); }catch(e){}
     ph.remove();
     let waited = 0;
     while(sendBtn.disabled && waited < 60000){ await new Promise(r => setTimeout(r, 300)); waited += 300; }
