@@ -753,6 +753,20 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 }
 .lc-badge.pending{ background:#FDF0EE; color:var(--maroon); }
 .lc-badge.paid{ background:#E9F7EF; color:#1C7C3F; }
+.lc-badge.partial{ background:#FFF4E0; color:#9A5B00; }
+input, select, textarea{ min-width:0; }
+.lc-invoice-item.inv-card{ display:block; padding:10px 0; font-size:12px; }
+.inv-card .inv-head{ display:flex; justify-content:space-between; align-items:center; gap:8px; font-weight:700; }
+.inv-card .inv-sub{ margin-top:4px; font-size:11.5px; color:var(--ink-soft); }
+.inv-card .inv-acts{ display:flex; gap:6px; margin-top:7px; flex-wrap:wrap; }
+.inv-card .inv-acts .lc-btn{ flex:1 1 auto; padding:6px 8px; font-size:11px; }
+.inv-card .inv-pays{ margin-top:7px; border-top:1px dashed var(--line); padding-top:5px; }
+.inv-card .inv-pay{ display:flex; justify-content:space-between; align-items:center; gap:8px; padding:3px 0; font-size:11.5px; }
+.inv-card .inv-pay button{ background:none; border:none; cursor:pointer; font-size:13px; }
+.inv-card .inv-payform{ margin-top:8px; display:grid; gap:6px; }
+.inv-card .inv-payform .pf-btns{ display:flex; gap:6px; }
+.client-inv-item-row .qrow{ display:grid; grid-template-columns:1fr 1fr 1.3fr 36px; gap:6px; margin-top:6px; }
+.client-inv-item-row .qrow input{ width:100%; }
 .mat-qty-controls{ display:flex; align-items:center; gap:8px; }
 .mat-qty-btn{
   width:26px; height:26px; border-radius:8px;
@@ -1246,6 +1260,16 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   .tab-header .sub-nav{ margin:0; flex:1; min-width:0; flex-wrap:nowrap; padding-bottom:0; scrollbar-width:thin; }
   .sub-nav-btn{ padding:7px 12px; font-size:12.5px; }
   .tab-scroll{ padding:16px 24px 32px; }
+}
+@media (min-width: 1024px){
+  #clientList, #supplierList{ grid-template-columns:repeat(auto-fill, minmax(380px, 1fr)); }
+  #clientList > .list-card:has(.lc-invoice-form:not(:empty)),
+  #supplierList > .list-card:has(.lc-invoice-form:not(:empty)){ grid-column:1 / -1; }
+  .client-inv-item-row{ display:grid; grid-template-columns:minmax(200px, 3fr) 80px 90px 130px 40px; gap:8px; align-items:center; }
+  .client-inv-item-row .qrow{ display:contents; }
+  .client-inv-item-row .q-total{ grid-column:1 / -1; text-align:right; }
+  .client-inv-item-row input{ margin:0; }
+  .inv-card .inv-payform{ grid-template-columns:140px 150px 1fr auto; align-items:center; }
 }
 #overdueAlertsBanner > div{ margin-left:0 !important; margin-right:0 !important; }
 #overdueAlertsBanner:empty{ display:none; }
@@ -3717,7 +3741,7 @@ function buildAccountingSnapshotText(){
       clients.forEach(c=>{
         const cInvoices = simpleInvoices.filter(inv=>inv.clientId===c.id);
         const total = cInvoices.reduce((s,inv)=>s+invoiceTotal(inv),0);
-        lines.push(`- ${c.name}: إجمالي الفواتير ${total.toLocaleString('en-US')} درهم (${cInvoices.length} فاتورة)`);
+        lines.push(`- ${c.name}: إجمالي الفواتير ${total.toLocaleString('en-US')} درهم (${cInvoices.length} فاتورة) — المدفوع ${cInvoices.reduce((s,inv)=>s+invoicePaid(inv),0).toLocaleString('en-US')} · المتبقي ${cInvoices.reduce((s,inv)=>s+invoiceRemaining(inv),0).toLocaleString('en-US')}`);
       });
     }
 
@@ -6904,9 +6928,9 @@ function renderOverdueAlertsBase(){
   const clients = loadClients();
   const invoices = loadInvoices();
   clients.forEach(client=>{
-    const pending = invoices.filter(i=>i.clientId===client.id && i.status==='pending');
+    const pending = invoices.filter(i=>i.clientId===client.id && invoiceRemaining(i) > 0.005);
     if(!pending.length) return;
-    const due = pending.reduce((s,i)=>s+invoiceTotal(i),0);
+    const due = pending.reduce((s,i)=>s+invoiceRemaining(i),0);
     const oldestDate = pending.reduce((min,i)=> Math.min(min, new Date(i.date).getTime()), Infinity);
     const daysAgo = Math.floor((now - oldestDate)/(1000*60*60*24));
     if(daysAgo >= OVERDUE_DAYS){
@@ -7958,6 +7982,20 @@ function loadClients(){ try{ return JSON.parse(LS.getItem(CLIENTS_KEY)||'[]'); }
 function saveClients(l){ safeSetItem(CLIENTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function loadInvoices(){ try{ return JSON.parse(LS.getItem(INVOICES_KEY)||'[]'); }catch(e){ return []; } }
 function invoiceTotal(inv){ return inv.items.reduce((s,it)=> s + (it.qty*it.price), 0); }
+/* دفعات بالتقسيط: payments = [{id,date,amount,note}] — الفواتير القديمة (status فقط) كتبقى شغالة */
+function invoicePaid(inv){ if(Array.isArray(inv.payments) && inv.payments.length) return round2(inv.payments.reduce((s,p)=> s + (+p.amount || 0), 0)); return inv.status === 'paid' ? invoiceTotal(inv) : 0; }
+function invoiceRemaining(inv){ return Math.max(0, round2(invoiceTotal(inv) - invoicePaid(inv))); }
+function syncInvoiceStatus(inv){ inv.status = invoiceRemaining(inv) <= 0.005 ? 'paid' : 'pending'; }
+let payInvId = null;
+function addInvoicePayment(invId, amount, date, note){
+  const invs = loadInvoices(), t = invs.find(i=> i.id === invId); if(!t) return;
+  const rem = invoiceRemaining(t);
+  if(!(amount > 0)){ alert('اكتب مبلغ الدفعة.'); return; }
+  if(amount > rem + 0.005){ alert('المبلغ (' + fmtMAD(amount) + ') كيفوت المتبقي (' + fmtMAD(rem) + ' درهم).'); return; }
+  if(!Array.isArray(t.payments)) t.payments = (t.status === 'paid') ? [{id:'p' + Date.now() + 'a', date: t.date, amount: invoiceTotal(t), note:'دفعة سابقة'}] : [];
+  t.payments.push({id:'p' + Date.now(), date: date || todayStr(), amount: round2(amount), note: note || ''});
+  syncInvoiceStatus(t); saveInvoices(invs); payInvId = null; renderClients();
+}
 function saveInvoices(l){
   safeSetItem(INVOICES_KEY, JSON.stringify(l));
   if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
@@ -7988,7 +8026,7 @@ function renderClients(){
   el.innerHTML = '';
   clients.forEach(client=>{
     const clientInvoices = invoices.filter(i=>i.clientId === client.id);
-    const due = clientInvoices.filter(i=>i.status==='pending').reduce((s,i)=>s+invoiceTotal(i),0);
+    const due = clientInvoices.reduce((s,i)=>s+invoiceRemaining(i),0);
     const card = document.createElement('div');
     card.className = 'list-card';
     card.innerHTML = `
@@ -8040,18 +8078,31 @@ function renderClients(){
       const invListEl = card.querySelector('#invList_'+client.id);
       clientInvoices.slice().reverse().forEach(inv=>{
         const row = document.createElement('div');
-        row.className = 'lc-invoice-item';
+        row.className = 'lc-invoice-item inv-card';
         row.setAttribute('dir', 'auto');
+        const _tot = invoiceTotal(inv), _paid = invoicePaid(inv), _rem = invoiceRemaining(inv), _pays = Array.isArray(inv.payments) ? inv.payments : [];
+        const _st = _rem <= 0.005 ? 'paid' : (_paid > 0 ? 'partial' : 'pending');
         row.innerHTML = `
-          <span>${inv.date} — ${invoiceTotal(inv).toLocaleString('ar')} درهم</span>
-          <span style="display:flex; align-items:center; gap:6px;">
-            <span class="lc-badge ${inv.status}">${inv.status==='paid'?'مدفوعة':'معلّقة'}</span>
-            <button class="lc-btn" data-toggle-inv="${inv.id}" style="padding:3px 8px; font-size:10px;">${inv.status==='paid'?'إلغاء':'تسديد'}</button>
-            <button class="lc-btn" data-edit-inv="${inv.id}" style="padding:3px 8px; font-size:10px;">✏️</button>
-            <button class="lc-btn" data-del-inv="${inv.id}" style="padding:3px 8px; font-size:10px;">🗑</button>
-          </span>
+          <div class="inv-head"><span>${escapeHtml(inv.date)} — ${fmtMAD(_tot)} درهم</span><span class="lc-badge ${_st}">${_st==='paid'?'مدفوعة':(_st==='partial'?'مدفوعة جزئيًا':'معلّقة')}</span></div>
+          ${(_paid > 0 && _rem > 0.005) ? `<div class="inv-sub">المدفوع: ${fmtMAD(_paid)} · المتبقي: <b>${fmtMAD(_rem)}</b> درهم</div>` : ''}
+          <div class="inv-acts">
+            ${_rem > 0.005
+              ? `<button class="lc-btn" data-pay-inv="${inv.id}">💵 دفعة</button><button class="lc-btn" data-full-inv="${inv.id}">✔ تسديد الباقي</button>`
+              : `<button class="lc-btn" data-toggle-inv="${inv.id}">↩️ إلغاء الدفع</button>`}
+            <button class="lc-btn" data-edit-inv="${inv.id}">✏️</button>
+            <button class="lc-btn" data-del-inv="${inv.id}">🗑</button>
+          </div>
+          ${_pays.length ? `<div class="inv-pays">${_pays.map(p=> `<div class="inv-pay"><span dir="auto">${escapeHtml(p.date || '')} — ${fmtMAD(p.amount)} درهم${p.note ? ' · ' + escapeHtml(p.note) : ''}</span><button data-del-pay="${inv.id}|${p.id}" title="حذف الدفعة">🗑</button></div>`).join('')}</div>` : ''}
+          <div class="inv-payform"></div>
         `;
         invListEl.appendChild(row);
+        if(payInvId === inv.id && _rem > 0.005){
+          const host = row.querySelector('.inv-payform');
+          host.innerHTML = `<input type="number" inputmode="decimal" class="pf-amt" placeholder="المبلغ" value="${_rem}"><input type="date" class="pf-date"><input type="text" class="pf-note" dir="auto" placeholder="ملاحظة (نقدًا / شيك / تحويل...)"><div class="pf-btns"><button class="btn-primary pf-ok">💾 حفظ الدفعة</button><button class="btn-ghost pf-cancel">✖</button></div>`;
+          host.querySelector('.pf-date').value = todayStr();
+          host.querySelector('.pf-ok').addEventListener('click', ()=> addInvoicePayment(inv.id, parseFloat(host.querySelector('.pf-amt').value), host.querySelector('.pf-date').value, host.querySelector('.pf-note').value.trim()));
+          host.querySelector('.pf-cancel').addEventListener('click', ()=>{ payInvId = null; renderClients(); });
+        }
       });
     }
 
@@ -8074,7 +8125,7 @@ function renderClients(){
         row.style.cssText = 'border:1px solid var(--line); border-radius:10px; padding:8px; margin-top:6px;';
         row.innerHTML = `
           <input type="text" class="q-desc" dir="ltr" placeholder="Désignation" value="${desc?escapeHtml(desc):''}" style="font-size:14px; padding:12px;">
-          <div style="display:flex; gap:5px; margin-top:5px;">
+          <div class="qrow">
             <input type="text" class="q-qty" dir="ltr" placeholder="Quantité" value="${qty||1}" style="flex:1;">
             <input type="text" class="q-unit" dir="ltr" placeholder="Unité" value="${unit?escapeHtml(unit):''}" style="flex:1;">
             <input type="text" class="q-price" dir="ltr" placeholder="Prix unitaire" value="${price||''}" style="flex:1;">
@@ -8114,7 +8165,7 @@ function renderClients(){
         const invs = loadInvoices();
         if(editingInv){
           const target = invs.find(i=>i.id === editingInv.id);
-          if(target){ target.items = items; target.date = date; }
+          if(target){ if(target.status === 'paid' && !Array.isArray(target.payments)) target.payments = [{id:'p' + Date.now() + 'a', date: target.date, amount: invoiceTotal(target), note:'دفعة سابقة'}]; target.items = items; target.date = date; syncInvoiceStatus(target); }
           editInvoiceId = null;
         }else{
           invs.push({id:'i'+Date.now(), clientId: client.id, items, status:'pending', date});
@@ -8161,9 +8212,9 @@ function renderClients(){
       if(!client) return;
       const clientInvoices = invoices.filter(i=>i.clientId === client.id);
       const total = clientInvoices.reduce((s,i)=>s+invoiceTotal(i),0);
-      const paid = clientInvoices.filter(i=>i.status==='paid').reduce((s,i)=>s+invoiceTotal(i),0);
+      const paid = clientInvoices.reduce((s,i)=>s+invoicePaid(i),0);
       const due = total - paid;
-      const linesDetail = clientInvoices.map(i=>`- فاتورة ${i.date}: ${invoiceTotal(i).toLocaleString('ar')} درهم (${i.status==='paid'?'مدفوعة':'معلّقة'})`).join('\n');
+      const linesDetail = clientInvoices.map(i=>`- فاتورة ${i.date}: ${invoiceTotal(i).toLocaleString('ar')} درهم (مدفوع ${invoicePaid(i).toLocaleString('ar')} / متبقي ${invoiceRemaining(i).toLocaleString('ar')})`).join('\n');
       const msg = `جهّز لي جدول أداء احترافي للعميل "${client.name}" باسم شركة ALIOUA BTP، فيه: عدد الفواتير (${clientInvoices.length})، الإجمالي (${total.toLocaleString('ar')} درهم)، المدفوع (${paid.toLocaleString('ar')} درهم)، المتبقي (${due.toLocaleString('ar')} درهم). تفاصيل الفواتير:\n${linesDetail || 'لا يوجد فواتير بعد'}`;
       goToChatWithText(msg);
     });
@@ -8177,13 +8228,23 @@ function renderClients(){
   });
   el.querySelectorAll('[data-toggle-inv]').forEach(b=>{
     b.addEventListener('click', ()=>{
-      const invs = loadInvoices();
-      const inv = invs.find(i=>i.id === b.dataset.toggleInv);
-      if(inv){
-        inv.status = inv.status === 'paid' ? 'pending' : 'paid';
-        saveInvoices(invs);
-        renderClients();
-      }
+      const invs = loadInvoices(), inv = invs.find(i=>i.id === b.dataset.toggleInv);
+      if(!inv) return;
+      if(Array.isArray(inv.payments) && inv.payments.length > 1 && !confirm('غادي تتمسح ' + inv.payments.length + ' دفعات. متأكد؟')) return;
+      inv.payments = []; inv.status = 'pending'; saveInvoices(invs); renderClients();
+    });
+  });
+  el.querySelectorAll('[data-pay-inv]').forEach(b=>{
+    b.addEventListener('click', ()=>{ payInvId = (payInvId === b.dataset.payInv) ? null : b.dataset.payInv; renderClients(); });
+  });
+  el.querySelectorAll('[data-full-inv]').forEach(b=>{
+    b.addEventListener('click', ()=>{ const inv = loadInvoices().find(i=>i.id === b.dataset.fullInv); if(inv) addInvoicePayment(inv.id, invoiceRemaining(inv), todayStr(), 'تسديد الباقي'); });
+  });
+  el.querySelectorAll('[data-del-pay]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const ids = b.dataset.delPay.split('|'), invs = loadInvoices(), t = invs.find(i=>i.id === ids[0]);
+      if(!t || !Array.isArray(t.payments)) return;
+      t.payments = t.payments.filter(p=> p.id !== ids[1]); syncInvoiceStatus(t); saveInvoices(invs); renderClients();
     });
   });
 }
