@@ -754,6 +754,10 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 .lc-badge.pending{ background:#FDF0EE; color:var(--maroon); }
 .lc-badge.paid{ background:#E9F7EF; color:#1C7C3F; }
 .lc-badge.partial{ background:#FFF4E0; color:#9A5B00; }
+.role-hidden{ display:none !important; }
+.chq-dir{ flex:1; padding:10px 6px; border:1.5px solid var(--line); background:#fff; border-radius:10px; font-family:inherit; font-size:12.5px; cursor:pointer; }
+.chq-dir.active{ border-color:var(--ink); background:var(--ink); color:#fff; }
+#chqSummary{ display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:8px; margin-bottom:10px; }
 input, select, textarea{ min-width:0; }
 .lc-invoice-item.inv-card{ display:block; padding:10px 0; font-size:12px; }
 .inv-card .inv-head{ display:flex; justify-content:space-between; align-items:center; gap:8px; font-weight:700; }
@@ -1396,6 +1400,7 @@ input, select, textarea{ min-width:0; }
         <button class="sub-nav-btn" data-sub="subSuppliers">🚚 الموردين</button>
         <button class="sub-nav-btn" data-sub="subCaisse">💵 سيولة</button>
         <button class="sub-nav-btn" data-sub="subWorkers">👷 الأجراء</button>
+        <button class="sub-nav-btn" data-sub="subCheques">📅 الآجال والشيكات</button>
         <button class="sub-nav-btn" data-sub="subProjects">📁 المشاريع</button>
       </div>
     </div>
@@ -1422,6 +1427,26 @@ input, select, textarea{ min-width:0; }
         <div class="chart-wrap" id="accountingChartWrap"><canvas id="accountingChart"></canvas></div>
         <button class="table-download-btn" id="exportReportBtn" style="border-radius:9px; border:1px solid var(--line); margin-bottom:12px;">⬇️ تحميل التقرير الإجمالي (CSV)</button>
         <div id="txList"></div>
+      </div>
+
+      <div class="sub-view" id="subCheques">
+        <div id="chqSummary"></div>
+        <div class="card-form">
+          <p class="mini-title" style="margin-bottom:8px;">📅 تسجيل شيك / أجل</p>
+          <button class="btn-primary" id="chqScanBtn" style="width:100%;">📷 صوّر الشيك (قراءة تلقائية)</button>
+          <input type="file" id="chqFileInput" accept="image/*" capture="environment" style="display:none;">
+          <div id="chqScanStatus" style="display:none; font-size:12px; margin:8px 0;"></div>
+          <div id="chqDirWrap" style="display:flex; gap:8px; margin:10px 0 6px;"><button class="chq-dir active" data-dir="out">🔴 شيك صادر (غادي نخلصو)</button><button class="chq-dir" data-dir="in">🟢 شيك وارد (غادي نقبضو)</button></div>
+          <input type="text" id="chqName" dir="auto" placeholder="الاسم (المستفيد / الساحب)" style="margin-top:6px;">
+          <input type="number" id="chqAmount" placeholder="المبلغ (درهم)" inputmode="decimal" style="margin-top:8px;">
+          <input type="date" id="chqDate" style="margin-top:8px;">
+          <input type="text" id="chqNumber" dir="ltr" placeholder="رقم الشيك" style="margin-top:8px;">
+          <input type="text" id="chqBank" dir="auto" placeholder="البنك" style="margin-top:8px;">
+          <input type="text" id="chqNote" dir="auto" placeholder="ملاحظة (اختياري)" style="margin-top:8px;">
+          <button class="btn-primary" id="chqSaveBtn" style="margin-top:10px;">➕ حفظ الشيك</button>
+          <button class="btn-ghost" id="chqCancelEditBtn" style="display:none; width:100%; margin-top:6px;">إلغاء التعديل</button>
+        </div>
+        <div id="chqList"></div>
       </div>
 
       <div class="sub-view" id="subInvoices">
@@ -1700,6 +1725,13 @@ input, select, textarea{ min-width:0; }
       <button class="btn-ghost" id="cancelModalBtn">إلغاء</button>
     </div>
     <button class="btn-ghost" id="changePinBtn" style="width:100%; margin-top:10px;">🔒 تغيير رمز الدخول</button>
+    <div id="empPinBox" style="margin-top:12px; border:1px solid var(--line); border-radius:12px; padding:10px;">
+      <p class="mini-title" style="margin-bottom:6px;">👷 رمز الموظف (Employee PIN)</p>
+      <p style="font-size:11px; color:var(--ink-soft); margin-bottom:6px;">الموظف كيدخل بهاد الرمز: ما كيشوفش يونس، لا الدخل، لا الأرباح. 4 أرقام ومختلف على رمزك. كيتحدّد فكل هاتف على حدة.</p>
+      <input type="password" id="empPinInput" inputmode="numeric" maxlength="4" placeholder="رمز الموظف (4 أرقام)" dir="ltr">
+      <div style="display:flex; gap:6px; margin-top:6px;"><button class="btn-primary" id="empPinSaveBtn" style="flex:2;">💾 حفظ رمز الموظف</button><button class="btn-ghost" id="empPinClearBtn" style="flex:1;">🗑 حذف</button></div>
+      <div id="empPinStatus" style="font-size:11.5px; margin-top:6px;"></div>
+    </div>
 
     <div style="margin-top:14px;">
       <p class="mini-title" style="margin-bottom:8px;">⚡ مفتاح Groq (اختياري، مجاني، كيدعم الصور)</p>
@@ -1790,7 +1822,7 @@ input, select, textarea{ min-width:0; }
 </div>
 
 <script>
-var PAY_TERMS_KEY = 'alioua_btp_pay_terms', REVIEW_KEY = 'alioua_btp_review_done', ADMIN_ID = '__admin', cpOpen = {}, VAULT_KEY = 'alioua_btp_sync_vault', SESSION_PIN = null, unlockStatus = 'ok';
+var currentRole = 'admin'; var PAY_TERMS_KEY = 'alioua_btp_pay_terms', REVIEW_KEY = 'alioua_btp_review_done', ADMIN_ID = '__admin', cpOpen = {}, VAULT_KEY = 'alioua_btp_sync_vault', SESSION_PIN = null, unlockStatus = 'ok';
 
 /* ===== ALIOUA BTP — المساعد الذكي (يونس) ===== */
 
@@ -3274,6 +3306,7 @@ function openFilePreview(cfg){
   show(cfg.variants.find(v=> v.key === cfg.first) || cfg.variants[0]);
 }
 function openReportPreview(rep, first){
+  if(currentRole === 'employee' && !rep.roleSafe){ alert('هاد التقرير غير متاح للموظف.'); return; }
   const base = String(rep.fileBase || rep.title || 'تقرير').replace(/[\\\/:*?"<>|]/g, '-');
   const all = {
     pdf: {key:'pdf', label:'PDF', filename: base + '.pdf', render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, buildPdfReportDoc(rep)); return w; }, blob: async ()=> buildPdfReportDoc(rep).output('blob')},
@@ -3288,6 +3321,7 @@ function generateExcelReport(data){ openReportPreview(data, 'excel'); }
 function generatePdfReport(data){ openReportPreview(data, 'pdf'); }
 
 function generateWordReport(data){
+  if(currentRole === 'employee'){ alert('هاد التقرير غير متاح للموظف.'); return; }
   // حيلة بسيطة وموثوقة: HTML بامتداد .doc كيفتحها Word مباشرة بتنسيق صحيح
   let html = `<html dir="rtl"><head><meta charset="UTF-8"></head><body style="font-family:Arial;">
     <h2>${escapeHtml(data.title)}</h2>
@@ -3591,6 +3625,7 @@ function buildProviderChain(hasImage){
 
 /* ---------- إرسال الرسائل ---------- */
 async function sendMessage(){
+  if(currentRole === 'employee') return;   // الموظف ما عندو حق يستعمل يونس
   const text = inputEl.value.trim();
   if(!text && !pendingImages.length) return;
 
@@ -4052,6 +4087,8 @@ async function callCerebras(cKey, msgs){
 
 /* ---------- الإعدادات ---------- */
 function openModal(isFirstRun){
+  if(currentRole === 'employee'){ try{ modalBackdrop.classList.remove('show'); }catch(e){} return; }   // مفاتيح API والإعدادات للمدير فقط
+  try{ refreshEmpStatus(); }catch(e){}
   if(typeof updateLastSyncDisplay === 'function') updateLastSyncDisplay();
   if(typeof updateStorageUsageUI === 'function') updateStorageUsageUI();
   try{ renderAuditUI(); }catch(e){}
@@ -6359,13 +6396,13 @@ function setStage(stage){
 }
 
 let unlockStorageFailed = false;
-async function tryUnlock(pin){
+async function tryUnlock(pin, role){
   unlockStorageFailed = false;
   const sub = lockSubtitle.textContent;
   lockSubtitle.textContent = '⏳ جارٍ فتح/تشفير البيانات...';
   try{
     const st = await LS.unlock(pin);
-    SESSION_PIN = pin; unlockStatus = st;
+    SESSION_PIN = pin; unlockStatus = st; currentRole = role || 'admin';
   }catch(e){
     lockSubtitle.textContent = sub;
     if(e && e.message === 'BADPIN') return false;
@@ -6396,7 +6433,11 @@ async function handlePinComplete(){
   const savedHash = LS.getItem(PIN_KEY);
 
   if(pinStage === 'unlock'){
-    if(secure){ if(!(await tryUnlock(pin)) && !unlockStorageFailed) shakeDots('رمز غير صحيح، حاول مرة ثانية'); }
+    if(secure){
+      let ok = await tryUnlock(pin);
+      if(!ok && !unlockStorageFailed){ const ap = await EMP.unwrap(pin); if(ap) ok = await tryUnlock(ap, 'employee'); }   // رمز الموظف
+      if(!ok && !unlockStorageFailed) shakeDots('رمز غير صحيح، حاول مرة ثانية');
+    }
     else if(hash === savedHash){ await tryUnlock(pin); }
     else{ shakeDots('رمز غير صحيح، حاول مرة ثانية'); }
   }
@@ -6429,7 +6470,7 @@ async function handlePinComplete(){
   else if(pinStage === 'changeConfirm'){
     if(pinBuffer === firstPinEntry){
       try{
-        if(LS.active){ await LS.rekey(pin); SESSION_PIN = pin; vaultSave(pin); } else { safeSetItem(PIN_KEY, hash); }
+        if(LS.active){ await LS.rekey(pin); SESSION_PIN = pin; vaultSave(pin); try{ if(await EMP.has()){ await EMP.clear(); alert('ℹ️ تبدّل رمز المدير، فرمز الموظف توقّف. حدّدو من جديد فالإعدادات ⚙️.'); } }catch(e){} } else { safeSetItem(PIN_KEY, hash); }
       }catch(e){ console.error(e); alert('⚠️ تعذّر تغيير الرمز، الرمز القديم بقى ساري.'); }
       lockScreen.classList.add('hidden');
       closeModal();
@@ -6444,6 +6485,7 @@ let appBooted = false;
 function unlockApp(){
   lockScreen.classList.add('hidden');
   if(!appBooted){ appBooted = true; try{ bootAfterUnlock(); }catch(e){ console.error('تعذّر تشغيل التطبيق بعد الفتح:', e); } }
+  else{ try{ applyRolePermissions(); }catch(e){ console.error(e); } }
 }
 
 pinPad.addEventListener('click', (e)=>{
@@ -6843,7 +6885,7 @@ document.getElementById('exportReportBtn').addEventListener('click', ()=>{
     rows.push([inv.date, 'مصروف', client ? client.name : 'عميل', 'فاتورة عميل', amt]);
     expense += amt;
   });
-  loadPdfInvoices().forEach(inv=>{
+  if(currentRole !== 'employee') loadPdfInvoices().forEach(inv=>{
     const amt = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
     rows.push([inv.invDate, 'دخل', inv.clientName || 'عميل', 'فاتورة PDF ' + inv.invNumber, amt]);
     income += amt;
@@ -6872,13 +6914,17 @@ document.getElementById('exportReportBtn').addEventListener('click', ()=>{
   });
   const manualList = loadTx().slice().sort((a,b)=> new Date(a.date) - new Date(b.date));
   manualList.forEach(t=>{
+    if(currentRole === 'employee' && t.type === 'income') return;
     rows.push([t.date, t.type==='income'?'دخل':'مصروف', t.category, t.note||'', t.amount]);
     if(t.type==='income') income += t.amount; else expense += t.amount;
   });
 
-  rows.push(['', '', '', 'إجمالي الدخل', income]);
-  rows.push(['', '', '', 'إجمالي المصروف', expense]);
-  rows.push(['', '', '', 'الصافي', income-expense]);
+  if(currentRole === 'employee'){ rows.push(['', '', '', 'إجمالي المصروف', expense]); }
+  else{
+    rows.push(['', '', '', 'إجمالي الدخل', income]);
+    rows.push(['', '', '', 'إجمالي المصروف', expense]);
+    rows.push(['', '', '', 'الصافي', income-expense]);
+  }
   const csv = rows.map(r=> r.map(c=> '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
   shareImageBlob(blob, 'تقرير-محاسبي-ALIOUA-BTP-'+new Date().toISOString().slice(0,10)+'.csv');
@@ -7010,9 +7056,10 @@ function renderAccountingBase(){
   const income = pdfIncomeTotal + manualIncome;
   const expense = clientsExpenseTotal + supplierExpenseTotal + workerExpenseTotal + caisseTotal + manualExpense;
 
-  document.getElementById('sumIncome').textContent = income.toLocaleString('ar');
+  const _emp = currentRole === 'employee';
+  document.getElementById('sumIncome').textContent = _emp ? '' : income.toLocaleString('ar');
   document.getElementById('sumExpense').textContent = expense.toLocaleString('ar');
-  document.getElementById('sumNet').textContent = (income-expense).toLocaleString('ar');
+  document.getElementById('sumNet').textContent = _emp ? '' : (income-expense).toLocaleString('ar');
 
   // ----- عرض قسم "المصاريف": مجموع كل عنصر بالاسم (بلا تفاصيل خام) + الحركات اليدوية -----
   const el = document.getElementById('txList');
@@ -7037,7 +7084,7 @@ function renderAccountingBase(){
     el.innerHTML = '<div class="empty-hint">ما فيه عمليات بعد. ضيف أول عملية فوق ⬆️</div>';
   }else{
     el.innerHTML = '';
-    rows.sort((a,b)=> b.amount - a.amount).forEach(r=>{
+    rows.filter(r=> !_emp || r.type !== 'income').sort((a,b)=> b.amount - a.amount).forEach(r=>{
       const div = document.createElement('div');
       div.className = 'tx-item ' + r.type;
       div.innerHTML = `
@@ -7049,7 +7096,7 @@ function renderAccountingBase(){
       el.appendChild(div);
     });
     // الحركات اليدوية (بلا ربط بمورد/عميل/أجير) تبقى تتبين فرديًا بحال ما كانت
-    manualList.forEach(tx=>{
+    manualList.filter(t=> !_emp || t.type !== 'income').forEach(tx=>{
       const div = document.createElement('div');
       div.className = 'tx-item ' + tx.type;
       div.innerHTML = `
@@ -7113,10 +7160,7 @@ function renderAccountingBase(){
         type:'bar',
         data:{
           labels: months.map(m=>m.label),
-          datasets:[
-            {label:'دخل', data:incData, backgroundColor:'#1C7C3F'},
-            {label:'مصروف', data:expData, backgroundColor:'#7C241C'}
-          ]
+          datasets:(_emp ? [] : [{label:'دخل', data:incData, backgroundColor:'#1C7C3F'}]).concat([{label:'مصروف', data:expData, backgroundColor:'#7C241C'}])
         },
         options:{
           responsive:true,
@@ -9947,7 +9991,7 @@ document.getElementById('quoteSendBtn').addEventListener('click', ()=>{
 
 /* ===== عروض الأسعار (DEVIS) على نموذج الشركة + ترقيم تسلسلي Dev NN/YY ===== */
 const QUOTES_KEY = 'alioua_btp_quotes';
-const QUOTE_SEQ_START = {yy: '26', last: 0};   // آخر رقم Dev صدر فسنة 2026 (0 = نبداو من Dev 01/26)
+const QUOTE_SEQ_START = {yy: '26', last: 3};   // آخر رقم Dev صدر فسنة 2026: Dev03/26 → التالي Dev 04/26
 function loadQuotes(){ try{ return JSON.parse(LS.getItem(QUOTES_KEY) || '[]'); }catch(e){ return []; } }
 function saveQuotes(l){ safeSetItem(QUOTES_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function nextQuoteNumber(dateStr){
@@ -10123,22 +10167,223 @@ function quoteFormToObj(){
 
 /* ===== تصدير المحاسب: Excel + PDF منظمين بالشعار، مع معاينة قبل التحميل ===== */
 function buildAccountantReport(){
-  const sups = loadSuppliers(), workers = loadWorkers(), N = round2, pn = id => (typeof projectNameById === 'function' ? projectNameById(id) : '') || '';
+  const emp = currentRole === 'employee';
+  const sups = loadSuppliers(), workers = loadWorkers(), provs = loadClients(), N = round2, pn = id => (typeof projectNameById === 'function' ? projectNameById(id) : '') || '';
   const byD = k => (a, b)=> String(a[k] || '').localeCompare(String(b[k] || '')), dates = [];
-  const bk = loadPdfInvoices().slice().sort(byD('invDate')).map(i=>{ dates.push(i.invDate); const b = pdfInvBreakdown(i); return [frDate(i.invDate), i.invNumber || '', i.clientName || '', pn(i.projectId), N(b.ht), N(b.tva), N(b.ttc), N(b.rg), N(b.av), N(b.ras), N(b.net)]; });
+  const bk = emp ? [] : loadPdfInvoices().slice().sort(byD('invDate')).map(i=>{ dates.push(i.invDate); const b = pdfInvBreakdown(i); return [frDate(i.invDate), i.invNumber || '', i.clientName || '', pn(i.projectId), N(b.ht), N(b.tva), N(b.ttc), N(b.rg), N(b.av), N(b.ras), N(b.net)]; });
   const ac = loadPurchases().slice().sort(byD('date')).map(p=>{ dates.push(p.date); return [frDate(p.date), p.invoiceNo || p.bl || '', (sups.find(s=> s.id === p.supplierId) || {}).name || '', pn(p.projectId), N(purchaseTotal(p))]; });
   const ca = loadCaisseData().bons.slice().sort(byD('date')).map(b=>{ dates.push(b.date); return [frDate(b.date), b.bonNumber || '', pn(b.projectId), N(bonTotal(b))]; });
   const pa = loadWPayments().slice().sort(byD('paidAt')).map(x=>{ dates.push(x.paidAt); return [frDate(x.paidAt), (x.from || '') + ' → ' + (x.to || '') + (x.extrasOnly ? ' (extras)' : ''), (workers.find(w=> w.id === x.workerId) || {}).name || '', pn(x.projectId), N(x.total)]; });
+  const pv = loadInvoices().slice().sort(byD('date')).map(i=>{ dates.push(i.date); return [frDate(i.date), (provs.find(c=> c.id === i.clientId) || {}).name || '', N(invoiceTotal(i)), N(invoicePaid(i)), N(invoiceRemaining(i))]; });
   const sum = (rows, i)=> N(rows.reduce((s, r)=> s + (+r[i] || 0), 0)), ds = dates.filter(Boolean).sort();
-  const sheets = [{name:'Récapitulatif', columns:['Rubrique', 'Montant (MAD)'], numCols:[1], rows:[['Ventes — total HT', sum(bk, 4)], ['TVA collectée', sum(bk, 5)], ['Ventes — total TTC', sum(bk, 6)], ['Net à encaisser (après RG / avances / RAS)', sum(bk, 10)], ['Achats fournisseurs (montants enregistrés)', sum(ac, 4)], ['Bons de caisse', sum(ca, 3)], ['Paie ouvriers (paiements enregistrés)', sum(pa, 4)]]}];
+  const recap = emp ? [] : [['Ventes — total HT', sum(bk, 4)], ['TVA collectée', sum(bk, 5)], ['Ventes — total TTC', sum(bk, 6)], ['Net à encaisser (après RG / avances / RAS)', sum(bk, 10)]];
+  recap.push(['Achats fournisseurs (montants enregistrés)', sum(ac, 4)], ['Bons de caisse', sum(ca, 3)], ['Paie ouvriers (paiements enregistrés)', sum(pa, 4)], ['Prestataires de services (factures)', sum(pv, 2)]);
+  const sheets = [{name:'Récapitulatif', columns:['Rubrique', 'Montant (MAD)'], numCols:[1], rows: recap}];
   if(bk.length) sheets.push({name:'Ventes', columns:['Date', 'N° facture', 'Client', 'Projet', 'HT', 'TVA', 'TTC', 'Retenue garantie', 'Avance', 'RAS', 'Net à payer'], numCols:[4,5,6,7,8,9,10], rows: bk, totals:['TOTAL', '', '', '', sum(bk,4), sum(bk,5), sum(bk,6), sum(bk,7), sum(bk,8), sum(bk,9), sum(bk,10)]});
   if(ac.length) sheets.push({name:'Achats', columns:['Date', 'Pièce', 'Fournisseur', 'Projet', 'Montant'], numCols:[4], rows: ac, totals:['TOTAL', '', '', '', sum(ac,4)]});
   if(ca.length) sheets.push({name:'Caisse', columns:['Date', 'N° bon', 'Projet', 'Montant'], numCols:[3], rows: ca, totals:['TOTAL', '', '', sum(ca,3)]});
   if(pa.length) sheets.push({name:'Paie', columns:['Date paiement', 'Période', 'Ouvrier', 'Projet', 'Montant'], numCols:[4], rows: pa, totals:['TOTAL', '', '', '', sum(pa,4)]});
-  return {title:'EXPORT COMPTABLE', fileBase:'ALIOUA-BTP-export-comptable-' + todayStr(), subtitle:'ALIOUA BTP — Édité le ' + frDate(todayStr()) + (ds.length ? ' — Écritures du ' + frDate(ds[0]) + ' au ' + frDate(ds[ds.length - 1]) : ''), sheets,
-    summary:"Montants en dirhams (MAD). TVA collectée = TVA des factures de vente émises. Les achats, bons de caisse et paiements ouvriers sont repris tels qu'enregistrés dans l'application.", formats:['pdf', 'excel', 'csv'], csvText: accountantCsvText};
+  if(pv.length) sheets.push({name:'Prestataires', columns:['Date', 'Prestataire', 'Montant', 'Payé', 'Reste'], numCols:[2,3,4], rows: pv, totals:['TOTAL', '', sum(pv,2), sum(pv,3), sum(pv,4)]});
+  return {title: emp ? 'EXPORT DES DÉPENSES' : 'EXPORT COMPTABLE', fileBase: (emp ? 'ALIOUA-BTP-depenses-' : 'ALIOUA-BTP-export-comptable-') + todayStr(), subtitle:'ALIOUA BTP — Édité le ' + frDate(todayStr()) + (ds.length ? ' — Écritures du ' + frDate(ds[0]) + ' au ' + frDate(ds[ds.length - 1]) : ''), sheets,
+    summary: emp ? "Montants en dirhams (MAD). Ce document ne reprend que les dépenses enregistrées dans l'application." : "Montants en dirhams (MAD). TVA collectée = TVA des factures de vente émises. Les achats, bons de caisse, paiements ouvriers et factures de prestataires sont repris tels qu'enregistrés dans l'application.", formats:['pdf', 'excel', 'csv'], csvText: accountantCsvText, roleSafe: true};
 }
 function exportAccountantPreview(){ openReportPreview(buildAccountantReport(), 'pdf'); }
+
+
+/* ===== الأدوار: مدير / موظف (رمزين) — كيتحقق من الرمز وكيسجل currentRole ===== */
+const EMP = (function(){
+  const DB = 'alioua_btp_roles', ST = 'kv';
+  const open = () => new Promise((res, rej)=>{ const r = indexedDB.open(DB, 1); r.onupgradeneeded = ()=> r.result.createObjectStore(ST); r.onsuccess = ()=> res(r.result); r.onerror = ()=> rej(r.error); });
+  async function get(){ const d = await open(); try{ return await new Promise((res, rej)=>{ const q = d.transaction(ST).objectStore(ST).get('employee'); q.onsuccess = ()=> res(q.result || null); q.onerror = ()=> rej(q.error); }); }finally{ d.close(); } }
+  async function put(v){ const d = await open(); try{ await new Promise((res, rej)=>{ const t = d.transaction(ST, 'readwrite'); if(v === null) t.objectStore(ST).delete('employee'); else t.objectStore(ST).put(v, 'employee'); t.oncomplete = ()=> res(); t.onerror = ()=> rej(t.error); }); }finally{ d.close(); } }
+  async function key(pin, salt){ const km = await crypto.subtle.importKey('raw', new TextEncoder().encode('emp|' + String(pin)), 'PBKDF2', false, ['deriveKey']); return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:310000, hash:'SHA-256'}, km, {name:'AES-GCM', length:256}, false, ['encrypt', 'decrypt']); }
+  return {
+    async has(){ try{ return !!(await get()); }catch(e){ return false; } },
+    // رمز الموظف كيفتح نفس المخزن: كنخبّئو رمز المدير مشفّر بمفتاح مشتق من رمز الموظف (PBKDF2 + AES-GCM) فـ IndexedDB
+    async set(empPin, adminPin){ const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)); const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, await key(empPin, salt), new TextEncoder().encode('EMP1|' + adminPin))); await put({salt: _b64(salt), iv: _b64(iv), ct: _b64(ct)}); },
+    async unwrap(empPin){ try{ const r = await get(); if(!r) return null; const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv: _unb64(r.iv)}, await key(empPin, _unb64(r.salt)), _unb64(r.ct)); const s = new TextDecoder().decode(pt); return s.indexOf('EMP1|') === 0 ? s.slice(5) : null; }catch(e){ return null; } },
+    async clear(){ try{ await put(null); }catch(e){} }
+  };
+})();
+async function refreshEmpStatus(){
+  const el = document.getElementById('empPinStatus'); if(!el) return;
+  el.textContent = (await EMP.has()) ? '✅ رمز الموظف محدّد على هاد الهاتف.' : '⚠️ ما محدّدش رمز الموظف على هاد الهاتف (كيتحدّد فكل هاتف على حدة).';
+}
+document.getElementById('empPinSaveBtn')?.addEventListener('click', async ()=>{
+  const v = document.getElementById('empPinInput').value.trim(), st = document.getElementById('empPinStatus');
+  if(currentRole !== 'admin' || !SESSION_PIN){ alert('هاد الخاصية للمدير فقط.'); return; }
+  if(!/^\d{4}$/.test(v)){ st.textContent = '❌ رمز الموظف خاصو يكون 4 أرقام.'; return; }
+  if(v === String(SESSION_PIN)){ st.textContent = '❌ رمز الموظف خاصو يكون مختلف على رمزك.'; return; }
+  st.textContent = '⏳ كنشفّر...';
+  try{ await EMP.set(v, SESSION_PIN); document.getElementById('empPinInput').value = ''; await refreshEmpStatus(); }catch(e){ st.textContent = '❌ تعذّر الحفظ: ' + (e && e.message ? e.message : e); }
+});
+document.getElementById('empPinClearBtn')?.addEventListener('click', async ()=>{
+  if(currentRole !== 'admin') return;
+  if(!confirm('حذف رمز الموظف؟ الموظف ما غادي يقدر يدخل حتى تحدّد رمز جديد.')) return;
+  await EMP.clear(); refreshEmpStatus();
+});
+function _gotoView(id){ navBtns.forEach(b=> b.classList.toggle('active', b.dataset.view === id)); views.forEach(v=> v.classList.toggle('active', v.id === id)); }
+function applyRolePermissions(){
+  const emp = currentRole === 'employee';
+  const hide = (el, on)=>{ if(el) el.classList.toggle('role-hidden', !!on); };
+  hide(document.querySelector('#bottomNav .nav-btn[data-view="viewChat"]'), emp);      // تبويب يونس
+  hide(document.querySelector('#bottomNav .nav-btn[data-view="viewMarketing"]'), emp);  // تسويق
+  ['voiceCallBtn', 'voiceToggleBtn', 'settingsBtn'].forEach(id=> hide(document.getElementById(id), emp));
+  hide(document.querySelector('.sub-nav-btn[data-sub="subProjects"]'), emp);
+  hide(document.getElementById('sumIncome') && document.getElementById('sumIncome').closest('.s-card'), emp);
+  hide(document.getElementById('sumNet') && document.getElementById('sumNet').closest('.s-card'), emp);
+  hide(document.getElementById('typeIncomeBtn'), emp);
+  hide(document.getElementById('chqDirWrap'), emp);
+  const sc = document.querySelector('#subExpenses .summary-cards'); if(sc) sc.style.gridTemplateColumns = emp ? '1fr' : '';
+  if(emp){
+    chqDir = 'out';
+    try{ document.getElementById('voiceChatOverlay').classList.remove('active', 'show'); }catch(e){}
+    try{ document.getElementById('typeExpenseBtn').click(); }catch(e){}
+    const act = document.querySelector('.view.active');
+    if(!act || act.id === 'viewChat' || act.id === 'viewMarketing') _gotoView('viewAccounting');
+    const sub = document.querySelector('.sub-view.active');
+    if(sub && sub.id === 'subProjects'){ const b = document.querySelector('.sub-nav-btn[data-sub="subExpenses"]'); if(b) b.click(); }
+  }
+  try{ renderAccounting(); }catch(e){ console.error(e); }
+  try{ renderOverdueAlerts(); }catch(e){}
+  try{ renderCheques(); }catch(e){}
+}
+
+/* ===== الآجال والشيكات + قراءة الشيك بالتصويرة (مع مسح التوقيع/الخاتم إجباريًا قبل Gemini Vision) ===== */
+const CHQ_KEY = 'alioua_btp_cheques';
+function loadCheques(){ try{ return JSON.parse(LS.getItem(CHQ_KEY) || '[]'); }catch(e){ return []; } }
+function saveCheques(l){ safeSetItem(CHQ_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+let chqEditId = null, chqDir = 'out';
+function chqDaysLeft(d){ return Math.round((new Date(d + 'T00:00:00') - new Date(todayStr() + 'T00:00:00')) / 86400000); }
+function chqResetForm(){ chqEditId = null; ['chqName', 'chqAmount', 'chqNumber', 'chqBank', 'chqNote'].forEach(id=>{ document.getElementById(id).value = ''; }); document.getElementById('chqDate').value = todayStr(); document.getElementById('chqSaveBtn').textContent = '➕ حفظ الشيك'; document.getElementById('chqCancelEditBtn').style.display = 'none'; }
+function setChqDir(d){ chqDir = d; document.querySelectorAll('.chq-dir').forEach(b=> b.classList.toggle('active', b.dataset.dir === d)); }
+function renderCheques(){
+  const box = document.getElementById('chqList'); if(!box) return;
+  const emp = currentRole === 'employee';
+  const all = loadCheques().filter(c=> !emp || c.dir !== 'in');
+  const pend = all.filter(c=> c.status !== 'cleared');
+  const sumOf = arr => arr.reduce((s, c)=> s + (+c.amount || 0), 0);
+  const outP = pend.filter(c=> c.dir !== 'in'), inP = pend.filter(c=> c.dir === 'in');
+  const late = outP.filter(c=> chqDaysLeft(c.date) < 0), soon = outP.filter(c=> { const d = chqDaysLeft(c.date); return d >= 0 && d <= 7; });
+  const cards = [['expense', 'صادر معلّق', fmtNum(sumOf(outP)) + ' (' + outP.length + ')'], ['expense', '⏰ متأخر', fmtNum(sumOf(late)) + ' (' + late.length + ')'], ['expense', '📆 خلال 7 أيام', fmtNum(sumOf(soon)) + ' (' + soon.length + ')']];
+  if(!emp) cards.push(['income', 'وارد معلّق', fmtNum(sumOf(inP)) + ' (' + inP.length + ')']);
+  const sm = document.getElementById('chqSummary'); sm.innerHTML = '';
+  cards.forEach(c=>{ const d = document.createElement('div'); d.className = 's-card ' + c[0]; const a = document.createElement('span'); a.className = 's-label'; a.textContent = c[1]; const b = document.createElement('span'); b.className = 's-val'; b.style.fontSize = '13px'; b.textContent = c[2]; d.appendChild(a); d.appendChild(b); sm.appendChild(d); });
+  box.innerHTML = '';
+  if(!all.length){ box.innerHTML = '<div class="empty-hint">ما كاين حتى شيك مسجّل. صوّر شيك أو عمّر الخانات فوق ⬆️</div>'; return; }
+  all.slice().sort((a, b)=> (a.status === 'cleared') - (b.status === 'cleared') || (a.status === 'cleared' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))).forEach(c=>{
+    const left = chqDaysLeft(c.date), done = c.status === 'cleared';
+    const tag = done ? (c.dir === 'in' ? '✅ تحصّل' : '✅ تصرف') : (left < 0 ? '⏰ متأخر ' + (-left) + ' يوم' : left === 0 ? '⚠️ اليوم' : left === 1 ? 'غدا' : 'بعد ' + left + ' يوم');
+    const color = done ? '#1C7C3F' : (left < 0 ? '#B42318' : (left <= 7 ? '#B54708' : 'var(--ink-soft)'));
+    const row = document.createElement('div'); row.className = 'list-card chq-item'; row.style.cssText = 'margin-bottom:8px; padding:10px 12px;';
+    const h = document.createElement('div'); h.style.cssText = 'display:flex; justify-content:space-between; gap:8px; font-weight:700;';
+    const n = document.createElement('span'); n.setAttribute('dir', 'auto'); n.textContent = (c.dir === 'in' ? '🟢 ' : '🔴 ') + (c.name || '—'); const am = document.createElement('span'); am.textContent = fmtNum(c.amount) + ' درهم'; h.appendChild(n); h.appendChild(am);
+    const m = document.createElement('div'); m.setAttribute('dir', 'auto'); m.style.cssText = 'font-size:12px; margin-top:3px; color:' + color + ';'; m.textContent = frDate(c.date) + ' — ' + tag + (c.number ? ' · شيك ' + c.number : '') + (c.bank ? ' · ' + c.bank : '') + (c.note ? ' · ' + c.note : '');
+    const bt = document.createElement('div'); bt.style.cssText = 'display:flex; gap:6px; margin-top:8px;';
+    const mk = (txt, fn)=>{ const b = document.createElement('button'); b.className = 'lc-btn'; b.style.cssText = 'flex:1; padding:6px; font-size:11.5px;'; b.textContent = txt; b.addEventListener('click', fn); bt.appendChild(b); };
+    mk(done ? '↩️ رجّعو معلّق' : (c.dir === 'in' ? '✔ تحصّل' : '✔ تصرف'), ()=>{ const l = loadCheques(), t = l.find(x=> x.id === c.id); if(t){ t.status = done ? 'pending' : 'cleared'; saveCheques(l); renderCheques(); } });
+    mk('✏️ تعديل', ()=>{ chqEditId = c.id; setChqDir(c.dir === 'in' ? 'in' : 'out'); document.getElementById('chqName').value = c.name || ''; document.getElementById('chqAmount').value = c.amount; document.getElementById('chqDate').value = c.date; document.getElementById('chqNumber').value = c.number || ''; document.getElementById('chqBank').value = c.bank || ''; document.getElementById('chqNote').value = c.note || ''; document.getElementById('chqSaveBtn').textContent = '💾 حفظ التعديل'; document.getElementById('chqCancelEditBtn').style.display = ''; window.scrollTo({top: 0, behavior: 'smooth'}); });
+    mk('🗑', ()=>{ if(confirm('مسح هاد الشيك؟')){ saveCheques(loadCheques().filter(x=> x.id !== c.id)); renderCheques(); } });
+    row.appendChild(h); row.appendChild(m); row.appendChild(bt); box.appendChild(row);
+  });
+}
+function chqStatus(msg, bad){ const el = document.getElementById('chqScanStatus'); el.style.display = msg ? 'block' : 'none'; el.style.color = bad ? '#B42318' : 'var(--ink-soft)'; el.textContent = msg || ''; }
+
+/* ---- محرّر المسح: الصورة فـ canvas بنفس نسبة الأبعاد + مستطيلات سوداء (ماوس + لمس) ---- */
+function openChequeMask(file){
+  return new Promise(resolve=>{
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onerror = ()=>{ URL.revokeObjectURL(url); alert('تعذّر فتح الصورة.'); resolve(null); };
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      const sc = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight)), w = Math.round(img.naturalWidth * sc), h = Math.round(img.naturalHeight * sc);
+      const m = document.createElement('div'); m.style.cssText = 'position:fixed; inset:0; z-index:100001; background:#111; display:flex; flex-direction:column;';
+      m.innerHTML = '<div style="padding:10px 12px; color:#fff; padding-top:max(10px, env(safe-area-inset-top));"><b>🔒 حماية الخصوصية</b><div id="cmHint" style="font-size:12.5px; margin-top:4px;"></div></div><div style="flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:8px;"><canvas id="cmCanvas" style="max-width:100%; max-height:62vh; width:auto; height:auto; background:#fff; border:3px solid #ef4444; border-radius:6px;"></canvas></div><div style="background:#fff; padding:10px 12px; padding-bottom:max(10px, env(safe-area-inset-bottom)); display:grid; gap:8px;"><div id="cmCount" style="font-size:12px; color:#555;"></div><div style="display:flex; gap:8px;"><button class="btn-ghost" id="cmDraw" style="flex:2; padding:10px;">🖊️ وضع علامة سوداء (لمسح التوقيع/الخاتم)</button><button class="btn-ghost" id="cmUndo" style="flex:1; padding:10px;">↩️ إلغاء الرسم</button></div><div style="display:flex; gap:8px;"><button class="btn-primary" id="cmOk" style="flex:2; padding:12px;">✅ تأكيد وقراءة الشيك</button><button class="btn-ghost" id="cmCancel" style="flex:1; padding:12px;">✖ إلغاء</button></div></div>';
+      document.body.appendChild(m);
+      const cv = m.querySelector('#cmCanvas'), ctx = cv.getContext('2d'), hint = m.querySelector('#cmHint'), cnt = m.querySelector('#cmCount'), ok = m.querySelector('#cmOk'), drawBtn = m.querySelector('#cmDraw');
+      cv.width = w; cv.height = h;
+      const rects = []; let cur = null, mode = true;
+      const norm = c => ({x: Math.min(c.x0, c.x1), y: Math.min(c.y0, c.y1), w: Math.abs(c.x1 - c.x0), h: Math.abs(c.y1 - c.y0)});
+      function ui(){
+        cv.style.touchAction = mode ? 'none' : 'auto'; cv.style.cursor = mode ? 'crosshair' : 'default'; cv.style.borderColor = mode ? '#ef4444' : '#9ca3af';
+        hint.style.color = mode ? '#fecaca' : '#d1d5db';
+        hint.textContent = mode ? '🖊️ الرسم شغّال: اسحب صبعك (ولا الماوس) فوق التوقيع والخاتم باش يتغطاو بالأسود. خاصك تغطّي على الأقل مستطيل واحد.' : '🖐️ الرسم موقوف (تقدر تتنقل فالصفحة). دوس على 🖊️ باش ترجع ترسم.';
+        drawBtn.className = mode ? 'btn-primary' : 'btn-ghost'; drawBtn.style.flex = '2'; drawBtn.style.padding = '10px';
+        cnt.textContent = rects.length ? '⬛ عدد المساحات المخفية: ' + rects.length : '⚠️ ما غطّيتي حتى حاجة بعد — التأكيد مغلق حتى ترسم مستطيل واحد على الأقل.';
+        ok.disabled = rects.length === 0; ok.style.opacity = rects.length ? '1' : '.45';
+      }
+      function redraw(){ ctx.drawImage(img, 0, 0, w, h); ctx.fillStyle = '#000'; rects.forEach(r=> ctx.fillRect(r.x, r.y, r.w, r.h)); if(cur){ const r = norm(cur); ctx.fillRect(r.x, r.y, r.w, r.h); } ui(); }
+      const pt = (cx, cy)=>{ const b = cv.getBoundingClientRect(); return {x: Math.max(0, Math.min(w, (cx - b.left) * w / b.width)), y: Math.max(0, Math.min(h, (cy - b.top) * h / b.height))}; };
+      const begin = (cx, cy)=>{ const p = pt(cx, cy); cur = {x0: p.x, y0: p.y, x1: p.x, y1: p.y}; };
+      const moveTo = (cx, cy)=>{ if(!cur) return; const p = pt(cx, cy); cur.x1 = p.x; cur.y1 = p.y; redraw(); };
+      const finish = ()=>{ if(!cur) return; const r = norm(cur); cur = null; if(r.w >= 8 && r.h >= 8) rects.push(r); redraw(); };
+      cv.addEventListener('mousedown', e=>{ if(!mode) return; e.preventDefault(); begin(e.clientX, e.clientY); });
+      const onMM = e=>{ if(cur) moveTo(e.clientX, e.clientY); }, onMU = ()=> finish();
+      window.addEventListener('mousemove', onMM); window.addEventListener('mouseup', onMU);
+      cv.addEventListener('touchstart', e=>{ if(!mode) return; e.preventDefault(); if(e.touches.length > 1){ cur = null; redraw(); return; } begin(e.touches[0].clientX, e.touches[0].clientY); }, {passive: false});
+      cv.addEventListener('touchmove', e=>{ if(!mode) return; e.preventDefault(); if(e.touches.length === 1) moveTo(e.touches[0].clientX, e.touches[0].clientY); }, {passive: false});
+      cv.addEventListener('touchend', e=>{ if(!mode) return; e.preventDefault(); finish(); }, {passive: false});
+      cv.addEventListener('touchcancel', ()=>{ cur = null; redraw(); });
+      drawBtn.addEventListener('click', ()=>{ mode = !mode; ui(); });
+      m.querySelector('#cmUndo').addEventListener('click', ()=>{ rects.pop(); redraw(); });
+      const close = v=>{ window.removeEventListener('mousemove', onMM); window.removeEventListener('mouseup', onMU); m.remove(); resolve(v); };
+      m.querySelector('#cmCancel').addEventListener('click', ()=> close(null));
+      ok.addEventListener('click', ()=>{ if(!rects.length) return; close(cv.toDataURL('image/jpeg', 0.88)); });
+      redraw();
+    };
+    img.src = url;
+  });
+}
+const CHEQUE_PROMPT = 'أنت خبير فقراءة الشيكات البنكية المغربية. استخرج من صورة الشيك المعلومات التالية وأرجع JSON فقط بدون أي شرح وبدون Markdown:\n{"name": "الاسم (المستفيد أو الساحب) كما هو مكتوب", "amount": المبلغ بالأرقام فقط (رقم بلا عملة وبلا فواصل آلاف), "date": "تاريخ الشيك بصيغة YYYY-MM-DD", "number": "رقم الشيك", "bank": "اسم البنك"}\nإلا ما قدرتيش تقرا حقل خليه null.\nملاحظة: التصويرة فيها بقع سوداء متعمدة (مسحنا فيها التوقيع والخاتم لحماية الخصوصية). تجاهل هاد البقع وركز فقط على الأرقام، الأسماء، والتاريخ.';
+function normalizeCheque(o){
+  const s = v => (v == null ? '' : String(v).trim());
+  let amount = parseFloat(String(o.amount == null ? '' : o.amount).replace(/\s/g, '').replace(/[^\d.,-]/g, '').replace(',', '.')); if(!isFinite(amount)) amount = '';
+  let date = s(o.date); const dm = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/.exec(date);
+  if(dm) date = dm[3] + '-' + dm[2].padStart(2, '0') + '-' + dm[1].padStart(2, '0'); if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = '';
+  return {name: s(o.name), amount, date, number: s(o.number), bank: s(o.bank)};
+}
+async function scanChequeWithAI(dataUrl){
+  const key = getApiKey();
+  if(!key) throw new Error('ما كاين حتى مفتاح Gemini فهاد الهاتف. خاص المدير يدخلو فالإعدادات أو يدير المزامنة.');
+  const b64 = String(dataUrl).split(',')[1]; let last = null;
+  for(const mdl of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']){
+    const gc = {temperature: 0, maxOutputTokens: 1024, responseMimeType: 'application/json'}; if(mdl === 'gemini-2.5-flash') gc.thinkingConfig = {thinkingBudget: 0};
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + mdl + ':generateContent?key=' + encodeURIComponent(key), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({contents: [{role: 'user', parts: [{inlineData: {mimeType: 'image/jpeg', data: b64}}, {text: CHEQUE_PROMPT}]}], generationConfig: gc})});
+    if([400, 404, 429].includes(res.status)){ last = new Error('HTTP ' + res.status + ' (' + mdl + ')'); continue; }
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json(), txt = (((j.candidates || [])[0] || {}).content || {}).parts; const t = (txt || []).map(p=> p.text || '').join('');
+    const mt = /\{[\s\S]*\}/.exec(t); if(!mt) throw new Error('جواب غير مفهوم من Gemini');
+    return normalizeCheque(JSON.parse(mt[0]));
+  }
+  throw last || new Error('فشلت القراءة');
+}
+(function initCheques(){
+  const $ = id => document.getElementById(id); if(!$('chqScanBtn')) return;
+  $('chqDate').value = todayStr();
+  document.querySelectorAll('.chq-dir').forEach(b=> b.addEventListener('click', ()=> setChqDir(b.dataset.dir)));
+  $('chqScanBtn').addEventListener('click', ()=> $('chqFileInput').click());
+  $('chqFileInput').addEventListener('change', async ()=>{
+    const f = $('chqFileInput').files[0]; $('chqFileInput').value = ''; if(!f) return;
+    const masked = await openChequeMask(f); if(!masked){ chqStatus(''); return; }   // ما كيتصيفط والو بلا مسح
+    chqStatus('⏳ كنقرا الشيك (الصورة بعد مسح التوقيع والخاتم)...');
+    try{
+      const d = await scanChequeWithAI(masked);
+      if(d.name) $('chqName').value = d.name; if(d.amount !== '') $('chqAmount').value = d.amount; if(d.date) $('chqDate').value = d.date; if(d.number) $('chqNumber').value = d.number; if(d.bank) $('chqBank').value = d.bank;
+      chqStatus('✅ تقرا الشيك وتعمّرو الخانات. راجع المعلومات مزيان قبل الحفظ.');
+    }catch(e){ chqStatus('❌ ما قدرتش نقرا الشيك: ' + (e && e.message ? e.message : e) + ' — عمّر الخانات يدويًا.', true); }
+  });
+  $('chqSaveBtn').addEventListener('click', ()=>{
+    const amount = parseFloat($('chqAmount').value), date = $('chqDate').value;
+    if(!(amount > 0)){ alert('اكتب مبلغ الشيك.'); return; } if(!date){ alert('اختار تاريخ الشيك (الأجل).'); return; }
+    const dir = currentRole === 'employee' ? 'out' : chqDir, num = $('chqNumber').value.trim(), bank = $('chqBank').value.trim(), l = loadCheques();
+    if(num && l.some(x=> x.id !== chqEditId && x.number === num && (x.bank || '') === bank) && !confirm('كاين شيك آخر بنفس الرقم والبنك. تكمّل؟')) return;
+    const rec = {id: chqEditId || 'c' + Date.now(), dir, name: $('chqName').value.trim(), amount: round2(amount), date, number: num, bank, note: $('chqNote').value.trim(), status: 'pending', createdAt: Date.now(), by: currentRole};
+    const i = l.findIndex(x=> x.id === rec.id); if(i >= 0){ rec.status = l[i].status; rec.createdAt = l[i].createdAt; l[i] = rec; } else l.push(rec);
+    saveCheques(l); chqResetForm(); chqStatus(''); renderCheques();
+  });
+  $('chqCancelEditBtn').addEventListener('click', chqResetForm);
+  renderCheques();
+})();
 
 
 /* ---------- مشاركة الصور ---------- */
@@ -10292,7 +10537,7 @@ try{
 }
 
 function refreshAllViews(){
-  const calls = [renderMessages, renderAppts, renderAccounting, renderOverdueAlerts, renderInvoicesList, renderCaisse, renderClients, renderCustomers, renderSuppliers, renderWorkers, renderProjects];
+  const calls = [renderMessages, renderAppts, renderAccounting, renderOverdueAlerts, renderInvoicesList, renderCaisse, renderClients, renderCustomers, renderSuppliers, renderWorkers, renderProjects, renderCheques];
   calls.forEach(fn=>{ try{ fn(); }catch(e){ console.error(fn.name, e); } });
 }
 
@@ -10348,7 +10593,7 @@ function accountantCsvText(){
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const rows = [['Type','Date','Piece','Libelle','Tiers','Projet','HT','TVA','TTC','Retenue garantie','Avance','RAS','Net']];
   const sups = loadSuppliers(), custs = loadCustomers(), workers = loadWorkers();
-  loadPdfInvoices().slice().sort((a,b)=> (a.invDate||'').localeCompare(b.invDate||'')).forEach(i=>{
+  if(currentRole !== 'employee') loadPdfInvoices().slice().sort((a,b)=> (a.invDate||'').localeCompare(b.invDate||'')).forEach(i=>{
     const b = pdfInvBreakdown(i);
     rows.push(['VENTE', i.invDate, i.invNumber, i.sectionTitle || 'Facture', i.clientName, projectNameById(i.projectId), nf(b.ht), nf(b.tva), nf(b.ttc), nf(b.rg), nf(b.av), nf(b.ras), nf(b.net)]);
   });
@@ -10363,6 +10608,8 @@ function accountantCsvText(){
   loadWPayments().slice().sort((a,b)=> (a.paidAt||'').localeCompare(b.paidAt||'')).forEach(x=>{
     rows.push(['PAIE', x.paidAt, '', 'Paie ' + (x.from||'') + ' → ' + (x.to||'') + (x.extrasOnly ? ' (extras)' : ''), (workers.find(w=>w.id===x.workerId)||{}).name || '', projectNameById(x.projectId), '', '', nf(x.total), '', '', '', nf(x.total)]);
   });
+  { const provs = loadClients(); loadInvoices().slice().sort((a,b)=> (a.date||'').localeCompare(b.date||'')).forEach(i=>{ const t = invoiceTotal(i); rows.push(['PRESTATAIRE', i.date, '', 'Facture prestataire de services', (provs.find(c=>c.id===i.clientId)||{}).name || '', '', '', '', nf(t), '', '', '', nf(t)]); }); }
+  if(currentRole === 'employee') return '\ufeff' + rows.map(r=> r.map(q).join(';')).join('\r\n');
   // ملخص TVA المحصّلة
   const sales = loadPdfInvoices().map(pdfInvBreakdown);
   rows.push([]); rows.push(['RECAP TVA COLLECTEE','','','','','', nf(sales.reduce((a,b)=>a+b.ht,0)), nf(sales.reduce((a,b)=>a+b.tva,0)), nf(sales.reduce((a,b)=>a+b.ttc,0))]);
@@ -10437,6 +10684,7 @@ function renderControlPanel(){
 // تنبيه قبل 5 أيام من الاستحقاق + تذكير المراجعة الشهرية (كيتزادو لبانير التنبيهات)
 function renderOverdueAlerts(){
   renderOverdueAlertsBase();
+  if(currentRole === 'employee'){ const _b = document.getElementById('overdueAlertsBanner'); if(_b) _b.innerHTML = ''; return; }
   const banner = document.getElementById('overdueAlertsBanner'); if(!banner) return;
   const soon = computeDues().filter(d=> d.left >= 0 && d.left <= 5);
   let html = '';
@@ -10444,7 +10692,7 @@ function renderOverdueAlerts(){
   if(reviewDue()) html += `<div style="background:#eff6ff; border:1px solid #93c5fd; border-radius:14px; margin:0 16px 12px; padding:10px 14px; font-size:12.5px; color:#1e3a8a;">📅 وقت المراجعة الشهرية (مدير المشروع + المحاسب): تحقق من الفروقات وحدّث الحالة. تلقاها فـ المحاسبة ← 🛡️ مراقبة المحاسبة.</div>`;
   if(html) banner.insertAdjacentHTML('beforeend', html);
 }
-function renderAccounting(){ renderAccountingBase(); try{ renderControlPanel(); }catch(e){ console.error('لوحة المراقبة:', e); } }
+function renderAccounting(){ renderAccountingBase(); if(currentRole === 'employee'){ const cp = document.getElementById('controlPanel'); if(cp) cp.remove(); return; } try{ renderControlPanel(); }catch(e){ console.error('لوحة المراقبة:', e); } }
 
 function bootAfterUnlock(){
   // البيانات كتفتح فقط بعد الـPIN، فنعاودو نقراو كلشي ونرسمو الشاشات
@@ -10453,6 +10701,7 @@ function bootAfterUnlock(){
   try{ if(typeof cleanupLegacyOrphanedTx === 'function') AUDIT.withBypass(cleanupLegacyOrphanedTx); }catch(e){ console.error(e); }
   try{ messages = loadHistory(); }catch(e){ messages = []; }
   refreshAllViews();
+  try{ applyRolePermissions(); }catch(e){ console.error('الصلاحيات:', e); }
   startupSequence();
   try{ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(e=> console.warn('persist() فشلت:', e)); } }catch(e){ console.warn('persist() فشلت:', e); }
   setInterval(()=> makeHardBackup('auto-5min'), 5*60*1000);
