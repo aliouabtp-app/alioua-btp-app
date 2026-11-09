@@ -1234,7 +1234,20 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   #viewMarketing .tab-scroll > :nth-child(1){ grid-column:1; grid-row:1; }
   #viewMarketing .tab-scroll > :nth-child(2){ grid-column:1; grid-row:2; }
   #viewMarketing .tab-scroll > :nth-child(3){ grid-column:2; grid-row:1 / -1; }
+
+  /* ---- مساحة العمل: كلشي عدا الهيدر الصغير كيتحرك مع التمرير ---- */
+  header{ padding:8px 24px 16px; }
+  .logo-badge{ width:40px; height:40px; }
+  .tab-header{ display:flex; align-items:center; gap:18px; padding:8px 24px; }
+  .tab-header h2{ margin:0; font-size:19px; white-space:nowrap; }
+  .tab-header p{ margin:0; }
+  #viewAccounting .tab-header p, #viewAccounting .tab-header h2{ display:none; } /* العنوان كاين فالقائمة الجانبية */
+  .tab-header .sub-nav{ margin:0; flex:1; min-width:0; flex-wrap:nowrap; padding-bottom:0; scrollbar-width:thin; }
+  .sub-nav-btn{ padding:7px 12px; font-size:12.5px; }
+  .tab-scroll{ padding:16px 24px 32px; }
 }
+#overdueAlertsBanner > div{ margin-left:0 !important; margin-right:0 !important; }
+#overdueAlertsBanner:empty{ display:none; }
 
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -1361,8 +1374,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
         <button class="sub-nav-btn" data-sub="subProjects">📁 المشاريع</button>
       </div>
     </div>
-    <div id="overdueAlertsBanner"></div>
     <div class="tab-scroll">
+      <div id="overdueAlertsBanner"></div>
 
       <div class="sub-view active" id="subExpenses">
         <div class="summary-cards">
