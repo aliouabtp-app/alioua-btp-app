@@ -1440,7 +1440,8 @@ input, select, textarea{ min-width:0; }
           <div id="chqScanStatus" style="display:none; font-size:12px; margin:8px 0;"></div>
           <div id="chqDirWrap" style="display:flex; gap:8px; margin:10px 0 6px;"><button class="chq-dir active" data-dir="out">🔴 شيك صادر (غادي نخلصو)</button><button class="chq-dir" data-dir="in">🟢 شيك وارد (غادي نقبضو)</button></div>
           <input type="text" id="chqName" dir="auto" placeholder="الاسم (المستفيد / الساحب)" style="margin-top:6px;">
-          <input type="number" id="chqAmount" placeholder="المبلغ (درهم)" inputmode="decimal" style="margin-top:8px;">
+          <input type="number" id="chqAmount" placeholder="المبلغ (درهم)" inputmode="decimal" step="0.01" style="margin-top:8px;">
+          <div id="chqAmountWords" dir="ltr" style="font-size:11.5px; color:var(--ink-soft); margin:4px 2px 0; text-align:left;"></div>
           <input type="date" id="chqDate" style="margin-top:8px;">
           <input type="text" id="chqNumber" dir="ltr" placeholder="رقم الشيك" style="margin-top:8px;">
           <input type="text" id="chqBank" dir="auto" placeholder="البنك" style="margin-top:8px;">
@@ -10257,7 +10258,7 @@ function loadCheques(){ try{ return JSON.parse(LS.getItem(CHQ_KEY) || '[]'); }ca
 function saveCheques(l){ safeSetItem(CHQ_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 let chqEditId = null, chqDir = 'out';
 function chqDaysLeft(d){ return Math.round((new Date(d + 'T00:00:00') - new Date(todayStr() + 'T00:00:00')) / 86400000); }
-function chqResetForm(){ chqEditId = null; ['chqName', 'chqAmount', 'chqNumber', 'chqBank', 'chqNote'].forEach(id=>{ document.getElementById(id).value = ''; }); document.getElementById('chqDate').value = todayStr(); document.getElementById('chqSaveBtn').textContent = '➕ حفظ الشيك'; document.getElementById('chqCancelEditBtn').style.display = 'none'; }
+function chqResetForm(){ chqEditId = null; try{ document.getElementById('chqAmountWords').textContent = ''; }catch(e){} ['chqName', 'chqAmount', 'chqNumber', 'chqBank', 'chqNote'].forEach(id=>{ document.getElementById(id).value = ''; }); document.getElementById('chqDate').value = todayStr(); document.getElementById('chqSaveBtn').textContent = '➕ حفظ الشيك'; document.getElementById('chqCancelEditBtn').style.display = 'none'; }
 function setChqDir(d){ chqDir = d; document.querySelectorAll('.chq-dir').forEach(b=> b.classList.toggle('active', b.dataset.dir === d)); }
 function renderCheques(){
   const box = document.getElementById('chqList'); if(!box) return;
@@ -10270,7 +10271,7 @@ function renderCheques(){
   const cards = [['expense', 'صادر معلّق', fmtNum(sumOf(outP)) + ' (' + outP.length + ')'], ['expense', '⏰ متأخر', fmtNum(sumOf(late)) + ' (' + late.length + ')'], ['expense', '📆 خلال 7 أيام', fmtNum(sumOf(soon)) + ' (' + soon.length + ')']];
   if(!emp) cards.push(['income', 'وارد معلّق', fmtNum(sumOf(inP)) + ' (' + inP.length + ')']);
   const sm = document.getElementById('chqSummary'); sm.innerHTML = '';
-  cards.forEach(c=>{ const d = document.createElement('div'); d.className = 's-card ' + c[0]; const a = document.createElement('span'); a.className = 's-label'; a.textContent = c[1]; const b = document.createElement('span'); b.className = 's-val'; b.style.fontSize = '13px'; b.textContent = c[2]; d.appendChild(a); d.appendChild(b); sm.appendChild(d); });
+  cards.forEach(c=>{ const d = document.createElement('div'); d.className = 's-card ' + c[0]; const a = document.createElement('span'); a.className = 's-label'; a.textContent = c[1]; const b = document.createElement('span'); b.className = 's-val'; b.setAttribute('dir', 'ltr'); b.style.fontSize = '13px'; b.textContent = c[2]; d.appendChild(a); d.appendChild(b); sm.appendChild(d); });
   box.innerHTML = '';
   if(!all.length){ box.innerHTML = '<div class="empty-hint">ما كاين حتى شيك مسجّل. صوّر شيك أو عمّر الخانات فوق ⬆️</div>'; return; }
   all.slice().sort((a, b)=> (a.status === 'cleared') - (b.status === 'cleared') || (a.status === 'cleared' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))).forEach(c=>{
@@ -10279,12 +10280,12 @@ function renderCheques(){
     const color = done ? '#1C7C3F' : (left < 0 ? '#B42318' : (left <= 7 ? '#B54708' : 'var(--ink-soft)'));
     const row = document.createElement('div'); row.className = 'list-card chq-item'; row.style.cssText = 'margin-bottom:8px; padding:10px 12px;';
     const h = document.createElement('div'); h.style.cssText = 'display:flex; justify-content:space-between; gap:8px; font-weight:700;';
-    const n = document.createElement('span'); n.setAttribute('dir', 'auto'); n.textContent = (c.dir === 'in' ? '🟢 ' : '🔴 ') + (c.name || '—'); const am = document.createElement('span'); am.textContent = fmtNum(c.amount) + ' درهم'; h.appendChild(n); h.appendChild(am);
+    const n = document.createElement('span'); n.setAttribute('dir', 'auto'); n.textContent = (c.dir === 'in' ? '🟢 ' : '🔴 ') + (c.name || '—'); const am = document.createElement('span'); am.setAttribute('dir', 'ltr'); am.textContent = fmtNum(c.amount) + ' درهم'; h.appendChild(n); h.appendChild(am);
     const m = document.createElement('div'); m.setAttribute('dir', 'auto'); m.style.cssText = 'font-size:12px; margin-top:3px; color:' + color + ';'; m.textContent = frDate(c.date) + ' — ' + tag + (c.number ? ' · شيك ' + c.number : '') + (c.bank ? ' · ' + c.bank : '') + (c.note ? ' · ' + c.note : '');
     const bt = document.createElement('div'); bt.style.cssText = 'display:flex; gap:6px; margin-top:8px;';
     const mk = (txt, fn)=>{ const b = document.createElement('button'); b.className = 'lc-btn'; b.style.cssText = 'flex:1; padding:6px; font-size:11.5px;'; b.textContent = txt; b.addEventListener('click', fn); bt.appendChild(b); };
     mk(done ? '↩️ رجّعو معلّق' : (c.dir === 'in' ? '✔ تحصّل' : '✔ تصرف'), ()=>{ const l = loadCheques(), t = l.find(x=> x.id === c.id); if(t){ t.status = done ? 'pending' : 'cleared'; saveCheques(l); renderCheques(); } });
-    mk('✏️ تعديل', ()=>{ chqEditId = c.id; setChqDir(c.dir === 'in' ? 'in' : 'out'); document.getElementById('chqName').value = c.name || ''; document.getElementById('chqAmount').value = c.amount; document.getElementById('chqDate').value = c.date; document.getElementById('chqNumber').value = c.number || ''; document.getElementById('chqBank').value = c.bank || ''; document.getElementById('chqNote').value = c.note || ''; document.getElementById('chqSaveBtn').textContent = '💾 حفظ التعديل'; document.getElementById('chqCancelEditBtn').style.display = ''; window.scrollTo({top: 0, behavior: 'smooth'}); });
+    mk('✏️ تعديل', ()=>{ chqEditId = c.id; setChqDir(c.dir === 'in' ? 'in' : 'out'); document.getElementById('chqName').value = c.name || ''; document.getElementById('chqAmount').value = c.amount; document.getElementById('chqDate').value = c.date; document.getElementById('chqNumber').value = c.number || ''; document.getElementById('chqBank').value = c.bank || ''; document.getElementById('chqNote').value = c.note || ''; document.getElementById('chqSaveBtn').textContent = '💾 حفظ التعديل'; document.getElementById('chqCancelEditBtn').style.display = ''; if(window.chqShowWords) window.chqShowWords(); window.scrollTo({top: 0, behavior: 'smooth'}); });
     mk('🗑', ()=>{ if(confirm('مسح هاد الشيك؟')){ saveCheques(loadCheques().filter(x=> x.id !== c.id)); renderCheques(); } });
     row.appendChild(h); row.appendChild(m); row.appendChild(bt); box.appendChild(row);
   });
@@ -10338,10 +10339,24 @@ function openChequeMask(file){
     })();
   });
 }
-const CHEQUE_PROMPT = 'أنت خبير فقراءة الشيكات البنكية المغربية. استخرج من صورة الشيك المعلومات التالية وأرجع JSON فقط بدون أي شرح وبدون Markdown:\n{"name": "الاسم (المستفيد أو الساحب) كما هو مكتوب", "amount": المبلغ بالأرقام فقط (رقم بلا عملة وبلا فواصل آلاف), "date": "تاريخ الشيك بصيغة YYYY-MM-DD", "number": "رقم الشيك", "bank": "اسم البنك"}\nإلا ما قدرتيش تقرا حقل خليه null.\nملاحظة: التصويرة فيها بقع سوداء متعمدة (مسحنا فيها التوقيع والخاتم لحماية الخصوصية). تجاهل هاد البقع وركز فقط على الأرقام، الأسماء، والتاريخ.';
+const CHEQUE_PROMPT = 'أنت خبير فقراءة الشيكات البنكية المغربية. استخرج من صورة الشيك المعلومات التالية وأرجع JSON فقط بدون أي شرح وبدون Markdown:\n{"name": "الاسم (المستفيد أو الساحب) كما هو مكتوب", "amount": "المبلغ بالأرقام كما هو مكتوب بالضبط على الشيك مع الفاصلة والسنتيمات (مثال: 95 635,00) — ما تحذفش الفاصلة ولا السنتيمات", "amount_words": "المبلغ بالحروف كما هو مكتوب على الشيك إلا كان موجود", "date": "تاريخ الشيك بصيغة YYYY-MM-DD", "number": "رقم الشيك", "bank": "اسم البنك"}\nإلا ما قدرتيش تقرا حقل خليه null.\nملاحظة: التصويرة فيها بقع سوداء متعمدة (مسحنا فيها التوقيع والخاتم لحماية الخصوصية). تجاهل هاد البقع وركز فقط على الأرقام، الأسماء، والتاريخ.';
+function parseChequeAmount(v){
+  if(typeof v === 'number') return isFinite(v) ? v : '';
+  const s = String(v == null ? '' : v).replace(/[\s\u00a0\u202f*#]/g, '').replace(/[^\d.,]/g, '');
+  if(!s) return '';
+  const m = /^(.*\d)[.,](\d{1,2})$/.exec(s);          // آخر فاصلة/نقطة متبوعة بـ 1-2 أرقام = فاصل عشري
+  const ip = (m ? m[1] : s).replace(/[.,]/g, ''), n = parseFloat(ip + (m ? '.' + m[2] : ''));
+  return isFinite(n) ? n : '';
+}
+function _frNorm(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\b(dirhams?|dh|mad|centimes?|zero|et)\b/g, ' ').replace(/[^a-z]+/g, ' ').replace(/vingts/g, 'vingt').replace(/cents/g, 'cent').replace(/\s+/g, ' ').trim(); }
 function normalizeCheque(o){
   const s = v => (v == null ? '' : String(v).trim());
-  let amount = parseFloat(String(o.amount == null ? '' : o.amount).replace(/\s/g, '').replace(/[^\d.,-]/g, '').replace(',', '.')); if(!isFinite(amount)) amount = '';
+  let amount = parseChequeAmount(o.amount);
+  const nw = _frNorm(o.amount_words);
+  if(amount !== '' && nw){   // المبلغ بالحروف كيصحّح خطأ ×100 (الفاصلة اللي كتضيع)
+    const matches = n => { const w = _frNorm(frWords(Math.floor(n))); return !!w && nw.indexOf(w) === 0; };
+    if(!matches(amount) && amount % 100 === 0 && matches(amount / 100)) amount = amount / 100;
+  }
   let date = s(o.date); const dm = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/.exec(date);
   if(dm) date = dm[3] + '-' + dm[2].padStart(2, '0') + '-' + dm[1].padStart(2, '0'); if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = '';
   return {name: s(o.name), amount, date, number: s(o.number), bank: s(o.bank)};
@@ -10376,7 +10391,7 @@ async function scanChequeWithAI(dataUrl){
     try{
       const d = await scanChequeWithAI(masked);
       if(d.name) $('chqName').value = d.name; if(d.amount !== '') $('chqAmount').value = d.amount; if(d.date) $('chqDate').value = d.date; if(d.number) $('chqNumber').value = d.number; if(d.bank) $('chqBank').value = d.bank;
-      chqStatus('✅ تقرا الشيك وتعمّرو الخانات. راجع المعلومات مزيان قبل الحفظ.');
+      chqStatus('✅ تقرا الشيك وتعمّرو الخانات. راجع المبلغ (وبالحروف تحت الخانة) مع الشيك قبل الحفظ.'); if(window.chqShowWords) window.chqShowWords();
     }catch(e){ chqStatus('❌ ما قدرتش نقرا الشيك: ' + (e && e.message ? e.message : e) + ' — عمّر الخانات يدويًا.', true); }
   }
   $('chqFileInput').addEventListener('change', ()=> onPick($('chqFileInput')));
@@ -10390,6 +10405,11 @@ async function scanChequeWithAI(dataUrl){
     const i = l.findIndex(x=> x.id === rec.id); if(i >= 0){ rec.status = l[i].status; rec.createdAt = l[i].createdAt; l[i] = rec; } else l.push(rec);
     saveCheques(l); chqResetForm(); chqStatus(''); renderCheques();
   });
+  const showWords = ()=>{ const v = parseFloat($('chqAmount').value); $('chqAmountWords').textContent = v > 0 ? '= ' + fmtNum(v) + ' DH — ' + amountWordsFr(v) : ''; };
+  $('chqAmount').addEventListener('input', showWords);
+  ['chqFileInput', 'chqGalleryInput'].forEach(id=> $(id).addEventListener('change', ()=> setTimeout(showWords, 4000)));
+  $('chqAmount').addEventListener('change', showWords);
+  window.chqShowWords = showWords;
   $('chqCancelEditBtn').addEventListener('click', chqResetForm);
   renderCheques();
 })();
