@@ -1433,8 +1433,10 @@ input, select, textarea{ min-width:0; }
         <div id="chqSummary"></div>
         <div class="card-form">
           <p class="mini-title" style="margin-bottom:8px;">📅 تسجيل شيك / أجل</p>
-          <button class="btn-primary" id="chqScanBtn" style="width:100%;">📷 صوّر الشيك (قراءة تلقائية)</button>
-          <input type="file" id="chqFileInput" accept="image/*" capture="environment" style="display:none;">
+          <label class="btn-primary" id="chqScanBtn" for="chqFileInput" style="display:block; text-align:center; cursor:pointer; padding:12px;">📷 صوّر الشيك (كاميرا + قراءة تلقائية)</label>
+          <input type="file" id="chqFileInput" accept="image/*" capture="environment" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;">
+          <label class="btn-ghost" id="chqGalleryBtn" for="chqGalleryInput" style="display:block; text-align:center; cursor:pointer; padding:10px; margin-top:6px;">🖼️ اختر صورة من المعرض / الملفات</label>
+          <input type="file" id="chqGalleryInput" accept="image/*" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;">
           <div id="chqScanStatus" style="display:none; font-size:12px; margin:8px 0;"></div>
           <div id="chqDirWrap" style="display:flex; gap:8px; margin:10px 0 6px;"><button class="chq-dir active" data-dir="out">🔴 شيك صادر (غادي نخلصو)</button><button class="chq-dir" data-dir="in">🟢 شيك وارد (غادي نقبضو)</button></div>
           <input type="text" id="chqName" dir="auto" placeholder="الاسم (المستفيد / الساحب)" style="margin-top:6px;">
@@ -10290,13 +10292,16 @@ function renderCheques(){
 function chqStatus(msg, bad){ const el = document.getElementById('chqScanStatus'); el.style.display = msg ? 'block' : 'none'; el.style.color = bad ? '#B42318' : 'var(--ink-soft)'; el.textContent = msg || ''; }
 
 /* ---- محرّر المسح: الصورة فـ canvas بنفس نسبة الأبعاد + مستطيلات سوداء (ماوس + لمس) ---- */
+async function chqLoadBitmap(file){
+  if(window.createImageBitmap){ try{ return await createImageBitmap(file, {imageOrientation: 'from-image'}); }catch(e){} try{ return await createImageBitmap(file); }catch(e){} }
+  return await new Promise((res, rej)=>{ const fr = new FileReader(); fr.onerror = ()=> rej(new Error('read')); fr.onload = ()=>{ const im = new Image(); im.onload = ()=> res(im); im.onerror = ()=> rej(new Error('decode')); im.src = fr.result; }; fr.readAsDataURL(file); });
+}
 function openChequeMask(file){
-  return new Promise(resolve=>{
-    const url = URL.createObjectURL(file), img = new Image();
-    img.onerror = ()=>{ URL.revokeObjectURL(url); alert('تعذّر فتح الصورة.'); resolve(null); };
-    img.onload = ()=>{
-      URL.revokeObjectURL(url);
-      const sc = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight)), w = Math.round(img.naturalWidth * sc), h = Math.round(img.naturalHeight * sc);
+  return new Promise(async resolve=>{
+    let img; try{ img = await chqLoadBitmap(file); }catch(e){ alert('تعذّر فتح الصورة (الصيغة غير مدعومة؟ مثلاً HEIC). جرّب تصويرها بصيغة JPG.'); resolve(null); return; }
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    (()=>{
+      const sc = Math.min(1, 2000 / Math.max(iw, ih)), w = Math.round(iw * sc), h = Math.round(ih * sc);
       const m = document.createElement('div'); m.style.cssText = 'position:fixed; inset:0; z-index:100001; background:#111; display:flex; flex-direction:column;';
       m.innerHTML = '<div style="padding:10px 12px; color:#fff; padding-top:max(10px, env(safe-area-inset-top));"><b>🔒 حماية الخصوصية</b><div id="cmHint" style="font-size:12.5px; margin-top:4px;"></div></div><div style="flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:8px;"><canvas id="cmCanvas" style="max-width:100%; max-height:62vh; width:auto; height:auto; background:#fff; border:3px solid #ef4444; border-radius:6px;"></canvas></div><div style="background:#fff; padding:10px 12px; padding-bottom:max(10px, env(safe-area-inset-bottom)); display:grid; gap:8px;"><div id="cmCount" style="font-size:12px; color:#555;"></div><div style="display:flex; gap:8px;"><button class="btn-ghost" id="cmDraw" style="flex:2; padding:10px;">🖊️ وضع علامة سوداء (لمسح التوقيع/الخاتم)</button><button class="btn-ghost" id="cmUndo" style="flex:1; padding:10px;">↩️ إلغاء الرسم</button></div><div style="display:flex; gap:8px;"><button class="btn-primary" id="cmOk" style="flex:2; padding:12px;">✅ تأكيد وقراءة الشيك</button><button class="btn-ghost" id="cmCancel" style="flex:1; padding:12px;">✖ إلغاء</button></div></div>';
       document.body.appendChild(m);
@@ -10330,8 +10335,7 @@ function openChequeMask(file){
       m.querySelector('#cmCancel').addEventListener('click', ()=> close(null));
       ok.addEventListener('click', ()=>{ if(!rects.length) return; close(cv.toDataURL('image/jpeg', 0.88)); });
       redraw();
-    };
-    img.src = url;
+    })();
   });
 }
 const CHEQUE_PROMPT = 'أنت خبير فقراءة الشيكات البنكية المغربية. استخرج من صورة الشيك المعلومات التالية وأرجع JSON فقط بدون أي شرح وبدون Markdown:\n{"name": "الاسم (المستفيد أو الساحب) كما هو مكتوب", "amount": المبلغ بالأرقام فقط (رقم بلا عملة وبلا فواصل آلاف), "date": "تاريخ الشيك بصيغة YYYY-MM-DD", "number": "رقم الشيك", "bank": "اسم البنك"}\nإلا ما قدرتيش تقرا حقل خليه null.\nملاحظة: التصويرة فيها بقع سوداء متعمدة (مسحنا فيها التوقيع والخاتم لحماية الخصوصية). تجاهل هاد البقع وركز فقط على الأرقام، الأسماء، والتاريخ.';
@@ -10361,17 +10365,22 @@ async function scanChequeWithAI(dataUrl){
   const $ = id => document.getElementById(id); if(!$('chqScanBtn')) return;
   $('chqDate').value = todayStr();
   document.querySelectorAll('.chq-dir').forEach(b=> b.addEventListener('click', ()=> setChqDir(b.dataset.dir)));
-  $('chqScanBtn').addEventListener('click', ()=> $('chqFileInput').click());
-  $('chqFileInput').addEventListener('change', async ()=>{
-    const f = $('chqFileInput').files[0]; $('chqFileInput').value = ''; if(!f) return;
-    const masked = await openChequeMask(f); if(!masked){ chqStatus(''); return; }   // ما كيتصيفط والو بلا مسح
+  async function onPick(inp){
+    const f = inp.files && inp.files[0]; if(!f) return;
+    chqStatus('📂 الصورة وصلات (' + (f.size / 1048576).toFixed(1) + ' MB) — كنحضّر محرّر المسح...');
+    let masked = null;
+    try{ masked = await openChequeMask(f); }catch(e){ chqStatus('❌ تعذّر فتح محرّر المسح: ' + (e && e.message ? e.message : e), true); }
+    inp.value = '';
+    if(!masked){ if(!/^❌/.test(document.getElementById('chqScanStatus').textContent)) chqStatus(''); return; }   // ما كيتصيفط والو بلا مسح
     chqStatus('⏳ كنقرا الشيك (الصورة بعد مسح التوقيع والخاتم)...');
     try{
       const d = await scanChequeWithAI(masked);
       if(d.name) $('chqName').value = d.name; if(d.amount !== '') $('chqAmount').value = d.amount; if(d.date) $('chqDate').value = d.date; if(d.number) $('chqNumber').value = d.number; if(d.bank) $('chqBank').value = d.bank;
       chqStatus('✅ تقرا الشيك وتعمّرو الخانات. راجع المعلومات مزيان قبل الحفظ.');
     }catch(e){ chqStatus('❌ ما قدرتش نقرا الشيك: ' + (e && e.message ? e.message : e) + ' — عمّر الخانات يدويًا.', true); }
-  });
+  }
+  $('chqFileInput').addEventListener('change', ()=> onPick($('chqFileInput')));
+  $('chqGalleryInput').addEventListener('change', ()=> onPick($('chqGalleryInput')));
   $('chqSaveBtn').addEventListener('click', ()=>{
     const amount = parseFloat($('chqAmount').value), date = $('chqDate').value;
     if(!(amount > 0)){ alert('اكتب مبلغ الشيك.'); return; } if(!date){ alert('اختار تاريخ الشيك (الأجل).'); return; }
