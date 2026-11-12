@@ -5434,9 +5434,14 @@ const VC = (function(){
     fd.append('response_format', 'json');
     fd.append('prompt', DARIJA_HINT);
     let res;
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), 45000);
     try{
-      res = await fetch(VOICE_WORKER_URL, { method:'POST', body:fd, cache:'no-store' });
-    }catch(e){ throw new Error('WORKER_NETWORK'); }
+      res = await fetch(VOICE_WORKER_URL, { method:'POST', body:fd, cache:'no-store', signal:controller.signal });
+    }catch(e){
+      if(e && e.name === 'AbortError') throw new Error('WORKER_TIMEOUT_45S');
+      throw new Error('WORKER_NETWORK');
+    }finally{ clearTimeout(timer); }
     if(res.status === 429){ _setCool('groq:' + model, 3); throw new Error('HTTP 429'); }
     if(!res.ok){
       let detail = '';
@@ -5504,39 +5509,13 @@ const VC = (function(){
       return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
     }catch(e){ return text; }
   }
-  // السلسلة: Hugging Face (إلا مفعّل) ← Gemini ← Groq Whisper + تصحيح نصي
+  // الترتيب المصحح: Cloudflare Worker / Groq أولاً، ثم الخدمات الاحتياطية.
   async function transcribe(blob, maxTok){
     const gk = getGroqKey(), key = getApiKey(), hfOn = !!(getHfKey() && getHfUrl());
-    // Worker هو مسار التفريغ الاحتياطي، لذلك لا يشترط مفتاحاً محفوظاً في المتصفح.
     const fails = []; let sawText = false, gemResponded = false;
     const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
 
-    // 1) Hugging Face — كيرجع النص ديالو مباشرة (إلا خاوي = ما كاين كلام)
-    if(hfOn && !_isCool('hf')){
-      try{
-        const t = await transcribeHF(blob);
-        if(!t) return '';
-        const r = accept(t); if(r) return r;
-      }catch(e){
-        fails.push(String(e.message || 'HF'));
-        _setCool('hf', e.fatal ? 30 : 2);   // ما نبقاوش نستناو نموذج طايح فكل جملة
-      }
-    }
-    // 2) Gemini — كل موديل عندو حصتو؛ إلا وصل لحدو كيتحيد مؤقتاً
-    if(key){
-      let b64 = null;
-      let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
-      for(const m of ms){
-        try{
-          b64 = b64 || await blobToB64(blob);
-          const raw = await geminiTranscribe(m, key, b64, maxTok);
-          gemResponded = true;
-          const r = accept(raw); if(r) return r;
-        }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
-      }
-      if(gemResponded) return '';            // Gemini قال ما كاين كلام: ما نمشيوش لـ Whisper باش ما يهلوسش
-    }
-    // 3) احتياطي أخير: Groq Whisper + تصحيح نصي بالدارجة
+    // 1) Groq Whisper عبر Worker — لا يحتاج مفتاحاً محفوظاً في المتصفح.
     {
       const m = 'whisper-large-v3';
       if(!_isCool('groq:' + m)){
@@ -5550,8 +5529,36 @@ const VC = (function(){
         }catch(e){ fails.push('Groq Worker ' + String(e.message || '')); }
       }
     }
-    if(!sawText && fails.length) throw new Error(fails.join(' | '));   // كلشي فشل: رسالة واضحة فيها السبب
-    return '';                                                          // ما فهمناش الكلام: خاوي بدل نص مهلوس
+
+    // 2) Gemini احتياطي إذا فشل Worker أو لم يرجع نصاً عربياً مفهوماً.
+    if(key){
+      let b64 = null;
+      let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){ fails.push('Gemini models ' + String(e.message || '')); }
+      for(const m of ms){
+        try{
+          b64 = b64 || await blobToB64(blob);
+          const raw = await geminiTranscribe(m, key, b64, maxTok);
+          gemResponded = true;
+          const r = accept(raw); if(r) return r;
+        }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
+      }
+      if(gemResponded) return '';
+    }
+
+    // 3) Hugging Face احتياطي أخير إذا كان مفعّلاً.
+    if(hfOn && !_isCool('hf')){
+      try{
+        const t = await transcribeHF(blob);
+        if(!t) return '';
+        const r = accept(t); if(r) return r;
+      }catch(e){
+        fails.push(String(e.message || 'HF'));
+        _setCool('hf', e.fatal ? 30 : 2);
+      }
+    }
+
+    if(!sawText && fails.length) throw new Error(fails.join(' | '));
+    return '';
   }
   function endUtterance(){
     const buf = S.buf, voiced = S.voiced;
