@@ -3151,7 +3151,7 @@ function loadScriptOnce(url){ return _libCache[url] || (_libCache[url] = new Pro
 const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 const PDFJS_WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const EXCELJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
-function fmtNum(n){ const s = (Math.round((+n || 0) * 100) / 100).toFixed(2), p = s.split('.'); return p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ',' + p[1]; }
+function fmtNum(n){ const s = (Math.round((+n || 0) * 100) / 100).toFixed(2), p = s.split('.'); return p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + ',' + p[1]; }
 function frDate(iso){ const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? m[3] + '/' + m[2] + '/' + m[1] : String(iso || ''); }
 function downloadBlob(blob, filename){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
 function _prefillChat(text){ try{ navBtns.forEach(b=> b.classList.toggle('active', b.dataset.view === 'viewChat')); views.forEach(v=> v.classList.toggle('active', v.id === 'viewChat')); inputEl.value = text; autoGrow(); inputEl.focus(); }catch(e){} }
@@ -10449,6 +10449,7 @@ function wEnsureMatricules(){
   ws.forEach(w=>{ if(!w.mat){ w.mat = ++mx; ch = true; } });
   if(ch) saveWorkers(ws); return ws;
 }
+const L = s => '\u2066' + s + '\u2069';   // عزل LTR للتواريخ/الأرقام فالنصوص (alert/confirm/عناوين)
 function buildPointageSheet(projectId, pr){
   const ws = wEnsureMatricules().filter(w=> w.type === 'daily' && (w.projectId || '') === (projectId || ''));
   const att = loadAttendance(), ex = loadExtras(), pays = loadWPayments();
@@ -10540,7 +10541,7 @@ function recordPointagePayments(sh){
   const todo = sh.rows.filter(r=> r.net > 0 && !r.paid);
   if(!todo.length){ alert('كل الأجراء فهاد الورقة مؤدَّين من قبل (أو بلا مبلغ).'); return; }
   const tot = round2(todo.reduce((s, r)=> s + r.net, 0));
-  if(!confirm('تسجيل أداء ' + todo.length + ' أجراء بمجموع ' + fmtNum(tot) + ' درهم عن ' + fmtPeriod(sh.pr) + ' ؟\nغادي يتسجل فكشف كل أجير على حدة.')) return;
+  if(!confirm('تسجيل أداء ' + todo.length + ' أجراء بمجموع ' + L(fmtNum(tot)) + ' درهم عن ' + L(fmtPeriod(sh.pr)) + ' ؟\nغادي يتسجل فكشف كل أجير على حدة.')) return;
   const l = loadWPayments(), today = todayStr(), t = Date.now();
   todo.forEach((r, i)=>{ const c = r.c; l.push({id: 'wp' + t + '_' + i, workerId: r.w.id, projectId: r.w.projectId || '', from: sh.pr.from, to: sh.pr.to, days: c.days, base: c.base, extraDays: c.extraDays, extraDaysAmt: c.extraDaysAmt, otHours: c.otHours, otAmt: c.otAmt, total: c.total, paidAt: today, periods: 1, sheet: true}); r.paid = today; });
   saveWPayments(l); try{ renderWorkers(); }catch(e){}
@@ -10550,7 +10551,7 @@ function openPointagePreview(projectId, pr){
   const sh = buildPointageSheet(projectId, pr);
   if(!sh.rows.length){ alert('ما كاين حتى أجير مياوم مرتبط بهاد المشروع. (الأجراء الشهريين ما كيدخلوش فهاد الورقة)'); return; }
   const base = 'Pointage-' + (sh.proj || 'sans-projet').replace(/[\\\/:*?"<>|\s]+/g, '-') + '-' + pr.from + '_' + pr.to;
-  openFilePreview({title: 'Pointage — ' + (sh.proj || '—') + ' — ' + fmtPeriod(pr), first: 'pdf',
+  openFilePreview({title: 'Pointage — ' + (sh.proj || '—') + ' — ' + L(fmtPeriod(pr)), first: 'pdf',
     variants: [{key: 'pdf', label: 'PDF', filename: base + '.pdf', render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, buildPointagePdf(sh)); return w; }, blob: async ()=> buildPointagePdf(sh).output('blob')}],
     actions: [{label: '✅ تسجيل الأداء فكشوف الأجراء', fn: ()=> recordPointagePayments(sh)}]});
 }
@@ -10611,7 +10612,7 @@ function buildSettlePdf(st, w){
   return doc;
 }
 function confirmSettlement(w, st){
-  if(!confirm('تأكيد المخالصة النهائية لـ ' + w.name + ' بمبلغ ' + fmtNum(st.net) + ' درهم؟\nغادي يتسجل الأداء وكيتوقف الأجير.')) return false;
+  if(!confirm('تأكيد المخالصة النهائية لـ ' + w.name + ' بمبلغ ' + L(fmtNum(st.net)) + ' درهم؟\nغادي يتسجل الأداء وكيتوقف الأجير.')) return false;
   const l = loadWPayments(), today = todayStr(), t = Date.now();
   st.rows.forEach((r, i)=>{ const c0 = r.c; l.push({id: 'wp' + t + '_s' + i, workerId: w.id, projectId: w.projectId || '', from: r.pr.from, to: r.pr.to, days: c0.days, base: c0.base, extraDays: c0.extraDays, extraDaysAmt: c0.extraDaysAmt, otHours: c0.otHours, otAmt: c0.otAmt, total: c0.total, paidAt: today, periods: 1, settlement: st.id}); });
   const adj = round2(st.leave + st.bonus - st.deduct);
@@ -10649,8 +10650,15 @@ function renderSettleForm(host, w){
   const g = id => host.querySelector('#' + id + '_' + w.id), num = id => parseFloat(g(id).value) || 0;
   const calc = ()=>{
     const st = settleCalc(w, g('sdDate').value || todayStr(), num('sdLeave'), num('sdBonus'), num('sdDeduct')), dm = d => d.split('-').reverse().slice(0, 2).join('/');
-    g('sdWages').innerHTML = st.rows.length ? st.rows.map(r=> '<div>• ' + dm(r.pr.from) + ' → ' + dm(r.pr.to) + ' : <b>' + fmtNum(r.c.total) + '</b> درهم (' + r.c.days + ' يوم)</div>').join('') + '<div style="color:var(--ink-soft);">مجموع الأجور غير المؤداة: ' + fmtNum(st.wages) + ' درهم</div>' : '<div style="color:var(--ink-soft);">✅ ما كاين حتى أجر غير مؤدّى حتى هاد التاريخ.</div>';
-    g('sdTotal').textContent = '💰 الصافي للأداء: ' + fmtNum(st.net) + ' درهم'; return st;
+    const dn = (f, t)=> Math.round((new Date(t + 'T00:00:00') - new Date(f + 'T00:00:00')) / 86400000) + 1, B = s => '<bdi dir="ltr" style="white-space:nowrap;">' + s + '</bdi>';
+    g('sdWages').innerHTML = st.rows.length ? st.rows.map(r=>{
+      const c0 = r.c, ex = round2(c0.extraDaysAmt + c0.otAmt), full = c0.days >= dn(r.pr.from, r.pr.to) && c0.extraDays > 0;
+      return '<div style="border-top:1px solid var(--line); padding:6px 0;">• ' + B(dm(r.pr.from) + ' → ' + dm(r.pr.to)) + ' : <b>' + B(fmtNum(c0.total)) + '</b> درهم' +
+        '<div style="font-size:11.5px; color:var(--ink-soft);">أيام العمل:<div dir="ltr" style="text-align:right; unicode-bidi:isolate;">' + String(c0.days).replace('.', ',') + ' × ' + fmtNum(w.wage) + ' = ' + fmtNum(c0.base) + '</div>' +
+        (ex > 0 ? '<br>إضافي: ' + B(fmtNum(ex)) + ' (' + [c0.extraDays ? B(String(c0.extraDays)) + ' يوم إضافي' : '', c0.otHours ? B(String(c0.otHours)) + ' ساعة' : ''].filter(Boolean).join(' + ') + ')' : '') + '</div>' +
+        (full ? '<div style="font-size:11.5px; color:#b45309;">⚠️ كل أيام هاد الفترة محسوبة «حاضر» وزيادة عليها أيام إضافية — تأكد باش ما كاينش تكرار (مثلاً الأحد).</div>' : '') + '</div>';
+    }).join('') + '<div style="margin-top:4px;">مجموع الأجور غير المؤداة: <b>' + B(fmtNum(st.wages)) + '</b> درهم</div>' : '<div style="color:var(--ink-soft);">✅ ما كاين حتى أجر غير مؤدّى حتى هاد التاريخ.</div>';
+    g('sdTotal').innerHTML = '💰 الصافي للأداء: ' + B(fmtNum(st.net)) + ' درهم'; return st;
   };
   ['sdDate', 'sdLeave', 'sdBonus', 'sdDeduct'].forEach(id=> g(id).addEventListener('input', calc)); calc();
   g('sdPrev').onclick = ()=>{
