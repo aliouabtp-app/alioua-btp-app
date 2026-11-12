@@ -5385,7 +5385,7 @@ const VC = (function(){
   const _AR = /[\u0600-\u06FF]/g, _LAT = /[A-Za-z\u00C0-\u024F]/g;
   const _looksArabic = t => { const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length; return a >= 2 && a >= l; };
   const _noise = t => !t || /اشتركوا|ترجمة نانسي|subscribe|^EMPTY\b/i.test(t);
-  const DARIJA_HINT = 'مرحبا يونس، بغيت نسجل فاتورة جديدة. شحال خلصنا للأجير فالورشة؟ دير ليا الحساب ديال السيمة والحديد والرمل والبيتون، واش كاين شي كريدي؟ مسح هاد العملية وزيد وحدة أخرى، فين وصلنا دابا؟ عندي موعد مع الزبون غدا فالصباح.';
+  const DARIJA_HINT = 'تفريغ صوتي حرفي لدارجة مغربية في شركة بناء وأشغال عمومية. اكتب الدارجة كما قيلت دون تحويلها إلى الفصحى أو اختراع كلمات. احتفظ بالكلمات الفرنسية والمصطلحات التقنية بالفرنسية وحروفها اللاتينية عندما ينطقها المتكلم، مثل facture, devis, chantier, ciment, béton, fer, sable, brique, coffrage, dalle, acompte, avance, fournisseur, client, TVA. انتبه للأسماء والأرقام والمبالغ بالدرهم. سياق متكرر: فاتورة، أجير، ورشة، سيمة، حديد، رمل، بيتون، كريدي، سلفة، زبون، مورد، صفقة. إذا لم يكن الكلام واضحاً فلا تخمّن ولا تضف جملة.';
   let _gModels = null, _gModelsAt = 0;
   async function geminiAudioModels(key){
     if(!_gModels || Date.now() - _gModelsAt > 6*3600*1000){
@@ -5433,23 +5433,24 @@ const VC = (function(){
     fd.append('temperature', '0');
     fd.append('response_format', 'json');
     fd.append('prompt', DARIJA_HINT);
-    let res;
     const controller = new AbortController();
-    const timer = setTimeout(()=>controller.abort(), 45000);
+    const timer = setTimeout(()=>controller.abort(), 35000);
     try{
-      res = await fetch(VOICE_WORKER_URL, { method:'POST', body:fd, cache:'no-store', signal:controller.signal });
+      const res = await fetch(VOICE_WORKER_URL, { method:'POST', body:fd, cache:'no-store', signal:controller.signal });
+      if(res.status === 429){ _setCool('groq:' + model, 3); throw new Error('HTTP 429'); }
+      if(!res.ok){
+        let detail = '';
+        try{ const data = await res.json(); detail = data.error || ''; }catch(e){}
+        throw new Error('WORKER_HTTP_' + res.status + (detail ? ':' + detail : ''));
+      }
+      const data = await res.json();
+      if(!data || typeof data.text !== 'string') throw new Error('WORKER_BAD_RESPONSE');
+      return data.text.trim();
     }catch(e){
-      if(e && e.name === 'AbortError') throw new Error('WORKER_TIMEOUT_45S');
+      if(e && e.name === 'AbortError') throw new Error('WORKER_TIMEOUT_35S');
+      if(e && /^(HTTP 429|WORKER_HTTP_|WORKER_BAD_RESPONSE)/.test(e.message || '')) throw e;
       throw new Error('WORKER_NETWORK');
     }finally{ clearTimeout(timer); }
-    if(res.status === 429){ _setCool('groq:' + model, 3); throw new Error('HTTP 429'); }
-    if(!res.ok){
-      let detail = '';
-      try{ const data = await res.json(); detail = data.error || ''; }catch(e){}
-      throw new Error('WORKER_HTTP_' + res.status + (detail ? ':' + detail : ''));
-    }
-    const data = await res.json();
-    return String(data.text || '').trim();
   }
   // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
   async function repairTranscript(text, gk){
@@ -5509,56 +5510,15 @@ const VC = (function(){
       return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
     }catch(e){ return text; }
   }
-  // الترتيب المصحح: Cloudflare Worker / Groq أولاً، ثم الخدمات الاحتياطية.
+  // السلسلة: Hugging Face (إلا مفعّل) ← Gemini ← Groq Whisper + تصحيح نصي
   async function transcribe(blob, maxTok){
-    const gk = getGroqKey(), key = getApiKey(), hfOn = !!(getHfKey() && getHfUrl());
-    const fails = []; let sawText = false, gemResponded = false;
-    const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
-
-    // 1) Groq Whisper عبر Worker — لا يحتاج مفتاحاً محفوظاً في المتصفح.
-    {
-      const m = 'whisper-large-v3';
-      if(!_isCool('groq:' + m)){
-        try{
-          const r = accept(await transcribeGroq(blob, gk, m));
-          if(r){
-            const fixed = gk ? await repairTranscript(r, gk) : r;
-            if(fixed && _looksArabic(fixed)) return fixed;
-            return '';
-          }
-        }catch(e){ fails.push('Groq Worker ' + String(e.message || '')); }
-      }
-    }
-
-    // 2) Gemini احتياطي إذا فشل Worker أو لم يرجع نصاً عربياً مفهوماً.
-    if(key){
-      let b64 = null;
-      let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){ fails.push('Gemini models ' + String(e.message || '')); }
-      for(const m of ms){
-        try{
-          b64 = b64 || await blobToB64(blob);
-          const raw = await geminiTranscribe(m, key, b64, maxTok);
-          gemResponded = true;
-          const r = accept(raw); if(r) return r;
-        }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
-      }
-      if(gemResponded) return '';
-    }
-
-    // 3) Hugging Face احتياطي أخير إذا كان مفعّلاً.
-    if(hfOn && !_isCool('hf')){
-      try{
-        const t = await transcribeHF(blob);
-        if(!t) return '';
-        const r = accept(t); if(r) return r;
-      }catch(e){
-        fails.push(String(e.message || 'HF'));
-        _setCool('hf', e.fatal ? 30 : 2);
-      }
-    }
-
-    if(!sawText && fails.length) throw new Error(fails.join(' | '));
-    return '';
+    // مسار واحد للتفريغ: Cloudflare Worker ثم Groq Whisper.
+    // لا نرفض النص المختلط بالعربية والفرنسية؛ التفريغ يرجع كما هو.
+    if(!blob || !blob.size) throw new Error('AUDIO_EMPTY');
+    const raw = await transcribeGroq(blob, getGroqKey(), 'whisper-large-v3');
+    const text = String(raw || '').trim();
+    if(!text || _noise(text)) return '';
+    return text;
   }
   function endUtterance(){
     const buf = S.buf, voiced = S.voiced;
