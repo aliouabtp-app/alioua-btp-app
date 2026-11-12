@@ -5385,7 +5385,7 @@ const VC = (function(){
   const _AR = /[\u0600-\u06FF]/g, _LAT = /[A-Za-z\u00C0-\u024F]/g;
   const _looksArabic = t => { const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length; return a >= 2 && a >= l; };
   const _noise = t => !t || /اشتركوا|ترجمة نانسي|subscribe|^EMPTY\b/i.test(t);
-  const DARIJA_HINT = 'تفريغ صوتي حرفي لدارجة مغربية في شركة بناء وأشغال عمومية. اكتب الدارجة كما قيلت دون تحويلها إلى الفصحى أو اختراع كلمات. احتفظ بالكلمات الفرنسية والمصطلحات التقنية بالفرنسية وحروفها اللاتينية عندما ينطقها المتكلم، مثل facture, devis, chantier, ciment, béton, fer, sable, brique, coffrage, dalle, acompte, avance, fournisseur, client, TVA. انتبه للأسماء والأرقام والمبالغ بالدرهم. سياق متكرر: فاتورة، أجير، ورشة، سيمة، حديد، رمل، بيتون، كريدي، سلفة، زبون، مورد، صفقة. إذا لم يكن الكلام واضحاً فلا تخمّن ولا تضف جملة.';
+  const DARIJA_HINT = 'تفريغ حرفي ودقيق لتسجيل بالدارجة المغربية (المغرب)، غالباً في سياق شركة ALIOUA BTP للبناء والأشغال والمحاسبة. اكتب ما سمعته كما نُطق بالدارجة المغربية، لا تحوّله إلى العربية الفصحى ولا تترجم الفرنسية. احتفظ بكل كلمة فرنسية بحروفها اللاتينية كما نطقها المتكلم، مثل facture, devis, chantier, ciment, béton, fer, sable, brique, coffrage, dalle, acompte, avance, fournisseur, client, TVA, situation. لا تغيّر أي رقم أو مبلغ أو تاريخ أو نسبة أو رقم هاتف؛ اكتب الأرقام كما سمعتها. انتبه للدارجة: بغيت، دابا، واش، شحال، فين، علاش، عافاك، صافي، خلّص، خلصنا، باقي، عطيني، دير، صايب، سلف، كريدي، الورشة، الصباغة، الصندوق، الأجير، المعلم. مصطلحات البناء المحتملة: سيمة، سيما، حديد، رمل، بيتون، بريك، طوب، كوفراج، دالة، أساس، صبّة، شاحنة. لا تستبدل كلمة بأخرى لمجرد أن السياق يتوقعها؛ إذا لم تكن واضحة اكتب الأقرب صوتياً ولا تخترع كلاماً.';
   let _gModels = null, _gModelsAt = 0;
   async function geminiAudioModels(key){
     if(!_gModels || Date.now() - _gModelsAt > 6*3600*1000){
@@ -5401,7 +5401,7 @@ const VC = (function(){
     const order = rest.concat(lite); if(!order.includes(FALLBACK_MODEL)) order.push(FALLBACK_MODEL);
     return order.filter(m => !_isCool(m)).slice(0, 3);
   }
-  const STT_PROMPT = 'هذا تسجيل صوتي بالدارجة المغربية لمسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر مع مساعدو يونس. اكتب بالضبط ما قيل بالحروف العربية وبالدارجة كما يُنطق، بدون تحويل للفصحى وبدون تصحيح لغوي. سياق الكلام: بناء وأشغال عمومية، محاسبة وفواتير، أجور العمال والسلفات، موردون وزبناء، مواعيد، مواد (سيمة، حديد، رمل، حجر، بريك، بيتون، خرسانة، كوفراج، أساس، سقف، دالة، شاحنة)، ومبالغ بالدرهم. كلمات دارجة شائعة: بغيت، دابا، واش، كيفاش، فين، شحال، علاش، ديرلي، جيب، خلص، كريدي، سلفة، الأجير، الورشة، الصفقة. الكلمات الفرنسية الشائعة (facture, devis, chantier, ciment, brique, situation, TVA, avance) اكتبها بحروفها اللاتينية، والأرقام اكتبها بالأرقام. إذا كان مقطع غير واضح فاختر أقرب كلمات منطقية حسب سياق الشركة، ولا تخترع جملاً لم تُقل. بدون شرح ولا إضافة ولا علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY';
+  const STT_PROMPT = 'هذا تسجيل صوتي بالدارجة المغربية لمسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر مع مساعدو يونس. اكتب بالضبط ما قيل بالدارجة المغربية كما نُطق، دون تحويل للفصحى. لا تترجم الكلمات الفرنسية واتركها بحروفها اللاتينية، ولا تغيّر الأرقام أو المبالغ أو التواريخ أو النسب. سياق الكلام: بناء وأشغال عمومية، محاسبة وفواتير، أجور العمال والسلفات، موردون وزبناء، مواعيد، مواد (سيمة، حديد، رمل، حجر، بريك، بيتون، خرسانة، كوفراج، أساس، سقف، دالة، شاحنة)، ومبالغ بالدرهم. كلمات دارجة شائعة: بغيت، دابا، واش، كيفاش، فين، شحال، علاش، ديرلي، جيب، خلص، كريدي، سلفة، الأجير، الورشة، الصفقة. الكلمات الفرنسية الشائعة (facture, devis, chantier, ciment, brique, situation, TVA, avance) اكتبها بحروفها اللاتينية، والأرقام اكتبها بالأرقام. إذا كان مقطع غير واضح فاختر أقرب كلمات منطقية حسب سياق الشركة، ولا تخترع جملاً لم تُقل. بدون شرح ولا إضافة ولا علامات اقتباس. إذا كان التسجيل صمتاً أو ضجيجاً بلا كلام مفهوم فأجب بكلمة واحدة: EMPTY';
   async function geminiTranscribe(m, key, b64, maxTok){
     const call = async (noThink)=>{
       const cfg = { temperature:0, maxOutputTokens:(maxTok || 1024) };
@@ -5452,22 +5452,40 @@ const VC = (function(){
       throw new Error('WORKER_NETWORK');
     }finally{ clearTimeout(timer); }
   }
-  // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
+  // تصحيح محافظ: نحمي الأرقام والكلمات اللاتينية قبل إرسال النص للمصحح، ثم نعيدها حرفياً.
   async function repairTranscript(text, gk){
+    const original = String(text || '').trim();
+    if(!original || !_looksArabic(original)) return original;
+    const protectedItems = [];
+    const guarded = original.replace(/[A-Za-zÀ-ÖØ-öø-ÿ]+(?:[’'-][A-Za-zÀ-ÖØ-öø-ÿ]+)*|[0-9٠-٩۰-۹]+(?:[.,٫٬][0-9٠-٩۰-۹]+)*(?:%|٪)?/g, token=>{
+      const mark = 'ZXQKEEP' + protectedItems.length + 'QXZ';
+      protectedItems.push([mark, token]);
+      return mark;
+    });
+    if(!protectedItems.length && original.length < 12) return original;
     try{
       const cands = await groqModelCandidates(gk, false);
-      if(!cands.length) return text;
+      if(!cands.length) return original;
       const model = cands[0];
-      const body = { model, temperature:0, max_completion_tokens:300, messages:[
-        { role:'system', content:'أنت مصحّح تفريغ صوتي للدارجة المغربية. النص جاي من برنامج تعرّف على الكلام وفيه أخطاء (كلمات مشوّهة أو مبدّلة بكلمات مشابهة فالنطق). المتكلم مسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر عن: فواتير، أجور وسلفات العمال، موردين وزبناء، مواعيد، مواد البناء (سيمة، حديد، رمل، بيتون، بريك)، ومبالغ بالدرهم. أعد كتابة النص بالدارجة مع تصحيح الكلمات المشوّهة لأقرب معنى منطقي، بدون تحويل للفصحى، وبدون إضافة معلومات ما قيلتش، وبدون شرح. أخرج النص المصحّح فقط. إلا كان النص ما عندو معنى إطلاقاً ومستحيل تفهم منو شي حاجة، أخرج كلمة وحدة: EMPTY' },
-        { role:'user', content:text }
+      const body = { model, temperature:0, max_completion_tokens:400, messages:[
+        { role:'system', content:'أنت مدقق محافظ لتفريغ صوتي بالدارجة المغربية. صحح فقط أخطاء التعرف الصوتي الواضحة جداً اعتماداً على النطق والسياق. لا تحوّل الدارجة إلى الفصحى، ولا تضف أو تحذف معنى، ولا تعِد صياغة الجمل. النص خاص بشركة بناء وأشغال عمومية ومحاسبة. الرموز من الشكل ZXQKEEP0QXZ وما شابهها عناصر محمية: انسخ كل رمز كما هو تماماً، في نفس موضعه، دون تعديل أو حذف أو تكرار؛ فهي تمثل كلمات فرنسية وأرقاماً ومبالغ وتواريخ يجب الحفاظ عليها حرفياً. إذا لم تكن متأكداً من كلمة، اتركها كما هي. أخرج النص فقط.' },
+        { role:'user', content:guarded }
       ] };
       if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
       const out = String(await _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gk, body, 'Groq') || '').trim();
-      if(!out) return text;
-      if(/^EMPTY\b/i.test(out)) return '';
-      return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
-    }catch(e){ return text; }
+      if(!out || /^EMPTY/i.test(out)) return original;
+      // لا نقبل التصحيح إذا ضاع أو تغيّر أي رمز محمي.
+      let lastProtectedPosition = -1;
+      for(const [mark] of protectedItems){
+        const count = out.split(mark).length - 1;
+        const position = out.indexOf(mark);
+        if(count !== 1 || position <= lastProtectedPosition) return original;
+        lastProtectedPosition = position;
+      }
+      let restored = out.replace(/^['"«“]+|['"»”]+$/g, '').trim();
+      for(const [mark, token] of protectedItems) restored = restored.replace(mark, token);
+      return restored || original;
+    }catch(e){ return original; }
   }
   // ===== Hugging Face: كنبعثو WAV (16kHz، mono، 16-bit) مباشرة كـ body، والمفتاح فـ Authorization =====
   async function transcribeHF(blob){
@@ -5493,22 +5511,37 @@ const VC = (function(){
     }
     throw lastErr || new Error('HF');
   }
-  // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
+  // تصحيح محافظ: نحمي الأرقام والكلمات اللاتينية قبل إرسال النص للمصحح، ثم نعيدها حرفياً.
   async function repairTranscript(text, gk){
+    const original = String(text || '').trim();
+    if(!original || !_looksArabic(original)) return original;
+    const protectedItems = [];
+    const guarded = original.replace(/[A-Za-zÀ-ÖØ-öø-ÿ]+(?:[’'-][A-Za-zÀ-ÖØ-öø-ÿ]+)*|[0-9٠-٩۰-۹]+(?:[.,٫٬][0-9٠-٩۰-۹]+)*(?:%|٪)?/g, token=>{
+      const mark = 'ZXQKEEP' + protectedItems.length + 'QXZ';
+      protectedItems.push([mark, token]);
+      return mark;
+    });
+    if(!protectedItems.length && original.length < 12) return original;
     try{
       const cands = await groqModelCandidates(gk, false);
-      if(!cands.length) return text;
+      if(!cands.length) return original;
       const model = cands[0];
-      const body = { model, temperature:0, max_completion_tokens:300, messages:[
-        { role:'system', content:'أنت مصحّح تفريغ صوتي للدارجة المغربية. النص جاي من برنامج تعرّف على الكلام وفيه أخطاء (كلمات مشوّهة أو مبدّلة بكلمات مشابهة فالنطق). المتكلم مسيّر شركة بناء وأشغال عمومية (ALIOUA BTP) كيهضر عن: فواتير، أجور وسلفات العمال، موردين وزبناء، مواعيد، مواد البناء (سيمة، حديد، رمل، بيتون، بريك)، ومبالغ بالدرهم. أعد كتابة النص بالدارجة مع تصحيح الكلمات المشوّهة لأقرب معنى منطقي، بدون تحويل للفصحى، وبدون إضافة معلومات ما قيلتش، وبدون شرح. أخرج النص المصحّح فقط. إلا كان النص ما عندو معنى إطلاقاً ومستحيل تفهم منو شي حاجة، أخرج كلمة وحدة: EMPTY' },
-        { role:'user', content:text }
+      const body = { model, temperature:0, max_completion_tokens:400, messages:[
+        { role:'system', content:'أنت مدقق محافظ لتفريغ صوتي بالدارجة المغربية. صحح فقط أخطاء التعرف الصوتي الواضحة جداً اعتماداً على النطق والسياق. لا تحوّل الدارجة إلى الفصحى، ولا تضف أو تحذف معنى، ولا تعِد صياغة الجمل. النص خاص بشركة بناء وأشغال عمومية ومحاسبة. الرموز من الشكل ZXQKEEP0QXZ وما شابهها عناصر محمية: انسخ كل رمز كما هو تماماً، في نفس موضعه، دون تعديل أو حذف أو تكرار؛ فهي تمثل كلمات فرنسية وأرقاماً ومبالغ وتواريخ يجب الحفاظ عليها حرفياً. إذا لم تكن متأكداً من كلمة، اتركها كما هي. أخرج النص فقط.' },
+        { role:'user', content:guarded }
       ] };
       if(/^openai\/gpt-oss/.test(model)) body.reasoning_effort = 'low';
       const out = String(await _openAiStyleCall('https://api.groq.com/openai/v1/chat/completions', gk, body, 'Groq') || '').trim();
-      if(!out) return text;
-      if(/^EMPTY\b/i.test(out)) return '';
-      return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
-    }catch(e){ return text; }
+      if(!out || /^EMPTY/i.test(out)) return original;
+      // لا نقبل التصحيح إذا ضاع أو تغيّر أي رمز محمي.
+      for(const [mark] of protectedItems){
+        const count = out.split(mark).length - 1;
+        if(count !== 1) return original;
+      }
+      let restored = out.replace(/^['"«“]+|['"»”]+$/g, '').trim();
+      for(const [mark, token] of protectedItems) restored = restored.replace(mark, token);
+      return restored || original;
+    }catch(e){ return original; }
   }
   // السلسلة: Hugging Face (إلا مفعّل) ← Gemini ← Groq Whisper + تصحيح نصي
   async function transcribe(blob, maxTok){
@@ -5518,7 +5551,8 @@ const VC = (function(){
     const raw = await transcribeGroq(blob, getGroqKey(), 'whisper-large-v3');
     const text = String(raw || '').trim();
     if(!text || _noise(text)) return '';
-    return text;
+    // تصحيح سياقي محافظ بعد التفريغ، مع حماية الأرقام والفرنسية حرفياً.
+    return await repairTranscript(text, getGroqKey());
   }
   function endUtterance(){
     const buf = S.buf, voiced = S.voiced;
