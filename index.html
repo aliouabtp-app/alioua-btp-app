@@ -5423,18 +5423,28 @@ const VC = (function(){
     const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
     return parts.map(p => p.text || '').join('').trim().replace(/^["«“]+|["»”]+$/g, '').trim();
   }
+  // Groq Whisper عبر Cloudflare Worker: مفتاح Groq يبقى في Cloudflare ولا يخرج للمتصفح.
+  const VOICE_WORKER_URL = 'https://broken-hall-f5d4.aliouabtp.workers.dev';
   async function transcribeGroq(blob, gk, model){
     const fd = new FormData();
     fd.append('file', blob, 'audio.wav');
-    fd.append('model', model);
+    fd.append('model', 'whisper-large-v3');
     fd.append('language', 'ar');
     fd.append('temperature', '0');
     fd.append('response_format', 'json');
     fd.append('prompt', DARIJA_HINT);
-    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method:'POST', headers:{ 'Authorization':'Bearer ' + gk }, body: fd });
+    let res;
+    try{
+      res = await fetch(VOICE_WORKER_URL, { method:'POST', body:fd, cache:'no-store' });
+    }catch(e){ throw new Error('WORKER_NETWORK'); }
     if(res.status === 429){ _setCool('groq:' + model, 3); throw new Error('HTTP 429'); }
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    return String((await res.json()).text || '').trim();
+    if(!res.ok){
+      let detail = '';
+      try{ const data = await res.json(); detail = data.error || ''; }catch(e){}
+      throw new Error('WORKER_HTTP_' + res.status + (detail ? ':' + detail : ''));
+    }
+    const data = await res.json();
+    return String(data.text || '').trim();
   }
   // تصحيح نص Whisper بالدارجة بنموذج نصي من Groq (حدّو واسع) — كيدور على الكلمات المشوّهة حسب سياق الشركة
   async function repairTranscript(text, gk){
@@ -5494,66 +5504,54 @@ const VC = (function(){
       return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
     }catch(e){ return text; }
   }
-  // تفريغ سريع: Groq Whisper Turbo أولاً، ثم بديل واحد عند الفشل.
-  // نتجنب انتظار Hugging Face وتصحيح النص الإضافي قبل إظهار النتيجة.
+  // السلسلة: Hugging Face (إلا مفعّل) ← Gemini ← Groq Whisper + تصحيح نصي
   async function transcribe(blob, maxTok){
     const gk = getGroqKey(), key = getApiKey(), hfOn = !!(getHfKey() && getHfUrl());
-    if(!gk && !key && !hfOn) throw new Error('NOKEY');
-    const fails = [];
-    const accept = t => {
-      const v = String(t || '').trim();
-      if(!v || _noise(v)) return '';
-      return v;
-    };
-    const quick = (promise, ms, label) => Promise.race([
-      promise,
-      new Promise((_, reject)=>setTimeout(()=>reject(new Error(label + ' TIMEOUT')), ms))
-    ]);
+    // Worker هو مسار التفريغ الاحتياطي، لذلك لا يشترط مفتاحاً محفوظاً في المتصفح.
+    const fails = []; let sawText = false, gemResponded = false;
+    const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
 
-    // 1) Groq Turbo هو المسار الأول والأسرع عادةً، بلا طلب تصحيح ثانٍ.
-    if(gk){
-      for(const model of ['whisper-large-v3-turbo', 'whisper-large-v3']){
-        if(_isCool('groq:' + model)) continue;
-        try{
-          const raw = await quick(transcribeGroq(blob, gk, model), 18000, 'Groq');
-          const result = accept(raw);
-          if(result) return result;
-        }catch(e){
-          fails.push('Groq ' + String(e.message || ''));
-          if(/429/.test(String(e.message || ''))) continue;
-        }
-      }
-    }
-
-    // 2) Gemini كبديل فقط إذا لم ينجح Groq.
-    if(key){
-      try{
-        const models = await quick(geminiAudioModels(key), 7000, 'Gemini models');
-        let b64 = null;
-        for(const model of (models || []).slice(0, 2)){
-          try{
-            b64 = b64 || await blobToB64(blob);
-            const raw = await quick(geminiTranscribe(model, key, b64, maxTok), 18000, 'Gemini');
-            const result = accept(raw);
-            if(result) return result;
-            // استجابة فارغة تعني غالباً أن النموذج لم يسمع كلاماً واضحاً.
-            if(raw === '') return '';
-          }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
-        }
-      }catch(e){ fails.push(String(e.message || 'Gemini')); }
-    }
-
-    // 3) Hugging Face احتياطي أخير؛ لا نسمح له بتعليق الواجهة طويلاً.
+    // 1) Hugging Face — كيرجع النص ديالو مباشرة (إلا خاوي = ما كاين كلام)
     if(hfOn && !_isCool('hf')){
       try{
-        const raw = await quick(transcribeHF(blob), 12000, 'Hugging Face');
-        return accept(raw);
+        const t = await transcribeHF(blob);
+        if(!t) return '';
+        const r = accept(t); if(r) return r;
       }catch(e){
         fails.push(String(e.message || 'HF'));
-        _setCool('hf', 2);
+        _setCool('hf', e.fatal ? 30 : 2);   // ما نبقاوش نستناو نموذج طايح فكل جملة
       }
     }
-    throw new Error(fails.length ? fails.join(' | ') : 'تعذر تفريغ الصوت');
+    // 2) Gemini — كل موديل عندو حصتو؛ إلا وصل لحدو كيتحيد مؤقتاً
+    if(key){
+      let b64 = null;
+      let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
+      for(const m of ms){
+        try{
+          b64 = b64 || await blobToB64(blob);
+          const raw = await geminiTranscribe(m, key, b64, maxTok);
+          gemResponded = true;
+          const r = accept(raw); if(r) return r;
+        }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
+      }
+      if(gemResponded) return '';            // Gemini قال ما كاين كلام: ما نمشيوش لـ Whisper باش ما يهلوسش
+    }
+    // 3) احتياطي أخير: Groq Whisper + تصحيح نصي بالدارجة
+    {
+      const m = 'whisper-large-v3';
+      if(!_isCool('groq:' + m)){
+        try{
+          const r = accept(await transcribeGroq(blob, gk, m));
+          if(r){
+            const fixed = gk ? await repairTranscript(r, gk) : r;
+            if(fixed && _looksArabic(fixed)) return fixed;
+            return '';
+          }
+        }catch(e){ fails.push('Groq Worker ' + String(e.message || '')); }
+      }
+    }
+    if(!sawText && fails.length) throw new Error(fails.join(' | '));   // كلشي فشل: رسالة واضحة فيها السبب
+    return '';                                                          // ما فهمناش الكلام: خاوي بدل نص مهلوس
   }
   function endUtterance(){
     const buf = S.buf, voiced = S.voiced;
@@ -5591,9 +5589,7 @@ const VC = (function(){
     if(!getApiKey() && !getGroqKey() && !getCerebrasKey()){ openModal(true); return; }
     let brave = false;
     try{ brave = !!(navigator.brave && await navigator.brave.isBrave()); }catch(e){}
-    // استعمل التعرف الأصلي في Chrome أولاً؛ وجود مفتاح Gemini/Groq ما خاصوش يفرض VAD اليدوي
-    // لأن Web Speech غالباً أكثر استقراراً فالمتصفح. إذا فشل، onerror كيتحول تلقائياً لـ Gemini/Groq.
-    S.mode = (!SRClass() || brave || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
+    S.mode = (!SRClass() || brave || getApiKey() || getGroqKey() || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
     if(S.mode === 'rec' && !getApiKey() && !getGroqKey()){
       alert('في هذا المتصفح تحتاج المحادثة الصوتية إلى مفتاح Groq (لتفريغ الصوت). أضفه من الإعدادات، أو افتح التطبيق في Chrome.');
       return;
@@ -5668,8 +5664,7 @@ const VNStore = (function(){
         tx.oncomplete = res; tx.onerror = ()=> rej(tx.error);
       });
       prune(d);
-      return true;
-    }catch(e){ return false; }
+    }catch(e){}
   }
   async function get(id){
     if(mem[id]) return mem[id];
@@ -5703,7 +5698,8 @@ const VN = (function(){
   const S = {
     st:'idle', mode:'hold', downT:0, downX:0, willCancel:false, downWhileLocked:false, upEarly:false, startToken:0,
     stream:null, ctx:null, proc:null, src:null, sink:null, rate:48000,
-    rec:null, recChunks:[], pcm:[], levels:[], t0:0, timer:null, phase:0, acc:0, cnt:0
+    rec:null, recChunks:[], pcm:[], levels:[], t0:0, timer:null, phase:0, acc:0, cnt:0,
+    sr:null, srText:'', srFailed:false
   };
   const P = { audio:null, url:null, id:null, btn:null, wave:null, dur:0 };
   const note = (m)=>{ try{ apptToast(m); }catch(e){ try{ alert(m); }catch(_){} } };
@@ -5771,6 +5767,40 @@ const VN = (function(){
       try{ r.stop(); }catch(e){ clearTimeout(t); res(null); }
     });
   }
+  function startFreeRecognition(){
+    S.sr = null; S.srText = ''; S.srFailed = false;
+    const API = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!API) return false;
+    try{
+      const r = new API();
+      r.lang = 'ar-MA';
+      r.continuous = true;
+      r.interimResults = true;
+      r.maxAlternatives = 1;
+      r.onresult = ev => {
+        let all = '';
+        for(let i = 0; i < ev.results.length; i++){
+          const item = ev.results[i];
+          if(item && item[0] && item[0].transcript) all += item[0].transcript + ' ';
+        }
+        S.srText = all.trim();
+      };
+      r.onerror = () => { S.srFailed = true; };
+      r.onend = () => { S.sr = null; };
+      S.sr = r;
+      r.start();
+      return true;
+    }catch(e){ S.sr = null; S.srFailed = true; return false; }
+  }
+  function stopFreeRecognition(abort){
+    const r = S.sr;
+    S.sr = null;
+    if(r){
+      try{ if(abort) r.abort(); else r.stop(); }catch(e){}
+    }
+    return abort ? '' : String(S.srText || '').trim();
+  }
+
   function teardownAudio(){
     try{ if(S.proc) S.proc.onaudioprocess = null; }catch(e){}
     try{ S.src && S.src.disconnect(); }catch(e){}
@@ -5788,16 +5818,18 @@ const VN = (function(){
     S.st = 'starting'; const tok = ++S.startToken;
     S.mode = 'hold'; S.willCancel = false; S.upEarly = false; S.downWhileLocked = false; S.downT = performance.now();
     setUI(true);
+    startFreeRecognition();
     let stream;
     try{
       stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1 } });
     }catch(e){
+      stopFreeRecognition(true);
       if(tok === S.startToken){ S.st = 'idle'; setUI(false); }
       const n = e && e.name;
       note(n === 'NotAllowedError' || n === 'SecurityError' ? '🎙️ إذن المايكروفون مرفوض. فعّله من إعدادات الموقع في المتصفح.' : 'تعذّر الوصول إلى المايكروفون.');
       return;
     }
-    if(tok !== S.startToken || S.st !== 'starting'){ try{ stream.getTracks().forEach(t => t.stop()); }catch(e){} return; }
+    if(tok !== S.startToken || S.st !== 'starting'){ stopFreeRecognition(true); try{ stream.getTracks().forEach(t => t.stop()); }catch(e){} return; }
     try{
       S.stream = stream;
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -5812,7 +5844,7 @@ const VN = (function(){
       S.proc.onaudioprocess = onAudio;
       startRecorder();
     }catch(e){
-      teardownAudio(); S.st = 'idle'; setUI(false); note('تعذّر بدء التسجيل.'); return;
+      stopFreeRecognition(true); teardownAudio(); S.st = 'idle'; setUI(false); note('تعذّر بدء التسجيل.'); return;
     }
     S.t0 = performance.now();
     S.st = 'recording';
@@ -5821,6 +5853,7 @@ const VN = (function(){
   }
   function cancel(){
     S.startToken++;
+    stopFreeRecognition(true);
     clearInterval(S.timer);
     const r = S.rec;
     if(r && r.state !== 'inactive'){ try{ r.onstop = null; r.stop(); }catch(e){} }
@@ -5833,6 +5866,7 @@ const VN = (function(){
     S.st = 'stopping';
     clearInterval(S.timer);
     const dur = (performance.now() - S.t0) / 1000;
+    const freeTranscript = stopFreeRecognition(false);
     const pcm = S.pcm, levels = S.levels;
     const recBlob = await stopRecorder();
     teardownAudio();
@@ -5844,10 +5878,8 @@ const VN = (function(){
     const wav = pcmToWav(pcm);
     const playBlob = (recBlob && recBlob.size > 0) ? recBlob : wav;
     const meta = { id, dur:Math.round(dur), bars:makeBars(levels) };
-    // احفظ التسجيل محلياً أولاً بنفس قاعدة IndexedDB الحالية، بلا حذف أو تغيير للبيانات القديمة.
-    const savedLocally = await VNStore.put(id, playBlob);
-    if(!savedLocally) note('تعذّر حفظ ملف الصوت محلياً؛ النص سيُرسل، لكن قد لا يبقى الصوت بعد إغلاق الصفحة.');
-    processNote(meta, wav);
+    VNStore.put(id, playBlob);
+    processNote(meta, wav, freeTranscript);
   }
   function makeBars(levels){
     const out = [];
@@ -5923,25 +5955,25 @@ const VN = (function(){
   }
 
   /* ---------- التفريغ ثم الإرسال إلى يونس ---------- */
-  async function processNote(meta, wav){
+  async function processNote(meta, wav, freeTranscript){
     const chat = $('chat');
     if(chat && typeof messages !== 'undefined' && messages.length === 0) chat.innerHTML = '';
     const ph = document.createElement('div');
     ph.className = 'msg user vn-pending'; ph.setAttribute('dir', 'auto');
     ph.appendChild(buildContent(meta, ''));
-    const st = document.createElement('div'); st.className = 'vn-status'; st.textContent = '⏳ جاري تفريغ الصوت…';
+    const st = document.createElement('div'); st.className = 'vn-status'; st.textContent = freeTranscript ? '⏳ جاري إرسال النص…' : '⏳ جاري تفريغ الصوت…';
     ph.appendChild(st);
     if(chat){ chat.appendChild(ph); chat.scrollTop = chat.scrollHeight; }
     const fail = (msg)=>{
       st.textContent = '⚠️ ' + msg;
       const r = document.createElement('button'); r.type = 'button'; r.className = 'vn-retry'; r.textContent = '🔄 إعادة المحاولة';
-      r.addEventListener('click', ()=>{ ph.remove(); processNote(meta, wav); });
+      r.addEventListener('click', ()=>{ ph.remove(); processNote(meta, wav, ''); });
       const d = document.createElement('button'); d.type = 'button'; d.className = 'vn-retry'; d.textContent = '🗑 حذف';
       d.addEventListener('click', ()=> ph.remove());
       ph.appendChild(r); ph.appendChild(d);
     };
-    let text = '';
-    try{ text = await VC.transcribe(wav, 4096); }
+    let text = String(freeTranscript || '').trim();
+    try{ if(!text) text = await VC.transcribe(wav, 4096); }
     catch(err){
       const m = String((err && err.message) || '');
       fail(m === 'NOKEY' ? 'التفريغ الصوتي يحتاج مفتاح Groq (أضفه من الإعدادات ⚙️).'
