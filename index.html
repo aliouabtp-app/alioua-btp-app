@@ -5575,7 +5575,9 @@ const VC = (function(){
     if(!getApiKey() && !getGroqKey() && !getCerebrasKey()){ openModal(true); return; }
     let brave = false;
     try{ brave = !!(navigator.brave && await navigator.brave.isBrave()); }catch(e){}
-    S.mode = (!SRClass() || brave || getApiKey() || getGroqKey() || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
+    // استعمل التعرف الأصلي في Chrome أولاً؛ وجود مفتاح Gemini/Groq ما خاصوش يفرض VAD اليدوي
+    // لأن Web Speech غالباً أكثر استقراراً فالمتصفح. إذا فشل، onerror كيتحول تلقائياً لـ Gemini/Groq.
+    S.mode = (!SRClass() || brave || sessionStorage.getItem('alioua_vc_mode') === 'rec') ? 'rec' : 'sr';
     if(S.mode === 'rec' && !getApiKey() && !getGroqKey()){
       alert('في هذا المتصفح تحتاج المحادثة الصوتية إلى مفتاح Groq (لتفريغ الصوت). أضفه من الإعدادات، أو افتح التطبيق في Chrome.');
       return;
@@ -5650,7 +5652,8 @@ const VNStore = (function(){
         tx.oncomplete = res; tx.onerror = ()=> rej(tx.error);
       });
       prune(d);
-    }catch(e){}
+      return true;
+    }catch(e){ return false; }
   }
   async function get(id){
     if(mem[id]) return mem[id];
@@ -5825,7 +5828,9 @@ const VN = (function(){
     const wav = pcmToWav(pcm);
     const playBlob = (recBlob && recBlob.size > 0) ? recBlob : wav;
     const meta = { id, dur:Math.round(dur), bars:makeBars(levels) };
-    VNStore.put(id, playBlob);
+    // احفظ التسجيل محلياً أولاً بنفس قاعدة IndexedDB الحالية، بلا حذف أو تغيير للبيانات القديمة.
+    const savedLocally = await VNStore.put(id, playBlob);
+    if(!savedLocally) note('تعذّر حفظ ملف الصوت محلياً؛ النص سيُرسل، لكن قد لا يبقى الصوت بعد إغلاق الصفحة.');
     processNote(meta, wav);
   }
   function makeBars(levels){
