@@ -1615,17 +1615,26 @@ input, select, textarea{ min-width:0; }
       <div class="sub-view" id="subWorkers">
         <div class="card-form">
           <p class="mini-title" style="margin-bottom:8px;">👷 إضافة أجير</p>
-          <input type="text" id="workerName" dir="ltr" placeholder="اسم الأجير">
+          <input type="text" id="workerName" dir="ltr" placeholder="اسم الأجير (النسب ثم الاسم، مثال: BOUSHIB OMAR)">
           <select id="workerType" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;">
             <option value="daily">مياوم (أجرة يومية)</option>
             <option value="monthly">شهري (راتب ثابت)</option>
           </select>
           <input type="text" id="workerWage" placeholder="الأجرة اليومية أو الراتب الشهري (درهم)" style="margin-top:8px;">
           <input type="text" id="workerPhone" dir="ltr" placeholder="رقم الهاتف (اختياري)" style="margin-top:8px;">
+          <input type="text" id="workerCin" dir="ltr" placeholder="رقم البطاقة الوطنية CIN (اختياري، كيبان فورقة الأداء)" style="margin-top:8px;">
+          <input type="text" id="workerFonction" dir="auto" placeholder="الوظيفة / Fonction (مثال: Maçon, Main d'œuvre)" style="margin-top:8px;">
           <select id="workerProject" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;">
             <option value="">بلا مشروع محدد</option>
           </select>
           <button class="btn-primary" id="workerAddBtn" style="margin-top:10px;">➕ إضافة أجير</button>
+        </div>
+        <div class="card-form" id="pointageCard" style="margin-top:12px;">
+          <p class="mini-title" style="margin-bottom:6px;">🧾 ورقة الأداء الجماعية (Pointage journalier)</p>
+          <p style="font-size:11.5px; color:var(--ink-soft); margin-bottom:6px;">ورقة وحدة لأجراء المشروع المياومين لكل 15 يوم (1→15 أو 16→آخر الشهر): كل أجير كيوقّع بلاصتو، وكشف كل أجير كيبقى محفوظ فالتطبيق.</p>
+          <select id="pointProject" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;"><option value="">— بلا مشروع محدد —</option></select>
+          <select id="pointPeriod" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;"></select>
+          <button class="btn-primary" id="pointPreviewBtn" style="margin-top:10px;">👁 معاينة ورقة الأداء (PDF)</button>
         </div>
         <div id="workersList" style="margin-top:12px;"></div>
       </div>
@@ -3298,6 +3307,8 @@ function openFilePreview(cfg){
     catch(e){ if(my !== token) return; body.innerHTML = ''; const er = document.createElement('div'); er.style.cssText = 'padding:20px; color:#b91c1c;'; er.textContent = '❌ تعذّرت المعاينة: ' + (e && e.message ? e.message : e); body.appendChild(er); }
   }
   if((cfg.variants || []).length > 1) cfg.variants.forEach(v=>{ const b = document.createElement('button'); b.dataset.k = v.key; b.textContent = v.label; b.style.cssText = 'padding:6px 12px; font-size:12.5px;'; b.addEventListener('click', ()=> show(v)); tabs.appendChild(b); });
+  (cfg.actions || []).forEach(a=>{ const b = document.createElement('button'); b.className = 'btn-ghost'; b.style.cssText = 'flex:1 1 100%;'; b.textContent = a.label; b.addEventListener('click', async ()=>{ b.disabled = true; try{ await a.fn(); }catch(e){ alert(e && e.message ? e.message : e); } b.disabled = false; }); dl.parentNode.insertBefore(b, dl); });
+  dl.parentNode.style.flexWrap = 'wrap';
   m.querySelector('#fpClose').addEventListener('click', ()=> m.remove());
   m.querySelector('#fpEdit').addEventListener('click', ()=>{ m.remove(); (cfg.onEdit || (()=> _prefillChat('عدّل هاد الملف قبل التحميل: ')))(); });
   dl.addEventListener('click', async ()=>{
@@ -9232,11 +9243,12 @@ document.getElementById('workerAddBtn')?.addEventListener('click', ()=>{
   const projectId = document.getElementById('workerProject').value;
   if(!name || !wage) return;
   const list = loadWorkers();
-  list.push({id:'w'+Date.now(), name, type, wage, phone, projectId});
+  list.push({id:'w'+Date.now(), name, type, wage, phone, projectId, cin: (document.getElementById('workerCin')?.value || '').trim(), fonction: (document.getElementById('workerFonction')?.value || '').trim()});
   saveWorkers(list);
   document.getElementById('workerName').value = '';
   document.getElementById('workerWage').value = '';
   document.getElementById('workerPhone').value = '';
+  try{ document.getElementById('workerCin').value = ''; document.getElementById('workerFonction').value = ''; }catch(e){}
   renderWorkers();
 });
 
@@ -9390,6 +9402,8 @@ function renderWorkersBase(){
         </select>
         <input type="text" id="editWWage_${w.id}" value="${w.wage}" placeholder="الأجرة اليومية أو الراتب الشهري" style="margin-bottom:8px;">
         <input type="text" id="editWPhone_${w.id}" dir="ltr" value="${escapeHtml(w.phone||'')}" placeholder="رقم الهاتف (اختياري)" style="margin-bottom:8px;">
+        <input type="text" id="editWCin_${w.id}" dir="ltr" value="${escapeHtml(w.cin||'')}" placeholder="CIN" style="margin-bottom:8px;">
+        <input type="text" id="editWFon_${w.id}" dir="auto" value="${escapeHtml(w.fonction||'')}" placeholder="الوظيفة / Fonction" style="margin-bottom:8px;">
         <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">ربط الأجير بمشروع (باش تحتسب أجرته فمصاريف هاد المشروع)</label>
         <select id="editWProject_${w.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:8px;">
           <option value="">بلا مشروع محدد</option>
@@ -9408,6 +9422,7 @@ function renderWorkersBase(){
           target.type = document.getElementById('editWType_'+w.id).value;
           target.wage = newWage;
           target.phone = document.getElementById('editWPhone_'+w.id).value.trim();
+          target.cin = document.getElementById('editWCin_'+w.id).value.trim(); target.fonction = document.getElementById('editWFon_'+w.id).value.trim();
           target.projectId = document.getElementById('editWProject_'+w.id).value;
           saveWorkers(list);
         }
@@ -9513,14 +9528,14 @@ function periodOf(d){
 function dayAfter(d){ const t = new Date(Date.UTC(+d.slice(0,4), +d.slice(5,7)-1, +d.slice(8,10)) + 86400000); return t.getUTCFullYear() + '-' + p2(t.getUTCMonth()+1) + '-' + p2(t.getUTCDate()); }
 function todayStr(){ const d = new Date(); return d.getFullYear() + '-' + p2(d.getMonth()+1) + '-' + p2(d.getDate()); }
 // كل المستحقات غير المؤداة من أول يوم تسجل (حضور أو إضافي) حتى اليوم
-function calcAllUnpaid(w){
+function calcAllUnpaid(w, upTo){
   const dates = loadAttendance().filter(a=>a.workerId===w.id).map(a=>a.date)
     .concat(loadExtras().filter(x=>x.workerId===w.id && !paidExtraIds().has(x.id)).map(x=>x.date)).filter(Boolean).sort();
   if(!dates.length) return null;
-  const today = todayStr(); const rows = [];
+  const today = upTo || todayStr(); const rows = [];
   let pr = periodOf(dates[0]);
   while(pr.from <= today){
-    const c = calcPeriod(w, pr, true);
+    const c = calcPeriod(w, (upTo && pr.to > upTo) ? {from: pr.from, to: upTo} : pr, true);
     if(c.total > 0) rows.push({pr: {from: pr.from, to: pr.to < today ? pr.to : today}, c});
     pr = periodOf(dayAfter(pr.to));
   }
@@ -9534,14 +9549,20 @@ function calcAllUnpaid(w){
 const wUi = {}; // workerId -> 'pay' | 'log' | 'extraday' | 'extrahours'
 function renderWorkers(){
   renderWorkersBase();
+  try{ fillPointageUi(); }catch(e){}
   const workers = loadWorkers();
   document.querySelectorAll('#workersList [data-hist-worker]').forEach(btn=>{
     const w = workers.find(x=>x.id === btn.dataset.histWorker); if(!w) return;
     const card = btn.closest('.list-card'); if(!card) return;
     const bar = document.createElement('div'); bar.className = 'lc-actions'; bar.style.marginTop = '6px';
     const mk = (k, label)=> `<button class="lc-btn" data-wui="${k}" style="${wUi[w.id]===k?'background:#d1fae5;':''}">${label}</button>`;
-    const _du = calcAllUnpaid(w); bar.innerHTML = mk('pay','💸 أداء 15 يوم' + (_du ? ' (' + _du.rows.length + ')' : '')) + mk('extrapay','💰 أداء الإضافي' + (unpaidExtras(w).length ? ' (' + unpaidExtras(w).length + ')' : '')) + mk('log','📜 سجل الأداءات') + mk('extraday','➕ يوم إضافي') + mk('extrahours','⏱ ساعات إضافية');
+    const _du = calcAllUnpaid(w); bar.innerHTML = mk('pay','💸 أداء 15 يوم' + (_du ? ' (' + _du.rows.length + ')' : '')) + mk('extrapay','💰 أداء الإضافي' + (unpaidExtras(w).length ? ' (' + unpaidExtras(w).length + ')' : '')) + mk('log','📜 سجل الأداءات') + mk('extraday','➕ يوم إضافي') + mk('extrahours','⏱ ساعات إضافية') + mk('settle', w.status === 'stopped' ? '🏁 المخالصة (موقوف)' : '🏁 مخالصة نهائية');
     const host = document.createElement('div');
+    if(w.status === 'stopped'){
+      const bd = document.createElement('div'); bd.style.cssText = 'margin-top:6px; padding:6px 10px; background:#fee2e2; color:#991b1b; border-radius:10px; font-size:12px; font-weight:700;';
+      bd.textContent = '🏁 موقوف منذ ' + frDate(w.stoppedAt); card.appendChild(bd);
+      card.querySelectorAll('[data-att]').forEach(b=>{ b.disabled = true; b.style.opacity = '.4'; });
+    }
     card.appendChild(bar); card.appendChild(host);
     bar.querySelectorAll('[data-wui]').forEach(b=> b.onclick = ()=>{ wUi[w.id] = (wUi[w.id]===b.dataset.wui) ? null : b.dataset.wui; renderWorkers(); });
     const mode = wUi[w.id]; if(!mode) return;
@@ -9593,6 +9614,8 @@ function renderWorkers(){
         host.querySelectorAll('[data-payex]').forEach(b=> b.onclick = ()=> payExtras([ux[+b.dataset.payex]]));
         const ab = host.querySelector('#exAll_'+w.id); if(ab) ab.onclick = ()=> payExtras(ux);
       }
+    }else if(mode === 'settle'){
+      renderSettleForm(host, w);
     }else if(mode === 'log'){
       const pays = loadWPayments().filter(x=>x.workerId===w.id).sort((a,b)=> b.paidAt.localeCompare(a.paidAt) || b.from.localeCompare(a.from));
       const exs = loadExtras().filter(x=>x.workerId===w.id).sort((a,b)=> b.date.localeCompare(a.date));
@@ -10414,6 +10437,227 @@ async function scanChequeWithAI(dataUrl){
   renderCheques();
 })();
 
+
+/* ===== ورقة الأداء الجماعية (Pointage journalier) لكل مشروع وكل 15 يوم + المخالصة النهائية (Solde de tout compte) ===== */
+const SETTLE_KEY = 'alioua_btp_settlements';
+function loadSettlements(){ try{ return JSON.parse(LS.getItem(SETTLE_KEY) || '[]'); }catch(e){ return []; } }
+function saveSettlements(l){ safeSetItem(SETTLE_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+const MONTHS_FR = ['JANVIER', 'FÉVRIER', 'MARS', 'AVRIL', 'MAI', 'JUIN', 'JUILLET', 'AOÛT', 'SEPTEMBRE', 'OCTOBRE', 'NOVEMBRE', 'DÉCEMBRE'];
+function wSplitName(n){ const p = String(n || '').trim().split(/\s+/).filter(Boolean); return {nom: p[0] || '', prenom: p.slice(1).join(' ')}; }
+function wEnsureMatricules(){
+  const ws = loadWorkers(); let mx = ws.reduce((m, w)=> Math.max(m, +w.mat || 0), 0), ch = false;
+  ws.forEach(w=>{ if(!w.mat){ w.mat = ++mx; ch = true; } });
+  if(ch) saveWorkers(ws); return ws;
+}
+function buildPointageSheet(projectId, pr){
+  const ws = wEnsureMatricules().filter(w=> w.type === 'daily' && (w.projectId || '') === (projectId || ''));
+  const att = loadAttendance(), ex = loadExtras(), pays = loadWPayments();
+  const y = +pr.from.slice(0, 4), m = +pr.from.slice(5, 7), d1 = +pr.from.slice(8), d2 = +pr.to.slice(8), rows = [];
+  ws.forEach(w=>{
+    const a = att.filter(x=> x.workerId === w.id && x.date >= pr.from && x.date <= pr.to), e = ex.filter(x=> x.workerId === w.id && x.date >= pr.from && x.date <= pr.to);
+    if(w.status === 'stopped' && !a.length && !e.length) return;
+    const c = workerCalc(w, a, e, 0.5, false), days = [];
+    for(let d = d1; d <= d2; d++){
+      const ds = pr.from.slice(0, 8) + p2(d), rec = a.find(x=> x.date === ds), xs = e.filter(x=> x.date === ds);
+      days.push({st: rec ? rec.status : null, h: xs.filter(x=> x.kind === 'hours').reduce((s, x)=> s + x.qty, 0), dd: xs.filter(x=> x.kind === 'day').reduce((s, x)=> s + x.qty, 0), sun: new Date(y, m - 1, d).getDay() === 0});
+    }
+    const paid = pays.find(p=> p.workerId === w.id && !p.extrasOnly && p.from <= pr.from && p.to >= pr.to);
+    rows.push({w, c, days, nm: wSplitName(w.name), tjs: round2(c.days + c.extraDays), montant: round2(c.base), extras: round2(c.extraDaysAmt + c.otAmt), net: c.total, hourly: round2(w.wage / DAY_HOURS), paid: paid ? paid.paidAt : ''});
+  });
+  const proj = projectId ? (projectNameById(projectId) || '') : '';
+  return {projectId, proj, pr, n: d2 - d1 + 1, y, m, rows, totals: {tjs: round2(rows.reduce((s, r)=> s + r.tjs, 0)), montant: round2(rows.reduce((s, r)=> s + r.montant + r.extras, 0)), net: round2(rows.reduce((s, r)=> s + r.net, 0))}};
+}
+function buildPointagePdf(sh){
+  if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش بعد، تأكد من الإنترنت.');
+  const c = loadCompanyInfo(), { jsPDF } = window.jspdf, doc = new jsPDF({unit:'mm', format:'a4', orientation:'l'});
+  const PW = 297, PH = 210, ML = 8, MR = 8, n = sh.n, qz = sh.pr.from.slice(8) === '01' ? '1QZ' : '2QZ';
+  const W = {mat: 9, nom: 30, pre: 26, fon: 24, taux: 11, day: Math.min(5.2, Math.max(4.2, 76 / n)), tjs: 9, mon: 16, net: 18, cin: 24};
+  const fixed = W.mat + W.nom + W.pre + W.fon + W.taux + W.day * n + W.tjs + W.mon + W.net + W.cin, sigW = PW - ML - MR - fixed;
+  const xAt = k => ML + W.mat + W.nom + W.pre + W.fon + W.taux + W.day * n + (k === 'tjs' ? 0 : k === 'mon' ? W.tjs : W.tjs + W.mon);
+  doc.setLineWidth(0.3); doc.setDrawColor(60, 60, 60);
+  doc.rect(ML, 8, 92, 30); doc.rect(100, 8, 135, 30); doc.rect(235, 8, PW - MR - 235, 30);
+  let lh = 0;
+  if(c.logoDataUrl){ try{ const p = doc.getImageProperties(c.logoDataUrl), w = 62; lh = Math.min(16, w * p.height / p.width); doc.addImage(c.logoDataUrl, p.fileType || 'PNG', ML + 3, 10, w, lh); }catch(e){ lh = 0; } }
+  if(!lh){ doc.setFont('times', 'bold'); doc.setFontSize(18); doc.setTextColor(20, 40, 90); doc.text('ALIOUA BTP', ML + 4, 21); }
+  doc.setFillColor(155, 185, 225); doc.rect(ML, 27, 92, 11, 'F'); doc.rect(ML, 27, 92, 11);
+  doc.setTextColor(0);
+  if(containsArabic(sh.proj)) drawArabicLine(doc, 'CHANTIER : ' + sh.proj, ML + 46, 32.5, {fontMM: 9 * 0.352778, bold: true, align: 'center', maxW: 88});
+  else { doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.text('CHANTIER : ' + (sh.proj || '—'), ML + 46, 33.3, {align:'center', maxWidth: 88}); }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('POINTAGE JOURNALIER', 167.5, 21, {align:'center'});
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.text('Quinzaine ' + (qz === '1QZ' ? '1' : '2') + '  —  du ' + frDate(sh.pr.from) + ' au ' + frDate(sh.pr.to), 167.5, 29.5, {align:'center'});
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.text('Mois :  ' + MONTHS_FR[sh.m - 1] + ' / ' + sh.y, 262, 21, {align:'center'});
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.text('Édité le ' + frDate(todayStr()), 262, 29.5, {align:'center'});
+  // مجاميع فوق الأعمدة (كيف الصورة)
+  doc.setFillColor(197, 90, 17); doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+  [['tjs', W.tjs, String(sh.totals.tjs).replace('.', ',')], ['mon', W.mon, fmtNum(sh.totals.montant)], ['net', W.net, fmtNum(sh.totals.net)]].forEach(t=>{ const x = xAt(t[0]); doc.rect(x, 40.5, t[1], 5.5, 'F'); doc.text(t[2], x + t[1] / 2, 44.4, {align:'center'}); });
+  doc.setTextColor(0);
+  const cell = (text, o)=>{ text = String(text == null ? '' : text); return containsArabic(text) ? Object.assign({content: '', ar: text}, o || {}) : Object.assign({content: text}, o || {}); };
+  const dayLabel = r => r.days.map(d=> d.st === 'present' ? '1' : d.st === 'half' ? '½' : d.st === 'absent' ? 'Ab' : '0');
+  const head = [['Matri', 'NOM', 'Prénom', 'Fonction', 'TAUX'].concat(Array.from({length: n}, (_, i)=> String(+sh.pr.from.slice(8) + i)), ['T/JS', 'MONTANT', qz, 'CIN', 'Signature'])];
+  const body = [];
+  sh.rows.forEach(r=>{
+    const w = r.w, nom = containsArabic(r.nm.nom) ? r.nm.nom : r.nm.nom.toUpperCase();
+    body.push([cell(w.mat, {rowSpan: 2}), cell(nom, {rowSpan: 2, styles: {halign: 'left', fontStyle: 'bold'}}), cell(r.nm.prenom, {rowSpan: 2, styles: {halign: 'left'}}), cell(w.fonction || '', {styles: {halign: 'left'}}), cell(fmtNum(w.wage), {styles: {fillColor: [221, 230, 245]}})]
+      .concat(dayLabel(r).map(t=> ({content: t})), [cell(String(r.tjs).replace('.', ','), {rowSpan: 2}), cell(fmtNum(r.montant), {styles: {halign: 'right'}}), cell(fmtNum(r.net), {rowSpan: 2, styles: {halign: 'right'}}), cell(w.cin || '', {rowSpan: 2}), cell(r.paid ? 'Payé le ' + frDate(r.paid) : '', {rowSpan: 2, styles: {textColor: [110, 110, 110], fontSize: 6}})]));
+    body.push([cell(sh.proj ? sh.proj.slice(0, 18) : '', {styles: {halign: 'left', fontSize: 6}}), cell(fmtNum(r.hourly), {styles: {fontSize: 6, fillColor: [221, 230, 245]}})]
+      .concat(r.days.map(d=> ({content: d.h > 0 ? String(d.h) : (d.dd > 0 ? 'J' + d.dd : '')})), [cell(fmtNum(r.extras), {styles: {halign: 'right'}})]));
+  });
+  const cs = {0: {cellWidth: W.mat}, 1: {cellWidth: W.nom}, 2: {cellWidth: W.pre}, 3: {cellWidth: W.fon}, 4: {cellWidth: W.taux}};
+  for(let i = 0; i < n; i++) cs[5 + i] = {cellWidth: W.day};
+  const iT = 5 + n; cs[iT] = {cellWidth: W.tjs}; cs[iT + 1] = {cellWidth: W.mon}; cs[iT + 2] = {cellWidth: W.net}; cs[iT + 3] = {cellWidth: W.cin}; cs[iT + 4] = {cellWidth: sigW};
+  doc.autoTable({
+    startY: 48, head, body, theme: 'grid', margin: {left: ML, right: MR, top: 12, bottom: 14}, rowPageBreak: 'avoid', columnStyles: cs,
+    styles: {fontSize: 6.8, cellPadding: 0.5, lineColor: [90, 90, 90], lineWidth: 0.15, halign: 'center', valign: 'middle', overflow: 'hidden', minCellHeight: 5.4, textColor: [0, 0, 0]},
+    headStyles: {fillColor: [180, 198, 231], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 7},
+    didParseCell: d=>{
+      const ci = d.column.index, sunI = i => sh.rows.some(r=> r.days[i] && r.days[i].sun);
+      if(ci >= 5 && ci < iT){
+        const di = ci - 5, isSun = sh.rows.length ? sh.rows[0].days[di].sun : false;
+        if(isSun) d.cell.styles.fillColor = [255, 255, 0];
+        if(d.section === 'body' && ['1', '½', 'Ab'].indexOf(d.cell.raw && d.cell.raw.content) >= 0){ d.cell.styles.textColor = [200, 0, 0]; d.cell.styles.fontStyle = 'bold'; }
+      }
+      if(ci === iT + 2){ d.cell.styles.fillColor = d.section === 'head' ? [237, 125, 49] : [255, 217, 102]; d.cell.styles.fontStyle = 'bold'; }
+      if(d.section === 'body' && ci === iT){ d.cell.styles.fillColor = [132, 151, 176]; d.cell.styles.fontStyle = 'bold'; }
+      if(d.section === 'body' && ci === iT + 3){ d.cell.styles.fillColor = [190, 245, 250]; }
+    },
+    didDrawCell: d=>{
+      const r = d.cell.raw; if(!r || !r.ar) return;
+      drawArabicLine(doc, r.ar, d.cell.x + d.cell.width / 2, d.cell.y + d.cell.height / 2, {fontMM: 7 * 0.352778, bold: !!(r.styles && r.styles.fontStyle === 'bold'), align: 'center', maxW: d.cell.width - 1.5});
+    }
+  });
+  let y = doc.lastAutoTable.finalY + 6;
+  if(y > PH - 40){ doc.addPage(); y = 16; }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(0);
+  doc.text('Total à payer : ' + fmtNum(sh.totals.net) + ' DH   —   ' + sh.rows.length + ' ouvrier(s)', ML, y);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.text('Arrêté à la somme de : ' + amountWordsFr(sh.totals.net), ML, y + 5);
+  doc.setLineWidth(0.3); doc.rect(PW - MR - 120, y - 3, 58, 24); doc.rect(PW - MR - 58, y - 3, 58, 24);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.text('Chef de chantier', PW - MR - 91, y + 1.5, {align:'center'}); doc.text('La Direction (cachet et signature)', PW - MR - 29, y + 1.5, {align:'center'});
+  const nP = doc.getNumberOfPages();
+  for(let i = 1; i <= nP; i++){ doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(120); doc.text('ALIOUA BTP — Pointage ' + qz + ' — Page ' + i + ' / ' + nP, PW / 2, PH - 6, {align:'center'}); }
+  return doc;
+}
+function recordPointagePayments(sh){
+  const todo = sh.rows.filter(r=> r.net > 0 && !r.paid);
+  if(!todo.length){ alert('كل الأجراء فهاد الورقة مؤدَّين من قبل (أو بلا مبلغ).'); return; }
+  const tot = round2(todo.reduce((s, r)=> s + r.net, 0));
+  if(!confirm('تسجيل أداء ' + todo.length + ' أجراء بمجموع ' + fmtNum(tot) + ' درهم عن ' + fmtPeriod(sh.pr) + ' ؟\nغادي يتسجل فكشف كل أجير على حدة.')) return;
+  const l = loadWPayments(), today = todayStr(), t = Date.now();
+  todo.forEach((r, i)=>{ const c = r.c; l.push({id: 'wp' + t + '_' + i, workerId: r.w.id, projectId: r.w.projectId || '', from: sh.pr.from, to: sh.pr.to, days: c.days, base: c.base, extraDays: c.extraDays, extraDaysAmt: c.extraDaysAmt, otHours: c.otHours, otAmt: c.otAmt, total: c.total, paidAt: today, periods: 1, sheet: true}); r.paid = today; });
+  saveWPayments(l); try{ renderWorkers(); }catch(e){}
+  alert('✅ تسجل أداء ' + todo.length + ' أجراء فكشوفاتهم.');
+}
+function openPointagePreview(projectId, pr){
+  const sh = buildPointageSheet(projectId, pr);
+  if(!sh.rows.length){ alert('ما كاين حتى أجير مياوم مرتبط بهاد المشروع. (الأجراء الشهريين ما كيدخلوش فهاد الورقة)'); return; }
+  const base = 'Pointage-' + (sh.proj || 'sans-projet').replace(/[\\\/:*?"<>|\s]+/g, '-') + '-' + pr.from + '_' + pr.to;
+  openFilePreview({title: 'Pointage — ' + (sh.proj || '—') + ' — ' + fmtPeriod(pr), first: 'pdf',
+    variants: [{key: 'pdf', label: 'PDF', filename: base + '.pdf', render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, buildPointagePdf(sh)); return w; }, blob: async ()=> buildPointagePdf(sh).output('blob')}],
+    actions: [{label: '✅ تسجيل الأداء فكشوف الأجراء', fn: ()=> recordPointagePayments(sh)}]});
+}
+function fillPointageUi(){
+  const ps = document.getElementById('pointProject'), pe = document.getElementById('pointPeriod'); if(!ps || !pe) return;
+  const cur = ps.value; ps.innerHTML = '<option value="">— بلا مشروع محدد —</option>';
+  loadProjects().forEach(p=>{ const o = document.createElement('option'); o.value = p.id; o.textContent = p.name; ps.appendChild(o); }); ps.value = cur;
+  if(!pe.options.length) recentPeriods(8).forEach(pr=>{ const o = document.createElement('option'); o.value = pr.from + '|' + pr.to; o.textContent = fmtPeriod(pr); pe.appendChild(o); });
+}
+document.getElementById('pointPreviewBtn')?.addEventListener('click', ()=>{
+  const v = document.getElementById('pointPeriod').value.split('|'); if(v.length < 2) return;
+  try{ openPointagePreview(document.getElementById('pointProject').value, {from: v[0], to: v[1]}); }catch(e){ alert('تعذّر إنشاء الورقة: ' + (e && e.message ? e.message : e)); }
+});
+document.getElementById('pointProject')?.addEventListener('focus', fillPointageUi);
+
+/* ---- المخالصة النهائية: توقيف أجير + Reçu pour solde de tout compte ---- */
+function settleCalc(w, stopDate, leave, bonus, deduct){
+  const all = calcAllUnpaid(w, stopDate), rows = all ? all.rows : [];
+  const wages = round2(rows.reduce((s, r)=> s + r.c.total, 0));
+  return {rows, wages, leave: round2(leave), bonus: round2(bonus), deduct: round2(deduct), net: round2(wages + leave + bonus - deduct)};
+}
+function buildSettlePdf(st, w){
+  if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش بعد، تأكد من الإنترنت.');
+  const c = loadCompanyInfo(), { jsPDF } = window.jspdf, doc = new jsPDF({unit:'mm', format:'a4'});
+  const PW = 210, ML = 14, MR = 14; let y = 12;
+  if(c.logoDataUrl){ try{ const p = doc.getImageProperties(c.logoDataUrl), wd = 58, h = Math.min(22, wd * p.height / p.width); doc.addImage(c.logoDataUrl, p.fileType || 'PNG', ML, y, wd, h); y += h + 4; }catch(e){ y += 4; } }
+  else { doc.setFont('times', 'bold'); doc.setFontSize(20); doc.setTextColor(20, 40, 90); doc.text('ALIOUA BTP', ML, y + 8); y += 14; }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(0); doc.text('REÇU POUR SOLDE DE TOUT COMPTE', PW / 2, y + 6, {align:'center'});
+  doc.setLineWidth(0.5); doc.line(PW / 2 - 52, y + 8, PW / 2 + 52, y + 8); y += 14;
+  const first = loadAttendance().filter(a=> a.workerId === w.id).map(a=> a.date).sort()[0] || '';
+  const kv = [['Société', 'ALIOUA BTP'], ['Chantier', (st.proj || '—')], ['Nom et prénom', w.name], ['CIN', w.cin || '—'], ['Fonction', w.fonction || '—'], [w.type === 'daily' ? 'Taux journalier' : 'Salaire mensuel', fmtNum(w.wage) + ' DH'], ['Premier pointage', first ? frDate(first) : '—'], ['Dernier jour travaillé', frDate(st.stopDate)]];
+  arabicAwareAutoTable(doc, {startY: y, body: kv, theme: 'grid', styles: {fontSize: 9.5, halign: 'left', textColor: [0, 0, 0]}, columnStyles: {0: {cellWidth: 50, fontStyle: 'bold', fillColor: [235, 240, 248]}, 1: {cellWidth: PW - ML - MR - 50}}, margin: {left: ML, right: MR, top: 15, bottom: 18}});
+  y = doc.lastAutoTable.finalY + 6;
+  const rows = [];
+  st.rows.forEach(r=>{
+    const c0 = r.c, lab = frDate(r.pr.from) + ' → ' + frDate(r.pr.to);
+    if(c0.base > 0) rows.push(['Salaire du ' + lab, fmtNum(c0.days).replace(',00', '') + ' j × ' + fmtNum(w.wage), fmtNum(c0.base)]);
+    const ex = round2(c0.extraDaysAmt + c0.otAmt); if(ex > 0) rows.push(['Heures / jours supplémentaires (' + lab + ')', (c0.otHours ? c0.otHours + ' h ' : '') + (c0.extraDays ? c0.extraDays + ' j' : ''), fmtNum(ex)]);
+  });
+  if(!rows.length) rows.push(['Salaires dus', 'Aucun salaire impayé', fmtNum(0)]);
+  if(st.leave) rows.push(['Congés payés', '', fmtNum(st.leave)]);
+  if(st.bonus) rows.push(['Indemnité / prime', '', fmtNum(st.bonus)]);
+  if(st.deduct) rows.push(['Retenue / avance à déduire', '', '- ' + fmtNum(st.deduct)]);
+  rows.push([{content: 'NET À PAYER', styles: {fontStyle: 'bold', fillColor: [255, 217, 102]}}, {content: '', styles: {fillColor: [255, 217, 102]}}, {content: fmtNum(st.net) + ' DH', styles: {fontStyle: 'bold', fillColor: [255, 217, 102]}}]);
+  arabicAwareAutoTable(doc, {startY: y, head: [['Désignation', 'Détail', 'Montant (DH)']], body: rows, theme: 'grid', styles: {fontSize: 9, halign: 'left', textColor: [0, 0, 0]}, headStyles: {fillColor: [31, 78, 121], textColor: 255, halign: 'center'}, columnStyles: {0: {cellWidth: 92}, 1: {cellWidth: 50}, 2: {cellWidth: 40, halign: 'right'}}, margin: {left: ML, right: MR, top: 15, bottom: 18}});
+  y = doc.lastAutoTable.finalY + 8;
+  if(y > 195){ doc.addPage(); y = 20; }
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(0);
+  const para = 'Je soussigné(e), dont le nom figure ci-dessus, reconnais avoir reçu de la société ALIOUA BTP la somme de ' + fmtNum(st.net) + ' DH (' + amountWordsFr(st.net) + ') à titre de solde de tout compte, pour toutes sommes dues au titre de l\'exécution et de la cessation de mon contrat de travail.';
+  const ls = doc.splitTextToSize(para, PW - ML - MR); ls.forEach((l, i)=> doc.text(l, ML, y + i * 5)); y += ls.length * 5 + 3;
+  doc.setFontSize(8.5); doc.setTextColor(90);
+  doc.splitTextToSize('Ce reçu peut être dénoncé par le salarié dans un délai de soixante (60) jours à compter de la date de sa signature (article 75 du Code du travail).', PW - ML - MR).forEach((l, i)=> doc.text(l, ML, y + i * 4.2)); y += 12;
+  doc.setTextColor(0); doc.setFontSize(9.5); doc.text('Fait à ......................................., le ....... / ....... / ...........', ML, y); y += 8;
+  doc.setLineWidth(0.3); doc.rect(ML, y, 86, 38); doc.rect(PW - MR - 86, y, 86, 38);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.text('Le salarié', ML + 43, y + 5, {align:'center'}); doc.text("L'employeur (cachet et signature)", PW - MR - 43, y + 5, {align:'center'});
+  doc.setFont('helvetica', 'italic'); doc.setFontSize(7.8); doc.text('Mention manuscrite : « Lu et approuvé —', ML + 43, y + 11, {align:'center'}); doc.text('Bon pour solde de tout compte »', ML + 43, y + 15, {align:'center'});
+  if(st.note){ doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(90); if(containsArabic(st.note)) pdfParagraph(doc, 'Note : ' + st.note, PW - MR, y + 42, PW - ML - MR, {fontPt: 8}); else doc.text('Note : ' + st.note, ML, y + 44); }
+  return doc;
+}
+function confirmSettlement(w, st){
+  if(!confirm('تأكيد المخالصة النهائية لـ ' + w.name + ' بمبلغ ' + fmtNum(st.net) + ' درهم؟\nغادي يتسجل الأداء وكيتوقف الأجير.')) return false;
+  const l = loadWPayments(), today = todayStr(), t = Date.now();
+  st.rows.forEach((r, i)=>{ const c0 = r.c; l.push({id: 'wp' + t + '_s' + i, workerId: w.id, projectId: w.projectId || '', from: r.pr.from, to: r.pr.to, days: c0.days, base: c0.base, extraDays: c0.extraDays, extraDaysAmt: c0.extraDaysAmt, otHours: c0.otHours, otAmt: c0.otAmt, total: c0.total, paidAt: today, periods: 1, settlement: st.id}); });
+  const adj = round2(st.leave + st.bonus - st.deduct);
+  if(adj !== 0) l.push({id: 'wp' + t + '_sa', workerId: w.id, projectId: w.projectId || '', from: st.stopDate, to: st.stopDate, extrasOnly: true, extraIds: [], days: 0, base: 0, extraDays: 0, extraDaysAmt: 0, otHours: 0, otAmt: 0, total: adj, paidAt: today, periods: 0, settlement: st.id, note: 'Solde de tout compte'});
+  saveWPayments(l);
+  const s = loadSettlements(); s.push({id: st.id, workerId: w.id, name: w.name, proj: st.proj, stopDate: st.stopDate, wages: st.wages, leave: st.leave, bonus: st.bonus, deduct: st.deduct, net: st.net, note: st.note || '', createdAt: Date.now(), rows: st.rows.map(r=> ({pr: r.pr, c: r.c}))}); saveSettlements(s);
+  const ws = loadWorkers(), tg = ws.find(x=> x.id === w.id); if(tg){ tg.status = 'stopped'; tg.stoppedAt = st.stopDate; tg.settlementId = st.id; saveWorkers(ws); }
+  wUi[w.id] = null; try{ renderWorkers(); }catch(e){}
+  return true;
+}
+function openSettlePreview(w, st, saved){
+  const fb = 'Solde-' + String(w.name).replace(/[\\\/:*?"<>|\s]+/g, '-') + '-' + st.stopDate;
+  openFilePreview({title: 'Solde de tout compte — ' + w.name, first: 'pdf',
+    variants: [{key: 'pdf', label: 'PDF', filename: fb + '.pdf', render: async ()=>{ const el = document.createElement('div'); await renderPdfPreview(el, buildSettlePdf(st, w)); return el; }, blob: async ()=> buildSettlePdf(st, w).output('blob')}],
+    actions: saved ? [] : [{label: '✅ تأكيد المخالصة وتوقيف الأجير', fn: ()=>{ if(confirmSettlement(w, st)) document.getElementById('filePreviewModal')?.remove(); }}]});
+}
+function renderSettleForm(host, w){
+  const esc = escapeHtml;
+  if(w.status === 'stopped'){
+    host.innerHTML = '<div style="font-size:12.5px; margin-bottom:8px;">🏁 موقوف منذ <b>' + frDate(w.stoppedAt) + '</b> — المخالصة النهائية مسجلة.</div><div style="display:flex; gap:6px;"><button class="btn-ghost" id="sdView_' + w.id + '" style="flex:1;">👁 عرض المخالصة (PDF)</button><button class="btn-ghost" id="sdReopen_' + w.id + '" style="flex:1;">↩️ إعادة تشغيل الأجير</button></div>';
+    host.querySelector('#sdView_' + w.id).onclick = ()=>{ const s = loadSettlements().find(x=> x.id === w.settlementId); if(!s){ alert('ما لقيتش المخالصة.'); return; } openSettlePreview(w, s, true); };
+    host.querySelector('#sdReopen_' + w.id).onclick = ()=>{ if(!confirm('إعادة تشغيل ' + w.name + '؟ (المخالصة السابقة كتبقى محفوظة)')) return; const ws = loadWorkers(), t = ws.find(x=> x.id === w.id); if(t){ t.status = 'active'; delete t.stoppedAt; saveWorkers(ws); renderWorkers(); } };
+    return;
+  }
+  const inp = 'style="margin-top:6px;"';
+  host.innerHTML = '<div style="font-size:12.5px; font-weight:700; margin-bottom:6px;">🏁 مخالصة نهائية (Solde de tout compte) — ' + esc(w.name) + '</div>' +
+    '<label style="font-size:11.5px; color:var(--ink-soft);">آخر يوم عمل</label><input type="date" id="sdDate_' + w.id + '" value="' + todayStr() + '">' +
+    '<div id="sdWages_' + w.id + '" style="margin:8px 0; font-size:12.5px; line-height:1.8;"></div>' +
+    '<input type="number" id="sdLeave_' + w.id + '" placeholder="عطلة مؤدّى عنها / Congés payés (+ درهم)" inputmode="decimal" ' + inp + '>' +
+    '<input type="number" id="sdBonus_' + w.id + '" placeholder="تعويض / منحة / Indemnité-Prime (+ درهم)" inputmode="decimal" ' + inp + '>' +
+    '<input type="number" id="sdDeduct_' + w.id + '" placeholder="خصم / سلفة / Retenue-Avance (− درهم)" inputmode="decimal" ' + inp + '>' +
+    '<input type="text" id="sdNote_' + w.id + '" dir="auto" placeholder="ملاحظة (اختياري)" ' + inp + '>' +
+    '<div id="sdTotal_' + w.id + '" style="font-weight:800; margin:10px 0; font-size:14px;"></div>' +
+    '<button class="btn-primary" id="sdPrev_' + w.id + '">👁 معاينة المخالصة (PDF)</button>';
+  const g = id => host.querySelector('#' + id + '_' + w.id), num = id => parseFloat(g(id).value) || 0;
+  const calc = ()=>{
+    const st = settleCalc(w, g('sdDate').value || todayStr(), num('sdLeave'), num('sdBonus'), num('sdDeduct')), dm = d => d.split('-').reverse().slice(0, 2).join('/');
+    g('sdWages').innerHTML = st.rows.length ? st.rows.map(r=> '<div>• ' + dm(r.pr.from) + ' → ' + dm(r.pr.to) + ' : <b>' + fmtNum(r.c.total) + '</b> درهم (' + r.c.days + ' يوم)</div>').join('') + '<div style="color:var(--ink-soft);">مجموع الأجور غير المؤداة: ' + fmtNum(st.wages) + ' درهم</div>' : '<div style="color:var(--ink-soft);">✅ ما كاين حتى أجر غير مؤدّى حتى هاد التاريخ.</div>';
+    g('sdTotal').textContent = '💰 الصافي للأداء: ' + fmtNum(st.net) + ' درهم'; return st;
+  };
+  ['sdDate', 'sdLeave', 'sdBonus', 'sdDeduct'].forEach(id=> g(id).addEventListener('input', calc)); calc();
+  g('sdPrev').onclick = ()=>{
+    const st = calc(); st.id = 'sd' + Date.now(); st.workerId = w.id; st.stopDate = g('sdDate').value || todayStr(); st.note = g('sdNote').value.trim(); st.proj = w.projectId ? (projectNameById(w.projectId) || '') : '';
+    try{ openSettlePreview(w, st, false); }catch(e){ alert('تعذّر إنشاء المخالصة: ' + (e && e.message ? e.message : e)); }
+  };
+}
 
 /* ---------- مشاركة الصور ---------- */
 async function shareImageBlob(blob, filename){
