@@ -5434,7 +5434,7 @@ const VC = (function(){
     fd.append('response_format', 'json');
     fd.append('prompt', DARIJA_HINT);
     const controller = new AbortController();
-    const timer = setTimeout(()=>controller.abort(), 35000);
+    const timer = setTimeout(()=>controller.abort(), 20000);
     try{
       const res = await fetch(VOICE_WORKER_URL, { method:'POST', body:fd, cache:'no-store', signal:controller.signal });
       if(res.status === 429){ _setCool('groq:' + model, 3); throw new Error('HTTP 429'); }
@@ -5447,7 +5447,7 @@ const VC = (function(){
       if(!data || typeof data.text !== 'string') throw new Error('WORKER_BAD_RESPONSE');
       return data.text.trim();
     }catch(e){
-      if(e && e.name === 'AbortError') throw new Error('WORKER_TIMEOUT_35S');
+      if(e && e.name === 'AbortError') throw new Error('WORKER_TIMEOUT_20S');
       if(e && /^(HTTP 429|WORKER_HTTP_|WORKER_BAD_RESPONSE)/.test(e.message || '')) throw e;
       throw new Error('WORKER_NETWORK');
     }finally{ clearTimeout(timer); }
@@ -5734,40 +5734,6 @@ const VN = (function(){
       try{ r.stop(); }catch(e){ clearTimeout(t); res(null); }
     });
   }
-  function startFreeRecognition(){
-    S.sr = null; S.srText = ''; S.srFailed = false;
-    const API = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if(!API) return false;
-    try{
-      const r = new API();
-      r.lang = 'ar-MA';
-      r.continuous = true;
-      r.interimResults = true;
-      r.maxAlternatives = 1;
-      r.onresult = ev => {
-        let all = '';
-        for(let i = 0; i < ev.results.length; i++){
-          const item = ev.results[i];
-          if(item && item[0] && item[0].transcript) all += item[0].transcript + ' ';
-        }
-        S.srText = all.trim();
-      };
-      r.onerror = () => { S.srFailed = true; };
-      r.onend = () => { S.sr = null; };
-      S.sr = r;
-      r.start();
-      return true;
-    }catch(e){ S.sr = null; S.srFailed = true; return false; }
-  }
-  function stopFreeRecognition(abort){
-    const r = S.sr;
-    S.sr = null;
-    if(r){
-      try{ if(abort) r.abort(); else r.stop(); }catch(e){}
-    }
-    return abort ? '' : String(S.srText || '').trim();
-  }
-
   function teardownAudio(){
     try{ if(S.proc) S.proc.onaudioprocess = null; }catch(e){}
     try{ S.src && S.src.disconnect(); }catch(e){}
@@ -5785,18 +5751,16 @@ const VN = (function(){
     S.st = 'starting'; const tok = ++S.startToken;
     S.mode = 'hold'; S.willCancel = false; S.upEarly = false; S.downWhileLocked = false; S.downT = performance.now();
     setUI(true);
-    startFreeRecognition();
     let stream;
     try{
       stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1 } });
     }catch(e){
-      stopFreeRecognition(true);
       if(tok === S.startToken){ S.st = 'idle'; setUI(false); }
       const n = e && e.name;
       note(n === 'NotAllowedError' || n === 'SecurityError' ? '🎙️ إذن المايكروفون مرفوض. فعّله من إعدادات الموقع في المتصفح.' : 'تعذّر الوصول إلى المايكروفون.');
       return;
     }
-    if(tok !== S.startToken || S.st !== 'starting'){ stopFreeRecognition(true); try{ stream.getTracks().forEach(t => t.stop()); }catch(e){} return; }
+    if(tok !== S.startToken || S.st !== 'starting'){ try{ stream.getTracks().forEach(t => t.stop()); }catch(e){} return; }
     try{
       S.stream = stream;
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -5811,7 +5775,7 @@ const VN = (function(){
       S.proc.onaudioprocess = onAudio;
       startRecorder();
     }catch(e){
-      stopFreeRecognition(true); teardownAudio(); S.st = 'idle'; setUI(false); note('تعذّر بدء التسجيل.'); return;
+      teardownAudio(); S.st = 'idle'; setUI(false); note('تعذّر بدء التسجيل.'); return;
     }
     S.t0 = performance.now();
     S.st = 'recording';
@@ -5820,7 +5784,6 @@ const VN = (function(){
   }
   function cancel(){
     S.startToken++;
-    stopFreeRecognition(true);
     clearInterval(S.timer);
     const r = S.rec;
     if(r && r.state !== 'inactive'){ try{ r.onstop = null; r.stop(); }catch(e){} }
@@ -5833,7 +5796,7 @@ const VN = (function(){
     S.st = 'stopping';
     clearInterval(S.timer);
     const dur = (performance.now() - S.t0) / 1000;
-    const freeTranscript = stopFreeRecognition(false);
+    const freeTranscript = '';
     const pcm = S.pcm, levels = S.levels;
     const recBlob = await stopRecorder();
     teardownAudio();
@@ -5951,7 +5914,8 @@ const VN = (function(){
     if(!text){ fail('لم أسمع كلاماً واضحاً في التسجيل.'); return; }
     ph.remove();
     let waited = 0;
-    while(sendBtn.disabled && waited < 60000){ await new Promise(r => setTimeout(r, 300)); waited += 300; }
+    while(sendBtn.disabled && waited < 12000){ await new Promise(r => setTimeout(r, 300)); waited += 300; }
+    if(sendBtn.disabled){ fail('المساعد مازال كيجاوب على الطلب السابق. عاود الإرسال منين يسالي.'); return; }
     const draft = inputEl.value;
     inputEl.value = text;
     window._vnPending = { id:meta.id, dur:meta.dur, bars:meta.bars };
