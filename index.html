@@ -5494,50 +5494,66 @@ const VC = (function(){
       return out.replace(/^["«“]+|["»”]+$/g, '').trim() || text;
     }catch(e){ return text; }
   }
-  // السلسلة: Hugging Face (إلا مفعّل) ← Gemini ← Groq Whisper + تصحيح نصي
+  // تفريغ سريع: Groq Whisper Turbo أولاً، ثم بديل واحد عند الفشل.
+  // نتجنب انتظار Hugging Face وتصحيح النص الإضافي قبل إظهار النتيجة.
   async function transcribe(blob, maxTok){
     const gk = getGroqKey(), key = getApiKey(), hfOn = !!(getHfKey() && getHfUrl());
     if(!gk && !key && !hfOn) throw new Error('NOKEY');
-    const fails = []; let sawText = false, gemResponded = false;
-    const accept = t => { if(_noise(t)) return null; sawText = true; return _looksArabic(t) ? t : null; };
+    const fails = [];
+    const accept = t => {
+      const v = String(t || '').trim();
+      if(!v || _noise(v)) return '';
+      return v;
+    };
+    const quick = (promise, ms, label) => Promise.race([
+      promise,
+      new Promise((_, reject)=>setTimeout(()=>reject(new Error(label + ' TIMEOUT')), ms))
+    ]);
 
-    // 1) Hugging Face — كيرجع النص ديالو مباشرة (إلا خاوي = ما كاين كلام)
+    // 1) Groq Turbo هو المسار الأول والأسرع عادةً، بلا طلب تصحيح ثانٍ.
+    if(gk){
+      for(const model of ['whisper-large-v3-turbo', 'whisper-large-v3']){
+        if(_isCool('groq:' + model)) continue;
+        try{
+          const raw = await quick(transcribeGroq(blob, gk, model), 18000, 'Groq');
+          const result = accept(raw);
+          if(result) return result;
+        }catch(e){
+          fails.push('Groq ' + String(e.message || ''));
+          if(/429/.test(String(e.message || ''))) continue;
+        }
+      }
+    }
+
+    // 2) Gemini كبديل فقط إذا لم ينجح Groq.
+    if(key){
+      try{
+        const models = await quick(geminiAudioModels(key), 7000, 'Gemini models');
+        let b64 = null;
+        for(const model of (models || []).slice(0, 2)){
+          try{
+            b64 = b64 || await blobToB64(blob);
+            const raw = await quick(geminiTranscribe(model, key, b64, maxTok), 18000, 'Gemini');
+            const result = accept(raw);
+            if(result) return result;
+            // استجابة فارغة تعني غالباً أن النموذج لم يسمع كلاماً واضحاً.
+            if(raw === '') return '';
+          }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
+        }
+      }catch(e){ fails.push(String(e.message || 'Gemini')); }
+    }
+
+    // 3) Hugging Face احتياطي أخير؛ لا نسمح له بتعليق الواجهة طويلاً.
     if(hfOn && !_isCool('hf')){
       try{
-        const t = await transcribeHF(blob);
-        if(!t) return '';
-        const r = accept(t); if(r) return r;
+        const raw = await quick(transcribeHF(blob), 12000, 'Hugging Face');
+        return accept(raw);
       }catch(e){
         fails.push(String(e.message || 'HF'));
-        _setCool('hf', e.fatal ? 30 : 2);   // ما نبقاوش نستناو نموذج طايح فكل جملة
+        _setCool('hf', 2);
       }
     }
-    // 2) Gemini — كل موديل عندو حصتو؛ إلا وصل لحدو كيتحيد مؤقتاً
-    if(key){
-      let b64 = null;
-      let ms = []; try{ ms = await geminiAudioModels(key); }catch(e){}
-      for(const m of ms){
-        try{
-          b64 = b64 || await blobToB64(blob);
-          const raw = await geminiTranscribe(m, key, b64, maxTok);
-          gemResponded = true;
-          const r = accept(raw); if(r) return r;
-        }catch(e){ fails.push('Gemini ' + String(e.message || '')); }
-      }
-      if(gemResponded) return '';            // Gemini قال ما كاين كلام: ما نمشيوش لـ Whisper باش ما يهلوسش
-    }
-    // 3) احتياطي أخير: Groq Whisper + تصحيح نصي بالدارجة
-    if(gk){
-      for(const m of ['whisper-large-v3', 'whisper-large-v3-turbo']){
-        if(_isCool('groq:' + m)) continue;
-        try{
-          const r = accept(await transcribeGroq(blob, gk, m));
-          if(r){ const fixed = await repairTranscript(r, gk); if(fixed && _looksArabic(fixed)) return fixed; return ''; }
-        }catch(e){ fails.push('Groq ' + String(e.message || '')); }
-      }
-    }
-    if(!sawText && fails.length) throw new Error(fails.join(' | '));   // كلشي فشل: رسالة واضحة فيها السبب
-    return '';                                                          // ما فهمناش الكلام: خاوي بدل نص مهلوس
+    throw new Error(fails.length ? fails.join(' | ') : 'تعذر تفريغ الصوت');
   }
   function endUtterance(){
     const buf = S.buf, voiced = S.voiced;
