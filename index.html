@@ -10620,8 +10620,7 @@ function buildSettlePdf(st, w){
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(0);
   const para = 'Je soussigné(e), dont le nom figure ci-dessus, reconnais avoir reçu de la société ALIOUA BTP la somme de ' + fmtNum(st.net) + ' DH (' + amountWordsFr(st.net) + ') à titre de solde de tout compte, pour toutes sommes dues au titre de l\'exécution et de la cessation de mon contrat de travail.';
   const ls = doc.splitTextToSize(para, PW - ML - MR); ls.forEach((l, i)=> doc.text(l, ML, y + i * 5)); y += ls.length * 5 + 3;
-  doc.setFontSize(8.5); doc.setTextColor(90);
-  doc.splitTextToSize('Ce reçu peut être dénoncé par le salarié dans un délai de soixante (60) jours à compter de la date de sa signature (article 75 du Code du travail).', PW - ML - MR).forEach((l, i)=> doc.text(l, ML, y + i * 4.2)); y += 12;
+  y += 5;
   doc.setTextColor(0); doc.setFontSize(9.5); doc.text('Fait à ......................................., le ....... / ....... / ...........', ML, y); y += 8;
   doc.setLineWidth(0.3); doc.rect(ML, y, 86, 38); doc.rect(PW - MR - 86, y, 86, 38);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.text('Le salarié', ML + 43, y + 5, {align:'center'}); doc.text("L'employeur (cachet et signature)", PW - MR - 43, y + 5, {align:'center'});
