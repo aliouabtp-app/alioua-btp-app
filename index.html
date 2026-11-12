@@ -5385,7 +5385,7 @@ const VC = (function(){
   const _AR = /[\u0600-\u06FF]/g, _LAT = /[A-Za-z\u00C0-\u024F]/g;
   const _looksArabic = t => { const a = (t.match(_AR) || []).length, l = (t.match(_LAT) || []).length; return a >= 2 && a >= l; };
   const _noise = t => !t || /اشتركوا|ترجمة نانسي|subscribe|^EMPTY\b/i.test(t);
-  const DARIJA_HINT = 'تفريغ حرفي ودقيق لتسجيل بالدارجة المغربية (المغرب)، غالباً في سياق شركة ALIOUA BTP للبناء والأشغال والمحاسبة. اكتب ما سمعته كما نُطق بالدارجة المغربية، لا تحوّله إلى العربية الفصحى ولا تترجم الفرنسية. احتفظ بكل كلمة فرنسية بحروفها اللاتينية كما نطقها المتكلم، مثل facture, devis, chantier, ciment, béton, fer, sable, brique, coffrage, dalle, acompte, avance, fournisseur, client, TVA, situation. لا تغيّر أي رقم أو مبلغ أو تاريخ أو نسبة أو رقم هاتف؛ اكتب الأرقام كما سمعتها. انتبه للدارجة: بغيت، دابا، واش، شحال، فين، علاش، عافاك، صافي، خلّص، خلصنا، باقي، عطيني، دير، صايب، سلف، كريدي، الورشة، الصباغة، الصندوق، الأجير، المعلم. مصطلحات البناء المحتملة: سيمة، سيما، حديد، رمل، بيتون، بريك، طوب، كوفراج، دالة، أساس، صبّة، شاحنة. لا تستبدل كلمة بأخرى لمجرد أن السياق يتوقعها؛ إذا لم تكن واضحة اكتب الأقرب صوتياً ولا تخترع كلاماً.';
+  const DARIJA_HINT = 'تفريغ حرفي لدارجة مغربية فيها كلمات فرنسية بحروفها اللاتينية: facture, devis, chantier, ciment, béton, TVA, acompte. الأرقام كما سمعتها. بغيت، دابا، واش، شحال، علاش، عافاك، صافي.';
   let _gModels = null, _gModelsAt = 0;
   async function geminiAudioModels(key){
     if(!_gModels || Date.now() - _gModelsAt > 6*3600*1000){
@@ -5426,31 +5426,41 @@ const VC = (function(){
   // Groq Whisper عبر Cloudflare Worker: مفتاح Groq يبقى في Cloudflare ولا يخرج للمتصفح.
   const VOICE_WORKER_URL = 'https://broken-hall-f5d4.aliouabtp.workers.dev';
   async function transcribeGroq(blob, gk, model){
-    const fd = new FormData();
-    fd.append('file', blob, 'audio.wav');
-    fd.append('model', 'whisper-large-v3');
-    fd.append('language', 'ar');
-    fd.append('temperature', '0');
-    fd.append('response_format', 'json');
-    fd.append('prompt', DARIJA_HINT);
-    const controller = new AbortController();
-    const timer = setTimeout(()=>controller.abort(), 20000);
-    try{
-      const res = await fetch(VOICE_WORKER_URL, { method:'POST', body:fd, cache:'no-store', signal:controller.signal });
-      if(res.status === 429){ _setCool('groq:' + model, 3); throw new Error('HTTP 429'); }
-      if(!res.ok){
-        let detail = '';
-        try{ const data = await res.json(); detail = data.error || ''; }catch(e){}
-        throw new Error('WORKER_HTTP_' + res.status + (detail ? ':' + detail : ''));
-      }
-      const data = await res.json();
-      if(!data || typeof data.text !== 'string') throw new Error('WORKER_BAD_RESPONSE');
-      return data.text.trim();
-    }catch(e){
-      if(e && e.name === 'AbortError') throw new Error('WORKER_TIMEOUT_20S');
-      if(e && /^(HTTP 429|WORKER_HTTP_|WORKER_BAD_RESPONSE)/.test(e.message || '')) throw e;
-      throw new Error('WORKER_NETWORK');
-    }finally{ clearTimeout(timer); }
+    const errText = v => { if(v == null) return ''; if(typeof v === 'string') return v; try{ return v.message || v.error || JSON.stringify(v); }catch(e){ return String(v); } };
+    const attempt = async (withPrompt)=>{
+      const fd = new FormData();
+      fd.append('file', blob, 'audio.wav');
+      fd.append('model', 'whisper-large-v3');
+      fd.append('language', 'ar');
+      fd.append('temperature', '0');
+      fd.append('response_format', 'json');
+      if(withPrompt) fd.append('prompt', DARIJA_HINT);
+      const controller = new AbortController();
+      const timer = setTimeout(()=>controller.abort(), 20000);
+      try{
+        const res = await fetch(VOICE_WORKER_URL, { method:'POST', body:fd, cache:'no-store', signal:controller.signal });
+        if(res.status === 429){ _setCool('groq:' + model, 3); throw new Error('HTTP 429'); }
+        if(!res.ok){
+          let detail = '';
+          try{ const data = await res.json(); detail = errText(data && data.error !== undefined ? data.error : data); }catch(e){}
+          const er = new Error('WORKER_HTTP_' + res.status + (detail ? ':' + detail : ''));
+          er.httpStatus = res.status; throw er;
+        }
+        const data = await res.json();
+        if(!data || typeof data.text !== 'string') throw new Error('WORKER_BAD_RESPONSE');
+        return data.text.trim();
+      }catch(e){
+        if(e && e.name === 'AbortError') throw new Error('WORKER_TIMEOUT_20S');
+        if(e && /^(HTTP 429|WORKER_HTTP_|WORKER_BAD_RESPONSE)/.test(e.message || '')) throw e;
+        throw new Error('WORKER_NETWORK');
+      }finally{ clearTimeout(timer); }
+    };
+    try{ return await attempt(true); }
+    catch(e){
+      // 400 غالباً بسبب prompt طويل/غير مقبول عند Groq: نعاود بدون prompt قبل ما نفشلو.
+      if(e && e.httpStatus === 400) return await attempt(false);
+      throw e;
+    }
   }
   // تصحيح محافظ: نحمي الأرقام والكلمات اللاتينية قبل إرسال النص للمصحح، ثم نعيدها حرفياً.
   async function repairTranscript(text, gk){
