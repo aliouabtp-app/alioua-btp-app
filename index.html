@@ -339,6 +339,9 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   cursor:pointer;
 }
 .chart-share-btn svg{ width:14px; height:14px; }
+.chart-box{ position:relative; width:100%; }
+.chart-actions{ display:flex; gap:6px; margin-top:8px; }
+.chart-actions .chart-share-btn{ margin-top:0; flex:1; width:auto; }
 
 .table-download-btn{
   display:flex; align-items:center; justify-content:center; gap:6px;
@@ -2312,7 +2315,8 @@ const SYSTEM_PROMPT = `أنت "يونس"، المساعد الشخصي والم�
 أنت ماشي شات بوت عادي، أنت خبير ومهندس ومحاسب ومحامي. كتهضر بالدارجة المغربية، وكتعطي الحلول مباشرة بلا لف ودوران.
 
 ## 🚨 القواعد الذهبية (إلزامية):
-1. **جاوب، ما تسولش**: المستخدم كيبغي النتيجة. إلا كان ناقص شي معلومة بسيطة، افترضها، قول "على أساس فرضية..."، وأعطي الجواب النهائي. عمرك ما تقول "عطيني المعطيات" ولا "واش تقصد". إلا كان السؤال غامض، خد التفسير الأكثر منطقية فـ سياق البناء والمحاسبة وجاوب.
+1. **الدقة قبل السرعة**: إلا كان السؤال واضح جاوب مباشرة وبلا لف ودوران. ولكن قبل ما تجاوب، تأكد أنك فهمتي شنو كيبغي المستخدم بالضبط. إلا كان فالسؤال معنى غامض، ولا كلمة ما فهمتيهاش ولا كتناسبش السياق، ولا معطية ضرورية ناقصة غادي تبدل الجواب (كمية، ثمن، اسم، تاريخ، نوع الوثيقة، الورش) فاش هاد الحالة سول **سؤال واحد قصير ودقيق** بالدارجة، وقل شنو فهمتي، وانتظر الجواب قبل ما تجاوب. ماشي كل سؤال خاصو توضيح: إلا كانت الفرضية بسيطة وما غاديش تبدل النتيجة، قولها بوضوح ("على أساس أن...") وجاوب. **ما تخمنش ولا تخترع جواب ماعندكش ليه أساس.** إلا ما عرفتيش، قول "ما عرفتش" وشنو خاصك باش تعرف. وإلا السؤال على معلومة كتخص الشركة (عميل، فاتورة، ورش، أجير، مبلغ) وما كايناش فـ "بيانات الشركة" اللي قدامك، قول بصراحة أنها ما كايناش ولا تعطي رقم من راسك. قبل ما تعطي أي حساب، رجع شوفو مرة أخرى وتأكد من الأرقام والوحدات.
+1ب. **مصدر الحقيقة**: أي سؤال على حسابات الشركة (دخل، مصاريف، صافي، موردين، عملاء، أجراء، صندوق، مشاريع، فواتير) جاوب عليه **حصراً** من "بيانات الشركة" اللي تحت الرسالة (قسم المحاسبة)، وابدأ بـ "ملخص قسم المحاسبة" لأنو هو نفس أرقام الشاشة. بين الحساب بإيجاز (شنو جمعتي وشنو طرحتي)، وإلا الرقم ماكايناش قول "ماكاينش فقسم المحاسبة" بلا ما تخمن. إلا السؤال على حسابات الشركة وما لقيتيش "بيانات الشركة" تحت الرسالة، قول للمستخدم يعاود يكتب السؤال بكلمة واضحة (مثلاً اسم المشروع أو المورد) باش تتحمل البيانات. أما الأسئلة الأخرى (تقنية، قانونية، بناء، عامة) فجاوب عليها كذكاء اصطناعي خبير وبدقة، وإلا ما فهمتيش سول سؤال واحد قصير.
 2. **أنت الخبير**: ما تقولش "روح للمحاسب" ولا "استشر المهندس". أنت هو المهندس والمحاسب والمحامي. عطي الحسابات والقوانين بالمرجع المغربي (PCGE، مدونة الشغل، CGI، TVA...). إلا ما كنتيش متأكد من رقم مادة ولا نسبة ولا ثمن، قول "تقريباً/حسب علمي، خاصو تأكيد من النص الرسمي" وما تخترعش. النسب والأثمنة كتتبدل: إلا عندك بحث فالويب استعملو.
 3. **الوثائق والصور**: إلا صيفط ليك المستخدم PDF أو صورة أو بلان، قراه مباشرة وحللو صفحة صفحة (السلم، الأبعاد، الجداول). ما تقولش "ما قريتهاش" ولا "بعثها واضحة". خد الأرقام المكتوبة فقط وما تقيسش بالعين.
 4. **بلا حشو**: ماتكتبش مقدمات طويلة بحال "أهلاً بك، يسعدني مساعدتك...". ادخل فـ الموضوع دغيا.
@@ -2337,10 +2341,7 @@ const SYSTEM_PROMPT = `أنت "يونس"، المساعد الشخصي والم�
 - الجواب القانوني: الجواب المباشر + المرجع (القانون/المادة) + الإجراء العملي + التحذير إلا كان.
 
 ## 🛠️ الأدوات التقنية (لازم تتبع الصيغة بالحرف، كل كتلة بسطر لحالها وJSON صحيح):
-- **رسم بياني** (type: bar أو line أو pie، وما تستعملو إلا إلا كان كيخدم الطلب):
-\`\`\`chart
-{"type":"bar","title":"...","labels":["..."],"datasets":[{"label":"...","data":[0]}]}
-\`\`\`
+- **رسم بياني** (كلما طلب المستخدم رسم/مبيان/graphique/chart، ولو ما حدّدش النوع: bar للمقارنة، pie أو doughnut للتوزيع والأصناف، line للتطور فالزمن). الأرقام كتجي **حصراً** من "بيانات الشركة" اللي قدامك أو من كلام المستخدم، وعمرك ما تخترعها؛ إلا المعطيات ناقصة قول شنو ناقص وسول سؤال واحد. العنوان لازم يذكر الموضوع والمشروع والفترة، وزيد "unit":"DH". الرسم كيتحول أوتوماتيكياً لملف احترافي (صورة، PDF، Excel) بأزرار المعاينة تحتو، فما تقولش بلي ما تقدرش تصاوب ملف أو صورة. زيد بعد الكتلة جملة وحدة فيها المجموع وأهم ملاحظة. الصيغة: \`\`\`chart {"type":"pie","title":"...","unit":"DH","labels":["..."],"datasets":[{"label":"...","data":[0]}]} \`\`\`
 - **تقرير للتحميل** (كلما طلب "تقرير" ولا ملف Excel/PDF/Word؛ formats افتراضياً ["excel","pdf"] وزيد "word" إلا طلبو):
 \`\`\`report
 {"title":"...","columns":["..."],"rows":[["..."]],"summary":"...","formats":["excel","pdf"]}
@@ -2677,56 +2678,142 @@ function appendTextWithTables(container, text){
   if(tableLines.length){ flushTable(); } else { flushText(); }
 }
 
+const _CH_PAL = ['#1C6FA5','#7C241C','#D6AE4E','#4FA3D1','#5C1A14','#2E8B57','#8E5BA8','#E07B39','#6B7B8C','#C2185B'];
+const _CH_FONT = "'IBM Plex Sans Arabic', Arial, sans-serif";
+function _chWrap(t, n){ const out = []; let cur = ''; String(t).split(' ').forEach(w=>{ if(cur && (cur + ' ' + w).length > n){ out.push(cur); cur = w; } else cur = (cur ? cur + ' ' : '') + w; }); if(cur) out.push(cur); return out; }
+function _chNorm(cfg){
+  const type = ['bar','line','pie','doughnut'].includes(cfg.type) ? cfg.type : 'bar';
+  const labels = (cfg.labels || []).map(x=> String(x));
+  const datasets = (cfg.datasets || []).map(d=>({ label: String(d.label || ''), data: (d.data || []).map(v=> +v || 0) }));
+  if(!labels.length || !datasets.length || !datasets[0].data.length) throw new Error('معطيات الرسم ناقصة');
+  return { type, labels, datasets, title: String(cfg.title || ''), unit: String(cfg.unit || 'DH') };
+}
+function _chConfig(n, o){
+  const sliced = n.type === 'pie' || n.type === 'doughnut', f = o.fs, horiz = n.type === 'bar' && n.labels.length > 6;
+  const total = sliced ? (n.datasets[0].data.reduce((a, b)=> a + b, 0) || 1) : 1;
+  const labels = sliced ? n.labels.map((l, i)=> l + ' (' + (n.datasets[0].data[i] / total * 100).toFixed(1) + '%)') : n.labels;
+  const datasets = n.datasets.map((d, i)=>({
+    label: d.label, data: d.data,
+    backgroundColor: sliced ? d.data.map((_, k)=> _CH_PAL[k % 10]) : (n.type === 'line' ? _CH_PAL[i % 10] + '33' : _CH_PAL[i % 10]),
+    borderColor: sliced ? '#ffffff' : _CH_PAL[i % 10], borderWidth: 2, tension: .3,
+    fill: n.type === 'line' && n.datasets.length === 1, pointRadius: n.type === 'line' ? 3 : 0, borderRadius: n.type === 'bar' ? 4 : 0
+  }));
+  const valAxis = { beginAtZero: true, grid: { color: '#e5e9ee' }, ticks: { font: { family: 'IBM Plex Mono, monospace', size: f - 1 }, callback: v => fmtNum(v) } };
+  const catAxis = { grid: { display: false }, ticks: { font: { family: _CH_FONT, size: f - 1 }, maxRotation: 45, callback: function(v){ const l = String(this.getLabelForValue(v)); return l.length > 18 ? l.slice(0, 17) + '…' : l; } } };
+  return {
+    type: n.type, data: { labels, datasets },
+    plugins: [{ id: 'bgw', beforeDraw(c){ const x = c.ctx; x.save(); x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height); x.restore(); } }],
+    options: {
+      responsive: !!o.responsive, maintainAspectRatio: false, animation: false, devicePixelRatio: o.dpr, indexAxis: horiz ? 'y' : 'x', layout: { padding: 6 },
+      plugins: {
+        title: { display: !!n.title, text: _chWrap(n.title, o.wrap), font: { family: _CH_FONT, size: f + 2, weight: 'bold' }, color: '#1a2b3c', padding: { bottom: 8 } },
+        legend: { display: sliced || n.datasets.length > 1, position: 'bottom', labels: { boxWidth: 12, boxHeight: 12, padding: 10, font: { family: _CH_FONT, size: f }, color: '#334155' } },
+        tooltip: { callbacks: { label: c => ' ' + (c.dataset.label && !sliced ? c.dataset.label + ': ' : '') + fmtNum(c.raw) + ' ' + n.unit } }
+      },
+      scales: sliced ? {} : (horiz ? { x: valAxis, y: catAxis } : { y: valAxis, x: catAxis })
+    }
+  };
+}
+function _chRender(n, w, h, fs){
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ch = new Chart(cv.getContext('2d'), _chConfig(n, { fs, dpr: 1, responsive: false, wrap: 55 }));
+  const out = document.createElement('canvas'); out.width = w; out.height = h; out.getContext('2d').drawImage(cv, 0, 0);
+  ch.destroy(); return out;
+}
+function _chTable(n){
+  const sliced = n.type === 'pie' || n.type === 'doughnut', cols = ['البيان'].concat(n.datasets.map(d=> d.label || n.unit));
+  const sums = n.datasets.map(d=> d.data.reduce((a, b)=> a + b, 0));
+  let rows = n.labels.map((l, i)=> [l].concat(n.datasets.map(d=> d.data[i] == null ? 0 : d.data[i])));
+  let tot = ['المجموع'].concat(sums);
+  if(sliced){ cols.push('%'); const t = sums[0] || 1; rows = rows.map(r=> r.concat([r[1] / t])); tot.push(1); }
+  return { cols, rows, tot, sliced };
+}
+function _chImg(src){ return new Promise((res, rej)=>{ const im = new Image(); im.onload = ()=> res(im); im.onerror = rej; im.src = src; }); }
+async function _chSheet(n){
+  try{ await document.fonts.ready; }catch(e){}
+  const W = 1240, H = 1754, P = 70, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), ar = s=> /[\u0600-\u06FF]/.test(s);
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+  let info = {}; try{ info = loadCompanyInfo() || {}; }catch(e){}
+  let y = 60;
+  if(info.logoDataUrl){ try{ const im = await _chImg(info.logoDataUrl), hh = 90; g.drawImage(im, P, y, Math.min(im.width / im.height * hh, 300), hh); }catch(e){} }
+  g.fillStyle = '#6b7280'; g.font = '24px ' + _CH_FONT; g.textAlign = 'right'; g.direction = 'ltr'; g.fillText(new Date().toLocaleDateString('fr-FR'), W - P, y + 40);
+  y += 120; g.fillStyle = '#1E64A0'; g.fillRect(P, y, W - 2 * P, 4); y += 60;
+  g.fillStyle = '#111827'; g.font = 'bold 42px ' + _CH_FONT; g.textAlign = 'center';
+  _chWrap(n.title || 'رسم بياني', 38).forEach(l=>{ g.direction = ar(l) ? 'rtl' : 'ltr'; g.fillText(l, W / 2, y); y += 56; });
+  y += 20;
+  const chH = n.type === 'bar' && n.labels.length > 6 ? Math.min(900, 300 + n.labels.length * 36) : 620;
+  g.drawImage(_chRender(n, W - 2 * P, chH, 17), P, y); y += chH + 40;
+  const t = _chTable(n), nc = t.cols.length, rh = 52, tw = W - 2 * P, w0 = nc === 1 ? tw : tw * (nc > 3 ? .4 : .5), wo = nc > 1 ? (tw - w0) / (nc - 1) : 0;
+  const colX = i=> i === 0 ? W - P - w0 : W - P - w0 - i * wo;           // العمود الأول يمين (RTL)
+  const colW = i=> i === 0 ? w0 : wo;
+  const maxRows = Math.max(3, Math.floor((H - y - 150) / rh) - 2), shown = t.rows.slice(0, maxRows), cut = t.rows.length - shown.length;
+  const cell = (txt, i, yy, bold, color)=>{
+    g.font = (bold ? 'bold ' : '') + '25px ' + _CH_FONT; g.fillStyle = color || '#1f2937';
+    const s = String(txt); g.direction = ar(s) ? 'rtl' : 'ltr';
+    if(i === 0){ g.textAlign = 'right'; g.fillText(s.length > 34 ? s.slice(0, 33) + '…' : s, colX(i) + colW(i) - 16, yy + 35); }
+    else { g.textAlign = 'center'; g.direction = 'ltr'; g.fillText(s, colX(i) + colW(i) / 2, yy + 35); }
+  };
+  const fmt = (v, i)=> typeof v === 'number' ? (t.sliced && i === nc - 1 ? (v * 100).toFixed(1) + '%' : fmtNum(v)) : v;
+  g.fillStyle = '#1E64A0'; g.fillRect(P, y, tw, rh); t.cols.forEach((h, i)=> cell(h, i, y, true, '#ffffff')); y += rh;
+  shown.forEach((r, k)=>{ if(k % 2) { g.fillStyle = '#f1f5f9'; g.fillRect(P, y, tw, rh); } r.forEach((v, i)=> cell(fmt(v, i), i, y)); y += rh; });
+  if(cut > 0){ cell('… +' + cut, 0, y, false, '#6b7280'); y += rh; }
+  g.fillStyle = '#e2e8f0'; g.fillRect(P, y, tw, rh); t.tot.forEach((v, i)=> cell(fmt(v, i), i, y, true)); y += rh;
+  g.fillStyle = '#9ca3af'; g.font = '22px ' + _CH_FONT; g.textAlign = 'center'; g.direction = 'ltr'; g.fillText('ALIOUA BTP — ' + n.unit, W / 2, H - 50);
+  return c;
+}
+async function _chXlsx(n, chartCv){
+  await loadScriptOnce(EXCELJS_URL);
+  const t = _chTable(n), nc = t.cols.length, wb = new ExcelJS.Workbook(); wb.creator = 'ALIOUA BTP'; wb.created = new Date();
+  const ws = wb.addWorksheet('البيانات', { views: [{ rightToLeft: true, showGridLines: false }] });
+  const thin = { style: 'thin', color: { argb: 'FFBFC7D1' } }, bd = { top: thin, bottom: thin, left: thin, right: thin };
+  ws.mergeCells(1, 1, 1, nc); const tc = ws.getCell(1, 1); tc.value = n.title || 'رسم بياني'; tc.font = { bold: true, size: 14, color: { argb: 'FF111827' } }; tc.alignment = { horizontal: 'center', vertical: 'middle' }; ws.getRow(1).height = 28;
+  const hr = ws.getRow(3); t.cols.forEach((h, i)=>{ const c = hr.getCell(i + 1); c.value = h; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E64A0' } }; c.alignment = { horizontal: 'center' }; c.border = bd; });
+  t.rows.forEach((r, k)=>{ const row = ws.getRow(4 + k); r.forEach((v, i)=>{ const c = row.getCell(i + 1); c.value = v; c.border = bd; if(i > 0){ c.numFmt = (t.sliced && i === nc - 1) ? '0.0%' : '#,##0.00'; c.alignment = { horizontal: 'center' }; } }); });
+  const last = 3 + t.rows.length, tr = ws.getRow(last + 1);
+  t.tot.forEach((v, i)=>{ const c = tr.getCell(i + 1); c.border = bd; c.font = { bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+    if(i === 0) c.value = v; else { const L = String.fromCharCode(64 + i + 1); c.value = { formula: `SUM(${L}4:${L}${last})`, result: v }; c.numFmt = (t.sliced && i === nc - 1) ? '0.0%' : '#,##0.00'; c.alignment = { horizontal: 'center' }; } });
+  ws.getColumn(1).width = 36; for(let i = 2; i <= nc; i++) ws.getColumn(i).width = 18;
+  const id = wb.addImage({ base64: chartCv.toDataURL('image/png').split(',')[1], extension: 'png' });
+  ws.addImage(id, { tl: { col: 0, row: last + 2 }, ext: { width: 760, height: 430 } });
+  return new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+function _chOpen(n, first){
+  const base = (n.title || 'رسم-بياني').replace(/[\\\/:*?"<>|]/g, '-').slice(0, 60);
+  let sheetP = null; const sheet = ()=> sheetP || (sheetP = _chSheet(n));
+  let chartCv = null; const chart = ()=> chartCv || (chartCv = _chRender(n, 1000, 560, 16));
+  const pdfDoc = async ()=>{ if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش، تأكد من الإنترنت.'); const cv = await sheet(), d = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'p' }); d.addImage(cv.toDataURL('image/png'), 'PNG', 0, 0, 210, 297); return d; };
+  const t = _chTable(n), fm = (v, i)=> typeof v === 'number' ? (t.sliced && i === t.cols.length - 1 ? (v * 100).toFixed(1) + '%' : fmtNum(v)) : v;
+  const all = {
+    image: { key: 'image', label: '🖼 صورة', filename: base + '.png',
+      render: async ()=>{ const cv = await sheet(), im = document.createElement('img'); im.src = cv.toDataURL('image/png'); im.style.cssText = 'width:100%; max-width:720px; display:block; margin:0 auto; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.25);'; return im; },
+      blob: async ()=> { const cv = await sheet(); return await new Promise(r=> cv.toBlob(r, 'image/png')); } },
+    pdf: { key: 'pdf', label: 'PDF', filename: base + '.pdf', render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, await pdfDoc()); return w; }, blob: async ()=> (await pdfDoc()).output('blob') },
+    excel: { key: 'excel', label: 'Excel', filename: base + '.xlsx', render: async ()=> xlsxPreviewNode({ title: n.title, columns: t.cols, rows: t.rows.concat([t.tot]).map(r=> r.map(fm)) }), blob: async ()=> _chXlsx(n, chart()) }
+  };
+  openFilePreview({ title: n.title || 'رسم بياني', first, variants: [all.image, all.pdf, all.excel] });
+}
 let chartCounter = 0;
 function appendChart(container, jsonText){
   chartCounter++;
-  const id = 'chart_' + chartCounter + '_' + Date.now();
-  const wrap = document.createElement('div');
-  wrap.className = 'chart-wrap';
-  const canvas = document.createElement('canvas');
-  canvas.id = id;
-  wrap.appendChild(canvas);
+  const wrap = document.createElement('div'); wrap.className = 'chart-wrap';
   container.appendChild(wrap);
-
   try{
-    const cfg = JSON.parse(jsonText);
-    const palette = ['#1C6FA5','#7C241C','#D6AE4E','#4FA3D1','#5C1A14','#2E8B57','#8E5BA8','#E07B39','#6B7B8C','#C2185B'];
-    const _sliced = cfg.type === 'pie' || cfg.type === 'doughnut';
-    const datasets = (cfg.datasets||[]).map((d,i)=>({
-      label:d.label || '',
-      data:d.data || [],
-      backgroundColor: _sliced ? (d.data || []).map((_, k)=> palette[k % palette.length]) : (cfg.type==='line' ? 'rgba(28,111,165,.15)' : palette[i % palette.length]),
-      borderColor: palette[i % palette.length],
-      borderWidth: 2,
-      tension:.3
-    }));
-    new Chart(canvas.getContext('2d'), {
-      type: cfg.type || 'bar',
-      data: { labels: cfg.labels || [], datasets },
-      options: {
-        responsive:true,
-        plugins:{
-          title:{ display: !!cfg.title, text: cfg.title || '', font:{family:"'IBM Plex Sans Arabic'", size:13} },
-          legend:{ display: datasets.length > 1 || cfg.type === 'pie' || cfg.type === 'doughnut', labels:{font:{family:"'IBM Plex Sans Arabic'"}} }
-        },
-        scales: (cfg.type === 'pie' || cfg.type === 'doughnut') ? {} : {
-          y:{ beginAtZero:true, ticks:{font:{family:"'IBM Plex Mono'"}} },
-          x:{ ticks:{font:{family:"'IBM Plex Sans Arabic'"}} }
-        }
-      }
+    if(typeof Chart === 'undefined') throw new Error('مكتبة الرسم ماتحملاتش، تأكد من الإنترنت.');
+    const n = _chNorm(JSON.parse(jsonText));
+    const box = document.createElement('div'); box.className = 'chart-box';
+    box.style.height = (n.type === 'bar' && n.labels.length > 6 ? Math.min(560, 200 + n.labels.length * 26) : (n.type === 'pie' || n.type === 'doughnut' ? Math.min(520, 300 + n.labels.length * 22) : 300)) + 'px';
+    const canvas = document.createElement('canvas'); box.appendChild(canvas); wrap.appendChild(box);
+    new Chart(canvas.getContext('2d'), _chConfig(n, { fs: 11, dpr: Math.min(2, window.devicePixelRatio || 1), responsive: true, wrap: 34 }));
+    const row = document.createElement('div'); row.className = 'chart-actions';
+    [['image', '🖼 صورة'], ['pdf', '📄 PDF'], ['excel', '📊 Excel']].forEach(([k, lab])=>{
+      const b = document.createElement('button'); b.className = 'chart-share-btn'; b.textContent = lab;
+      b.addEventListener('click', ()=>{ try{ _chOpen(n, k); }catch(e){ alert('تعذّر تجهيز الملف: ' + (e && e.message || e)); } });
+      row.appendChild(b);
     });
-    setTimeout(()=>{
-      canvas.toBlob(blob=>{
-        if(!blob) return;
-        const btn = document.createElement('button');
-        btn.className = 'chart-share-btn';
-        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"></line></svg><span>تحميل / مشاركة</span>`;
-        btn.addEventListener('click', ()=> shareImageBlob(blob, 'رسم-بياني-'+Date.now()+'.png'));
-        wrap.appendChild(btn);
-      }, 'image/png');
-    }, 150);
+    wrap.appendChild(row);
   }catch(e){
-    wrap.innerHTML = '<div style="font-size:12px; color:var(--ink-soft);">تعذّر عرض الرسم البياني</div>';
+    wrap.innerHTML = '<div style="font-size:12px; color:var(--ink-soft);">تعذّر عرض الرسم البياني: ' + escapeHtml(String(e && e.message || e)) + '</div>';
   }
 }
 
@@ -3752,10 +3839,38 @@ async function sendMessage(){
 /* ---------- إعطاء يونس وصول مباشر لبيانات المحاسبة الحقيقية ---------- */
 function accountingSnapshotNeeded(text){
   if(!text) return false;
-  const keywords = ['مورد','موردين','عميل','عملاء','مصروف','مصاريف','مصريف','سيولة','صندوق','مشروع','مشاريع','أجير','أجراء','اجير','اجراء','محاسبة','دخل','فاتور','تقرير','رصيد','مستحق','حساب','كشف'];
-  return keywords.some(k => text.includes(k));
+  const t = String(text).toLowerCase();
+  const kw = ['مورد','عميل','عملاء','زبون','زبناء','مصروف','مصاريف','مصريف','سيولة','صندوق','مشروع','مشاريع','ورش','أجير','أجراء','اجير','اجراء','عامل','عمال','أجرة','اجرة','أجور','اجور','سلف','كريدي','دين','ديون','محاسبة','دخل','مداخيل','ربح','أرباح','خسارة','صافي','فاتور','فواتير','تقرير','رصيد','مستحق','حساب','كشف','خلص','خلصنا','باقي','شحال','مجموع','ميزانية','ضريبة','tva','facture','devis','chantier','caisse','fournisseur','client','salaire','dépense','depense','recette','bénéfice','benefice','solde','compta','budget','total','retenue','acompte','avance'];
+  if(kw.some(k=> t.includes(k))) return true;
+  try{
+    const names = [].concat(loadSuppliers(), loadClients(), loadCustomers(), loadProjects(), loadWorkers()).map(x=> String((x && x.name) || '').toLowerCase()).filter(n=> n.length >= 3);
+    return names.some(n=> t.includes(n));
+  }catch(e){ return false; }
 }
 
+function _acctSummaryText(){
+  try{
+    const R = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US');
+    const clientsExp = loadInvoices().reduce((a, i)=> a + invoiceTotal(i), 0);
+    const pdfInc = loadPdfInvoices().reduce((a, inv)=> a + inv.items.reduce((x, it)=> x + it.qty * it.price, 0) * (1 + (inv.tvaRate || 0) / 100), 0);
+    const supExp = loadPurchases().reduce((a, p)=> a + purchaseTotal(p), 0);
+    const mp = curMonthPrefix(), att = loadAttendance().filter(a=> a.date && a.date.startsWith(mp)), ext = loadExtras().filter(x=> x.date && x.date.startsWith(mp));
+    const wk = []; loadWorkers().forEach(w=>{ const d = workerCalc(w, att.filter(a=> a.workerId === w.id), ext.filter(x=> x.workerId === w.id), 1, true).total; if(d > 0) wk.push([w.name, d]); });
+    const wkExp = wk.reduce((a, w)=> a + w[1], 0);
+    const caisseExp = loadCaisseData().bons.reduce((a, b)=> a + bonTotal(b), 0);
+    const tx = loadTx(), mi = tx.filter(t=> t.type === 'income').reduce((a, t)=> a + t.amount, 0), me = tx.filter(t=> t.type === 'expense').reduce((a, t)=> a + t.amount, 0);
+    const income = pdfInc + mi, expense = clientsExp + supExp + wkExp + caisseExp + me;
+    const L = ['## ملخص قسم المحاسبة (هادي هي نفس الأرقام اللي كتبان فشاشة المحاسبة، وهي المرجع الأول لأي سؤال على حسابات الشركة)',
+      `- إجمالي الدخل: ${R(income)} درهم = فواتير "الفواتير" PDF شاملة TVA ${R(pdfInc)} + مداخيل يدوية ${R(mi)}`,
+      `- إجمالي المصاريف: ${R(expense)} درهم = مقدمو الخدمات ${R(clientsExp)} + الموردون ${R(supExp)} + أجور الشهر الحالي ${R(wkExp)} + السيولة النقدية ${R(caisseExp)} + مصاريف يدوية ${R(me)}`,
+      `- الصافي (الدخل − المصاريف): ${R(income - expense)} درهم`];
+    if(wk.length) L.push('- أجور الشهر الحالي لكل أجير (حضور + إضافي): ' + wk.map(w=> w[0] + ' ' + R(w[1])).join('، '));
+    const cat = {}; tx.forEach(t=>{ const k = (t.type === 'income' ? 'دخل' : 'مصروف') + ' — ' + (t.category || 'بلا فئة'); cat[k] = (cat[k] || 0) + t.amount; });
+    const ck = Object.keys(cat); if(ck.length) L.push('- المعاملات اليدوية حسب الفئة: ' + ck.map(k=> k + ' ' + R(cat[k])).join('، '));
+    L.push('- ملاحظة: عروض الأسعار (devis) والشيكات ما كيدخلوش فهاد المجاميع.');
+    return L.join('\n');
+  }catch(e){ console.error('تعذّر تجهيز ملخص المحاسبة:', e); return ''; }
+}
 function buildAccountingSnapshotText(){
   try{
     const lines = [];
@@ -3835,12 +3950,13 @@ function buildAccountingSnapshotText(){
         const wAtt = attendance.filter(a=>a.workerId===w.id);
         const presentDays = wAtt.filter(a=>a.status==='present').length + wAtt.filter(a=>a.status==='half').length*0.5;
         const due = w.type==='daily' ? presentDays*w.wage : w.wage;
-        lines.push(`- ${w.name} (${w.type==='daily'?'مياوم':'شهري'}): الأجرة ${w.wage.toLocaleString('en-US')} درهم${w.type==='daily'?'/يوم':'/شهر'}، أيام الحضور المسجلة ${presentDays}، المستحق ${due.toLocaleString('en-US')} درهم`);
+        lines.push(`- ${w.name} (${w.type==='daily'?'مياوم':'شهري'}): الأجرة ${w.wage.toLocaleString('en-US')} درهم${w.type==='daily'?'/يوم':'/شهر'}، أيام الحضور المسجلة (كل الفترات) ${presentDays}`);
       });
     }
 
+    const _sum = _acctSummaryText(); if(_sum) lines.unshift(_sum + '\n');
     if(lines.length === 0) return '';
-    return '\n\n--- بيانات الشركة الحالية (مصدر رسمي ودقيق، استعملها مباشرة بلا ما تسأل المستخدم) ---\n' + lines.join('\n');
+    return '\n\n--- بيانات الشركة الحالية (مصدر رسمي ودقيق من قسم المحاسبة. أي رقم كتجاوب بيه على حسابات الشركة خاصو يجي من هنا حصراً. إلا الرقم ماكايناش، قول بصراحة "ماكاينش فقسم المحاسبة" وما تخمنش) ---\n' + lines.join('\n');
   }catch(e){
     console.error('تعذّر تجهيز لقطة بيانات المحاسبة ليونس:', e);
     return '';
@@ -3943,7 +4059,9 @@ async function callGemini(key, msgs){
   return out;
 }
 
-const YUNUS_DARIJA_RULE = '\n\nقاعدة ثابتة وتغلب أي قاعدة أخرى فاللغة: جاوب دائماً بالدارجة المغربية الطبيعية (ماشي فصحى ولا لهجة مصرية ولا خليجية)، حتى إلا كتب المستخدم بالفصحى. ما تجاوبش بالفرنسية إلا إذا كتب بيها المستخدم. المستندات الرسمية فقط (فواتير، عقود، تقارير للتسليم، إنذارات) كتكون بفصحى مبسطة أو فرنسية قانونية. وما تبدأش الجواب بـ "عذراً" ولا "آسف" ولا "لا أستطيع". عمرك ما تطلب من المستخدم يدير خدمة تقدر تديرها نتا (حساب، صياغة، بحث قانوني، تحليل صورة). الرسائل اللي جاية من تسجيل صوتي ممكن يكون فيها أخطاء فالتعرف على الكلام — ردّ الكلمات المشوّهة لأقرب معنى منطقي حسب سياق الشركة (بناء، محاسبة، قانون، أجور، سلفات، موردين، زبناء، مواعيد، مواد بناء، صفقات عمومية) وجاوب على أقرب تفسير معقول بلا ما تسأل. إلا بقى الطلب غامض فعلاً، قول بالدارجة شنو فهمتي وسول سؤال واحد قصير فقط.';
+const YUNUS_ROUTING_RULE = '\n\nتوجيه الأسئلة (مهم): (1) أي سؤال على حسابات الشركة (دخل، مصاريف، صافي، موردين، عملاء، مقدمو الخدمات، أجراء، صندوق، مشاريع، فواتير، مبالغ مدفوعة أو متبقية): جاوب بدقة من قسم "بيانات الشركة" اللي تحت الرسالة حصراً. ابدأ بالرقم النهائي بالدرهم كما هو بلا تقريب، ثم بين الحساب فسطر (أ + ب − ج = ...) وحدد الفترة (أجور الشهر الحالي ماشي كل الأشهر). إلا الرقم ماكايناش فالبيانات قول "ماكاينش فقسم المحاسبة" وشنو خاص يتسجل، وما تخمنش ولا تكمل من راسك. (2) أي موضوع آخر (قانون، بناء، تقنية، صياغة، معلومات عامة، نصائح): جاوب بذكاء كخبير بخبرتك وبالبحث فالويب إلا كان متاح، وما تستعملش بيانات الشركة فيه. (3) إلا ما فهمتيش شنو بغا بالضبط، سول سؤال واحد قصير.';
+const YUNUS_ACCT_MISSING = '\n\nملاحظة: بيانات قسم المحاسبة ما مرفقاش مع هاد الرسالة. إلا السؤال كيخص أرقام أو حسابات الشركة، ما تجاوبش بأرقام من راسك: قل للمستخدم بلي خاصك تشوف قسم المحاسبة وسولو يعاود السؤال بكلمة واضحة (مثلاً مصاريف ولا حساب).';
+const YUNUS_DARIJA_RULE = '\n\nقاعدة ثابتة وتغلب أي قاعدة أخرى فاللغة: جاوب دائماً بالدارجة المغربية الطبيعية (ماشي فصحى ولا لهجة مصرية ولا خليجية)، حتى إلا كتب المستخدم بالفصحى. ما تجاوبش بالفرنسية إلا إذا كتب بيها المستخدم. المستندات الرسمية فقط (فواتير، عقود، تقارير للتسليم، إنذارات) كتكون بفصحى مبسطة أو فرنسية قانونية. وما تبدأش الجواب بـ "عذراً" ولا "آسف" ولا "لا أستطيع". عمرك ما تطلب من المستخدم يدير خدمة تقدر تديرها نتا (حساب، صياغة، بحث قانوني، تحليل صورة). الرسائل اللي جاية من تسجيل صوتي ممكن يكون فيها أخطاء فالتعرف على الكلام. صحّح غير الأخطاء الواضحة (كلمة وحدة مشوّهة والمعنى باين من سياق الشركة: بناء، محاسبة، قانون، أجور، سلفات، موردين، زبناء، مواعيد، مواد بناء، صفقات عمومية). إلا الجملة ما واضحاش ولا فيها كلمة ما فهمتيهاش، ما تخمنش ولا تجاوبش على شي حاجة ما سولش عليها المستخدم: قل بالدارجة شنو سمعتي وسول سؤال واحد قصير باش تتأكد، وانتظر الجواب.';
 // نسخة مضغوطة من البرومت لـ Groq وCerebras (حدود tokens صغيرة): نفس القواعد والأرقام القانونية/المحاسبية والكتل التقنية،
 // بلا الأمثلة الطويلة وبلا الأقسام العامة المكررة (BTP العامة، التسيير، المهام، لائحة القدرات). Gemini كيبقى بالنسخة الكاملة.
 let _yunusCompactCache = null;
@@ -3966,8 +4084,10 @@ function _yunusFullSystemPrompt(msgs, compact){
   const dayName = now.toLocaleDateString('ar', {weekday:'long'});
   const timeStr = now.toTimeString().slice(0,5);
   const lastUserMsg = (msgs.slice().reverse().find(m=>m.role==='user') || {}).text || '';
-  const accountingSnapshot = accountingSnapshotNeeded(lastUserMsg) ? buildAccountingSnapshotText() : '';
-  return (compact ? _yunusCompactPrompt() : SYSTEM_PROMPT) + YUNUS_DARIJA_RULE + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + accountingSnapshot + _metreContext(msgs);
+  const _recentUser = msgs.filter(m=>m.role==='user').slice(-2).map(m=>m.text || '').join(' ');
+  let accountingSnapshot = accountingSnapshotNeeded(_recentUser || lastUserMsg) ? buildAccountingSnapshotText() : '';
+  if(compact && accountingSnapshot.length > 7000) accountingSnapshot = accountingSnapshot.slice(0, 7000) + '\n… (باقي البيانات مقتطع لضيق الحدود)';
+  return (compact ? _yunusCompactPrompt() : SYSTEM_PROMPT) + YUNUS_DARIJA_RULE + YUNUS_ROUTING_RULE + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + (accountingSnapshot || YUNUS_ACCT_MISSING) + _metreContext(msgs);
 }
 
 async function _openAiStyleCall(url, apiKey, body, providerName){
@@ -4052,7 +4172,7 @@ async function callGroq(gKey, msgs){
   });
   const run = (model, ms)=>{
     const heavy = !voiceChatActive && _isHeavyQuery(last.text, !!hasImg);
-    const body = { model, messages: ms, temperature: voiceChatActive ? 0.7 : 0.3, max_completion_tokens: voiceChatActive ? 450 : (heavy ? 4096 : 2048) };
+    const body = { model, messages: ms, temperature: voiceChatActive ? 0.5 : 0.2, max_completion_tokens: voiceChatActive ? 450 : (heavy ? 4096 : 2048) };
     const isOss = /^openai\/gpt-oss/.test(model);
     if(isOss) body.reasoning_effort = heavy ? 'medium' : 'low';
     const url = 'https://api.groq.com/openai/v1/chat/completions';
@@ -4093,7 +4213,7 @@ async function callCerebras(cKey, msgs){
   return _openAiStyleCall('https://api.cerebras.ai/v1/chat/completions', cKey, {
     model: CEREBRAS_MODEL,
     messages: cMessages,
-    temperature: 0.3,
+    temperature: 0.2,
     max_completion_tokens: 2048,
     reasoning_effort: 'low'
   }, 'Cerebras');
