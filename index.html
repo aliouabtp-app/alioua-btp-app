@@ -1646,6 +1646,12 @@ input, select, textarea{ min-width:0; }
         <div class="card-form">
           <p class="mini-title" style="margin-bottom:8px;">📁 إضافة مشروع</p>
           <input type="text" id="projectName" dir="auto" placeholder="اسم المشروع (مثلاً: فيلا أيت أورير)">
+          <div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:-4px;">ثمن الصفقة (درهم) — اختياري</div>
+          <input type="number" id="projectContractAmount" inputmode="decimal" min="0" step="any" placeholder="مثال: 150000">
+          <select id="projectContractTtc" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:11px; background:var(--stone); font-family:inherit; font-size:13.5px; color:var(--ink);"><option value="1">الثمن شامل الضريبة (TTC)</option><option value="0">الثمن بدون الضريبة (HT)</option></select>
+          <div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:-4px;">الميزانية المخصصة للمصاريف (درهم) — اختياري</div>
+          <input type="number" id="projectBudget" inputmode="decimal" min="0" step="any" placeholder="مثال: 90000">
+          <label class="btn-ghost" style="text-align:center; cursor:pointer; display:block; font-size:12.5px;">📎 نسخة العقد (PDF أو صور) — اختياري<input type="file" id="projectContractFile" accept="application/pdf,image/*" multiple style="display:none;"></label>
           <button class="btn-primary" id="projectAddBtn" style="margin-top:10px;">➕ إضافة مشروع</button>
         </div>
         <div id="projectsList" style="margin-top:12px;"></div>
@@ -1680,6 +1686,7 @@ input, select, textarea{ min-width:0; }
         <div class="quote-total">HT: <span id="quoteTotal">0</span> — TTC: <span id="quoteTtc">0</span> درهم</div>
         <button class="btn-primary" id="quotePreviewBtn">👁 معاينة عرض السعر (DEVIS)</button>
         <button class="btn-ghost" id="quoteSendBtn" style="width:100%; margin-top:6px;">💬 صقل البنود عبر يونس</button>
+        <button class="btn-ghost" id="quoteNewBtn" style="width:100%; margin-top:6px;">🆕 تفريغ النموذج (عرض جديد)</button>
         <div id="quoteHistory" style="margin-top:12px;"></div>
       </div>
     </div>
@@ -2316,7 +2323,7 @@ const SYSTEM_PROMPT = `أنت "يونس"، المساعد الشخصي والم�
 
 ## 🚨 القواعد الذهبية (إلزامية):
 1. **الدقة قبل السرعة**: إلا كان السؤال واضح جاوب مباشرة وبلا لف ودوران. ولكن قبل ما تجاوب، تأكد أنك فهمتي شنو كيبغي المستخدم بالضبط. إلا كان فالسؤال معنى غامض، ولا كلمة ما فهمتيهاش ولا كتناسبش السياق، ولا معطية ضرورية ناقصة غادي تبدل الجواب (كمية، ثمن، اسم، تاريخ، نوع الوثيقة، الورش) فاش هاد الحالة سول **سؤال واحد قصير ودقيق** بالدارجة، وقل شنو فهمتي، وانتظر الجواب قبل ما تجاوب. ماشي كل سؤال خاصو توضيح: إلا كانت الفرضية بسيطة وما غاديش تبدل النتيجة، قولها بوضوح ("على أساس أن...") وجاوب. **ما تخمنش ولا تخترع جواب ماعندكش ليه أساس.** إلا ما عرفتيش، قول "ما عرفتش" وشنو خاصك باش تعرف. وإلا السؤال على معلومة كتخص الشركة (عميل، فاتورة، ورش، أجير، مبلغ) وما كايناش فـ "بيانات الشركة" اللي قدامك، قول بصراحة أنها ما كايناش ولا تعطي رقم من راسك. قبل ما تعطي أي حساب، رجع شوفو مرة أخرى وتأكد من الأرقام والوحدات.
-1ب. **مصدر الحقيقة**: أي سؤال على حسابات الشركة (دخل، مصاريف، صافي، موردين، عملاء، أجراء، صندوق، مشاريع، فواتير) جاوب عليه **حصراً** من "بيانات الشركة" اللي تحت الرسالة (قسم المحاسبة)، وابدأ بـ "ملخص قسم المحاسبة" لأنو هو نفس أرقام الشاشة. بين الحساب بإيجاز (شنو جمعتي وشنو طرحتي)، وإلا الرقم ماكايناش قول "ماكاينش فقسم المحاسبة" بلا ما تخمن. إلا السؤال على حسابات الشركة وما لقيتيش "بيانات الشركة" تحت الرسالة، قول للمستخدم يعاود يكتب السؤال بكلمة واضحة (مثلاً اسم المشروع أو المورد) باش تتحمل البيانات. أما الأسئلة الأخرى (تقنية، قانونية، بناء، عامة) فجاوب عليها كذكاء اصطناعي خبير وبدقة، وإلا ما فهمتيش سول سؤال واحد قصير.
+1ب. **مصدر الحقيقة**: أي سؤال على حسابات الشركة (دخل، مصاريف، صافي، موردين، عملاء، أجراء، صندوق، مشاريع، فواتير) جاوب عليه **حصراً** من "بيانات الشركة" اللي تحت الرسالة (قسم المحاسبة)، وابدأ بـ "ملخص قسم المحاسبة" لأنو هو نفس أرقام الشاشة. بين الحساب بإيجاز (شنو جمعتي وشنو طرحتي)، وإلا الرقم ماكايناش قول "ماكاينش فقسم المحاسبة" بلا ما تخمن. إلا السؤال على حسابات الشركة وما لقيتيش "بيانات الشركة" تحت الرسالة، قول للمستخدم يعاود يكتب السؤال بكلمة واضحة (مثلاً اسم المشروع أو المورد) باش تتحمل البيانات. أما الأسئلة الأخرى (تقنية، قانونية، بناء، عامة) فجاوب عليها كذكاء اصطناعي خبير وبدقة، وإلا ما فهمتيش سول سؤال واحد قصير. **المشاريع**: كل ما طلب المستخدم تحليل أو محاسبة أو تقرير أو رسم لمشروع بعينو، قارن أرقامو دائماً مع ثمن الصفقة والميزانية المخصصة المسجلين فـ "بيانات الشركة" (النسبة المفوترة من الصفقة، باقي الفوترة، النسبة المصروفة من الميزانية، المتبقي ولا التجاوز، الهامش المتوقع)، ونبّه بوضوح إلا وصل المصروف 90% من الميزانية ولا تجاوزها. فتقارير report والرسوم chart زيد صفوف/أعمدة المقارنة (الصفقة، الميزانية، المفوتر، المصروف). إلا ثمن الصفقة ولا الميزانية ما مسجلينش قول ليه بصراحة وذكّرو يسجلهم فقسم المشاريع، وما تخترعهمش.
 2. **أنت الخبير**: ما تقولش "روح للمحاسب" ولا "استشر المهندس". أنت هو المهندس والمحاسب والمحامي. عطي الحسابات والقوانين بالمرجع المغربي (PCGE، مدونة الشغل، CGI، TVA...). إلا ما كنتيش متأكد من رقم مادة ولا نسبة ولا ثمن، قول "تقريباً/حسب علمي، خاصو تأكيد من النص الرسمي" وما تخترعش. النسب والأثمنة كتتبدل: إلا عندك بحث فالويب استعملو.
 3. **الوثائق والصور**: إلا صيفط ليك المستخدم PDF أو صورة أو بلان، قراه مباشرة وحللو صفحة صفحة (السلم، الأبعاد، الجداول). ما تقولش "ما قريتهاش" ولا "بعثها واضحة". خد الأرقام المكتوبة فقط وما تقيسش بالعين.
 4. **بلا حشو**: ماتكتبش مقدمات طويلة بحال "أهلاً بك، يسعدني مساعدتك...". ادخل فـ الموضوع دغيا.
@@ -2349,6 +2356,15 @@ const SYSTEM_PROMPT = `أنت "يونس"، المساعد الشخصي والم�
 - **عرض سعر (DEVIS)** (كلما طلب عرض سعر/devis لزبون: إلا ما حدّدش الزبون سولو "لأي زبون؟" وذكّرو بأسماء العملاء المسجلين، وسولو على العنوان (Adresse) وعنوان الأشغال والبنود إلا كانو ناقصين. ما تخترعش الأثمنة ولا الكميات. الرقم التسلسلي (Dev NN/YY) والتاريخ والشعار والصيغة كيتحسبو أوتوماتيكيًا من حاسبة عرض السعر ديال قسم التسويق، فما تكتبهمش. كتب البنود بالفرنسية فـ d (Désignation) والوحدة فـ u: ENS أو M2 أو M3 أو ML أو U أو KG. إلا كان عندك الزبون والبنود والأثمنة عمّر الكتلة، وزيد جملة وحدة غير باش تقول إن المعاينة قبل التحميل):
 \`\`\`devis
 {"clientName":"...","clientAddr":"...","title":"TRAVAUX DE ...","items":[{"d":"...","u":"ENS","q":1,"p":0}],"tvaRate":20,"date":"YYYY-MM-DD"}
+\`\`\`
+- **تشجير / شجرة احترافية** (كلما طلب المستخدم تلخيص المشاكل ولا الأولويات ولا المقترحات ولا خطة عمل ولا تحليل **بتشجير** ولا "شجرة" ولا arborescence ولا "خريطة ذهنية" ولا mind map، وحتى بلا ما يذكر الصيغة إلا كان الجواب متفرع بطبيعتو (مشكل ← أسباب ← حلول)، عرضو كشجرة. ما تكتبش لائحة عادية ولا رسم بحروف (├── │ └──). السطر الأول هو عنوان الشجرة، وكل فرع فسطر بـ "- " وكل مستوى جديد بزيادة فراغين فالبداية، أقصى 4 مستويات. كل عقدة قصيرة (أقل من 12 كلمة) وواضحة، والمشاكل المتشابهة جمعها فعقدة وحدة. للأولوية بدا العقدة بـ 🔴 (عاجل) ولا 🟠 (مهم) ولا 🟢 (عادي)، وللرقم ولا الملاحظة حطها بعد " :: ". رتب الفروع من الأهم للأقل أهمية. الأرقام كتجي من "بيانات الشركة" فقط. التطبيق كيحول الكتلة أوتوماتيكيًا لشجرة احترافية قابلة للطي بأزرار صورة وPDF، فما تقولش بلي ما تقدرش. زيد بعد الكتلة جملة وحدة فيها أهم نقطة):
+\`\`\`tree
+المشاكل الحالية فالورش
+- 🔴 مالية :: عاجل
+  - تأخر تحصيل الفواتير :: 45,000 درهم
+    - 🟢 حل: تذكير أسبوعي للزبون
+- 🟠 يد عاملة
+  - غياب متكرر فالورش
 \`\`\`
 - **موعد/تذكير** (استعمل التاريخ ديال اليوم لحساب "غدا"، "بعد غد"، أسماء الأيام. إلا كانو عدة مواعيد فجدول، كتلة منفصلة لكل موعد بلا تأكيد، وفالأخير جملة وحدة بالعدد):
 \`\`\`add_appointment
@@ -2563,7 +2579,7 @@ function stripLatex(t){
 /* ---------- عرض غني: نص + جداول + رسوم بيانية + صور + مواعيد ---------- */
 function renderRichBotContent(container, rawText){
   // نقسم النص لأجزاء: كتل chart، كتل image، كتل add_appointment، وبقية النص
-  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```report\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)|```metre\s*([\s\S]*?)```|```devis\s*([\s\S]*?)```/g;
+  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```report\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)|```metre\s*([\s\S]*?)```|```devis\s*([\s\S]*?)```|```tree\s*([\s\S]*?)```/g;
   let lastIndex = 0;
   let match;
   const parts = [];
@@ -2574,6 +2590,7 @@ function renderRichBotContent(container, rawText){
     else if(match[3] !== undefined){ parts.push({type:'report', content: match[3].trim()}); }
     else if(match[6] !== undefined){ parts.push({type:'metre', content: match[6].trim()}); }
     else if(match[7] !== undefined){ parts.push({type:'devis', content: match[7].trim()}); }
+    else if(match[8] !== undefined){ parts.push({type:'tree', content: match[8].trim()}); }
     else{ parts.push({type:'image', content: (match[4] !== undefined ? match[4] : match[5]).trim()}); }
     lastIndex = blockRegex.lastIndex;
   }
@@ -2582,7 +2599,7 @@ function renderRichBotContent(container, rawText){
 
   parts.forEach(part=>{
     if(part.type === 'text'){
-      appendTextWithTables(container, stripLatex(part.content));
+      appendTextWithTables(container, fixNumGroups(stripLatex(part.content)));
     }else if(part.type === 'chart'){
       appendChart(container, part.content);
     }else if(part.type === 'add_appointment'){
@@ -2591,6 +2608,8 @@ function renderRichBotContent(container, rawText){
       appendReportAction(container, part.content);
     }else if(part.type === 'devis'){
       appendDevisAction(container, part.content);
+    }else if(part.type === 'tree'){
+      try{ appendTreeCard(container, part.content); }catch(e){ appendTextWithTables(container, fixNumGroups(part.content)); }
     }else if(part.type === 'metre'){
       try{ appendMetreCard(container, part.content); }catch(e){ appendTextWithTables(container, '⚠️ تعذر عرض جدول المتري.'); }
     }else if(part.type === 'image'){
@@ -2686,7 +2705,7 @@ function _chNorm(cfg){
   const labels = (cfg.labels || []).map(x=> String(x));
   const datasets = (cfg.datasets || []).map(d=>({ label: String(d.label || ''), data: (d.data || []).map(v=> +v || 0) }));
   if(!labels.length || !datasets.length || !datasets[0].data.length) throw new Error('معطيات الرسم ناقصة');
-  return { type, labels, datasets, title: String(cfg.title || ''), unit: String(cfg.unit || 'DH') };
+  return { type, labels, datasets, title: fixNumGroups(String(cfg.title || '')), unit: String(cfg.unit || 'DH') };
 }
 function _chConfig(n, o){
   const sliced = n.type === 'pie' || n.type === 'doughnut', f = o.fs, horiz = n.type === 'bar' && n.labels.length > 6;
@@ -2815,6 +2834,233 @@ function appendChart(container, jsonText){
   }catch(e){
     wrap.innerHTML = '<div style="font-size:12px; color:var(--ink-soft);">تعذّر عرض الرسم البياني: ' + escapeHtml(String(e && e.message || e)) + '</div>';
   }
+}
+
+/* ===== التشجير (كتلة tree): شجرة احترافية قابلة للطي + تصدير صورة/PDF ===== */
+(function(){
+  if(document.getElementById('ytTreeCss')) return;
+  const s = document.createElement('style'); s.id = 'ytTreeCss';
+  s.textContent = `
+.yt-wrap{ margin:8px 0; background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:10px; max-width:100%; overflow-x:auto; }
+.yt-title{ background:var(--navy); color:#fff; border-radius:10px; padding:9px 12px; font-weight:700; font-size:13.5px; line-height:1.6; margin-bottom:8px; }
+.yt-ul{ list-style:none; margin:0; padding:0; }
+.yt-li{ position:relative; padding-inline-start:18px; }
+.yt-li::before{ content:''; position:absolute; inset-inline-start:0; top:0; height:17px; width:14px; border-bottom:2px solid #b8c4cf; border-inline-start:2px solid #b8c4cf; border-end-start-radius:9px; }
+.yt-li::after{ content:''; position:absolute; inset-inline-start:0; top:17px; bottom:0; border-inline-start:2px solid #b8c4cf; }
+.yt-li:last-child::after{ display:none; }
+.yt-lv1{ padding-inline-start:0; margin-top:8px; }
+.yt-lv1::before, .yt-lv1::after{ display:none; }
+.yt-li > .yt-ul{ margin-inline-start:0; }
+.yt-lv1 > .yt-ul{ margin-inline-start:14px; }
+.yt-node{ display:flex; align-items:flex-start; gap:7px; padding:4px 0; min-height:34px; font-size:12.5px; line-height:1.65; color:var(--ink); }
+.yt-lv1 > .yt-node{ background:#EAF2F8; border:1px solid #C9DCEB; border-inline-start:5px solid var(--blue-mid); border-radius:10px; padding:7px 10px; font-weight:700; font-size:13px; color:var(--navy-deep); min-height:0; }
+.yt-lv2 > .yt-node{ font-weight:600; }
+.yt-has > .yt-node{ cursor:pointer; }
+.yt-tg{ flex:none; width:16px; text-align:center; color:var(--ink-soft); font-size:11px; margin-top:1px; user-select:none; }
+.yt-dot{ flex:none; width:9px; height:9px; border-radius:50%; margin-top:8px; background:#9aa7b2; }
+.yt-lv2 > .yt-node .yt-dot{ background:var(--blue-mid); }
+.yt-dot.p-r{ background:#c62828; } .yt-dot.p-o{ background:#ef8a17; } .yt-dot.p-y{ background:#e0b400; } .yt-dot.p-g{ background:#2e9e57; } .yt-dot.p-b{ background:#1C6FA5; }
+.yt-lv1 > .yt-node .yt-dot{ display:none; }
+.yt-lv1.has-pri-r > .yt-node{ border-inline-start-color:#c62828; } .yt-lv1.has-pri-o > .yt-node{ border-inline-start-color:#ef8a17; } .yt-lv1.has-pri-y > .yt-node{ border-inline-start-color:#e0b400; } .yt-lv1.has-pri-g > .yt-node{ border-inline-start-color:#2e9e57; } .yt-lv1.has-pri-b > .yt-node{ border-inline-start-color:#1C6FA5; }
+.yt-body{ flex:1; min-width:0; }
+.yt-note{ display:inline-block; margin-inline-start:6px; font-size:11px; font-weight:600; color:var(--ink-soft); background:var(--stone); border-radius:6px; padding:0 7px; }
+.yt-li.yt-closed > .yt-ul{ display:none; }
+`;
+  document.head.appendChild(s);
+})();
+
+const _YT_PRI = {'🔴':'r', '🟠':'o', '🟡':'y', '🟢':'g', '🔵':'b'};
+const _YT_PRI_COLOR = {r:'#c62828', o:'#ef8a17', y:'#e0b400', g:'#2e9e57', b:'#1C6FA5'};
+
+/* نص المخطط (أسطر بفراغات + "- ") → شجرة. كيقبل حتى رسم ├── │ └── ولوائح مرقّمة. */
+function _treeParse(text){
+  const lines = String(text || '').replace(/\r/g, '').replace(/\t/g, '  ').split('\n').filter(l=> l.trim());
+  const mkNode = body=>{
+    let s = fixNumGroups(body.replace(/\*\*/g, '')).trim(), note = '', pri = null;
+    const i = s.indexOf(' :: ');
+    if(i >= 0){ note = s.slice(i + 4).trim(); s = s.slice(0, i).trim(); }
+    const f = Array.from(s)[0];
+    if(_YT_PRI[f]){ pri = _YT_PRI[f]; s = s.slice(f.length).trim(); }
+    return {t: s, note, pri, kids: []};
+  };
+  const root = {t: '', kids: []}, stack = [];
+  let first = true, count = 0;
+  lines.forEach(line=>{
+    if(count >= 150) return;
+    if(first){
+      first = false;
+      const t0 = line.trim();
+      if(!/^([-*•▪◦–—]+\s|\d+[.)]\s|[├└│|])/.test(t0) && /^\S/.test(line)){ root.t = t0.replace(/^#+\s*/, '').replace(/\*\*/g, ''); return; }
+    }
+    const m = /^[\s│├└┬┼─|]*(?:[-*•▪◦–—]+\s+|\d+[.)]\s+)?/.exec(line)[0];
+    const body = line.slice(m.length).trim();
+    if(!body) return;
+    const node = mkNode(body); if(!node.t) return;
+    const indent = m.length;
+    while(stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
+    (stack.length ? stack[stack.length - 1].node : root).kids.push(node);
+    stack.push({indent, node}); count++;
+  });
+  if(!root.kids.length) throw new Error('شجرة خاوية');
+  const ar = (String(text).match(/[\u0600-\u06FF]/g) || []).length, la = (String(text).match(/[A-Za-zÀ-ÿ]/g) || []).length;
+  return {title: root.t, kids: root.kids, rtl: ar >= la};
+}
+function _treeText(tree){
+  const out = []; if(tree.title) out.push(tree.title);
+  const walk = (ns, d)=> ns.forEach(n=>{ out.push('  '.repeat(d) + '- ' + (n.pri ? (Object.keys(_YT_PRI).find(k=> _YT_PRI[k] === n.pri) || '') + ' ' : '') + n.t + (n.note ? ' :: ' + n.note : '')); walk(n.kids, d + 1); });
+  walk(tree.kids, 0); return out.join('\n');
+}
+
+function appendTreeCard(container, text){
+  const tree = _treeParse(text);
+  const wrap = document.createElement('div'); wrap.className = 'yt-wrap'; wrap.setAttribute('dir', tree.rtl ? 'rtl' : 'ltr');
+  if(tree.title){ const h = document.createElement('div'); h.className = 'yt-title'; h.setAttribute('dir', 'auto'); h.textContent = tree.title; wrap.appendChild(h); }
+  const OPEN = '▾', SHUT = tree.rtl ? '◂' : '▸';
+  const build = (nodes, lv)=>{
+    const ul = document.createElement('ul'); ul.className = 'yt-ul';
+    nodes.forEach(n=>{
+      const li = document.createElement('li'), has = n.kids.length > 0;
+      li.className = 'yt-li yt-lv' + Math.min(lv, 3) + (has ? ' yt-has' : '') + (n.pri && lv === 1 ? ' has-pri-' + n.pri : '');
+      const row = document.createElement('div'); row.className = 'yt-node';
+      const tg = document.createElement('span'); tg.className = 'yt-tg'; tg.textContent = has ? OPEN : ''; row.appendChild(tg);
+      const dot = document.createElement('span'); dot.className = 'yt-dot' + (n.pri ? ' p-' + n.pri : ''); row.appendChild(dot);
+      const body = document.createElement('div'); body.className = 'yt-body'; body.setAttribute('dir', 'auto');
+      const tx = document.createElement('span'); tx.textContent = n.t; body.appendChild(tx);
+      if(n.note){ const nt = document.createElement('span'); nt.className = 'yt-note'; nt.textContent = n.note; body.appendChild(nt); }
+      row.appendChild(body); li.appendChild(row);
+      if(has){
+        li.appendChild(build(n.kids, lv + 1));
+        row.addEventListener('click', ()=>{ const c = li.classList.toggle('yt-closed'); tg.textContent = c ? SHUT : OPEN; });
+      }
+      ul.appendChild(li);
+    });
+    return ul;
+  };
+  wrap.appendChild(build(tree.kids, 1));
+  const row = document.createElement('div'); row.className = 'chart-actions';
+  const mk = (lab, fn)=>{ const b = document.createElement('button'); b.className = 'chart-share-btn'; b.textContent = lab; b.addEventListener('click', ()=>{ try{ fn(b); }catch(e){ alert('تعذّر تجهيز الملف: ' + (e && e.message || e)); } }); row.appendChild(b); };
+  mk('🖼 صورة', ()=> _treeOpen(tree, 'image'));
+  mk('📄 PDF', ()=> _treeOpen(tree, 'pdf'));
+  mk('📋 نسخ', b=>{
+    const t = _treeText(tree), done = ()=>{ const o = b.textContent; b.textContent = '✅ تنسخ'; setTimeout(()=> b.textContent = o, 1500); };
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, ()=>{});
+    else { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); done(); }catch(e){} ta.remove(); }
+  });
+  mk('⇕ طي/فتح', ()=>{
+    const tops = Array.from(wrap.querySelectorAll('.yt-lv1.yt-has')); if(!tops.length) return;
+    const anyOpen = tops.some(l=> !l.classList.contains('yt-closed'));
+    tops.forEach(l=>{ l.classList.toggle('yt-closed', anyOpen); const g = l.querySelector(':scope > .yt-node > .yt-tg'); if(g) g.textContent = anyOpen ? SHUT : OPEN; });
+  });
+  wrap.appendChild(row);
+  container.appendChild(wrap);
+}
+
+/* ---- التصدير: كانفاس A4 (1240×1754) بنفس هوية رسوم الشركة ---- */
+function _ytRR(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function _treeLayout(tree, mg, W, P, yStart, pageH, paginate){
+  const rtl = tree.rtl, s = rtl ? -1 : 1, INDENT = 60, TOPM = 80, BOTM = 90, items = [];
+  const sx = L=> rtl ? (W - P - (L - 1) * INDENT) : (P + (L - 1) * INDENT);
+  const sizeOf = L=> L === 1 ? 30 : (L === 2 ? 27 : 25);
+  const wrap = (txt, font, maxW)=>{
+    mg.font = font; const out = []; let cur = '';
+    String(txt).split(/\s+/).forEach(w=>{ const t = cur ? cur + ' ' + w : w; if(cur && mg.measureText(t).width > maxW){ out.push(cur); cur = w; } else cur = t; });
+    if(cur) out.push(cur); return out.length ? out : [''];
+  };
+  let y = yStart;
+  const place = (n, L, parent)=>{
+    const sz = sizeOf(L), font = (L === 1 ? 'bold ' : (L === 2 ? '600 ' : '')) + sz + 'px ' + _CH_FONT, lh = Math.round(sz * 1.5), pad = L === 1 ? 14 : 6;
+    const txOff = L === 1 ? 40 : 36, startX = sx(L), tx = startX + s * txOff;
+    const maxW = (rtl ? tx - P : W - P - tx) - 8;
+    const lines = wrap(n.t, font, maxW), nfont = '22px ' + _CH_FONT, nlines = n.note ? wrap(n.note, nfont, maxW) : [];
+    const h = pad * 2 + lines.length * lh + nlines.length * 30 + (nlines.length ? 4 : 0);
+    if(paginate){
+      const pg = Math.floor(y / pageH), limit = (pg + 1) * pageH - BOTM;
+      if(y + h > limit && y > pg * pageH + TOPM + 4) y = (pg + 1) * pageH + TOPM;
+    }
+    const it = {n, L, y, h, lines, nlines, font, nfont, lh, pad, tx, sx: startX, kids: [], mid: y + pad + lh / 2, parent};
+    items.push(it); if(parent) parent.kids.push(it);
+    y += h + (L === 1 ? 12 : 6);
+    n.kids.forEach(k=> place(k, L + 1, it));
+    if(L === 1) y += 6;
+    return it;
+  };
+  tree.kids.forEach(k=> place(k, 1, null));
+  return {items, yEnd: y};
+}
+async function _treeSheet(tree, paginate){
+  try{ await document.fonts.ready; }catch(e){}
+  const W = 1240, PH = 1754, P = 70, rtl = tree.rtl, s = rtl ? -1 : 1, ar = t=> /[\u0600-\u06FF]/.test(t);
+  const mg = document.createElement('canvas').getContext('2d');
+  // رأس الصفحة: الشعار + التاريخ + خط أزرق + عنوان الشجرة
+  const tFont = 'bold 38px ' + _CH_FONT, tLines = [];
+  mg.font = tFont;
+  { let cur = ''; String(tree.title || 'شجرة').split(/\s+/).forEach(w=>{ const t = cur ? cur + ' ' + w : w; if(cur && mg.measureText(t).width > W - 2 * P - 60){ tLines.push(cur); cur = w; } else cur = t; }); if(cur) tLines.push(cur); }
+  const barH = tLines.length * 54 + 34, barY = 60 + 120 + 4 + 50;
+  const yStart = barY + barH + 40;
+  const lay = _treeLayout(tree, mg, W, P, yStart, PH, paginate);
+  const H = paginate ? Math.max(1, Math.ceil((lay.yEnd + 100) / PH)) * PH : Math.max(900, lay.yEnd + 110);
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+  let info = {}; try{ info = loadCompanyInfo() || {}; }catch(e){}
+  if(info.logoDataUrl){ try{ const im = await _chImg(info.logoDataUrl), hh = 90; g.drawImage(im, P, 60, Math.min(im.width / im.height * hh, 300), hh); }catch(e){} }
+  g.fillStyle = '#6b7280'; g.font = '24px ' + _CH_FONT; g.textAlign = 'right'; g.direction = 'ltr'; g.textBaseline = 'alphabetic'; g.fillText(new Date().toLocaleDateString('fr-FR'), W - P, 100);
+  g.fillStyle = '#1E64A0'; g.fillRect(P, 184, W - 2 * P, 4);
+  g.fillStyle = '#123F5C'; _ytRR(g, P, barY, W - 2 * P, barH, 18); g.fill();
+  g.fillStyle = '#ffffff'; g.font = tFont; g.textAlign = 'center'; g.textBaseline = 'middle';
+  tLines.forEach((l, i)=>{ g.direction = ar(l) ? 'rtl' : 'ltr'; g.fillText(l, W / 2, barY + 17 + 27 + i * 54); });
+  // الروابط (خطوط الشجرة)
+  g.strokeStyle = '#b8c4cf'; g.lineWidth = 3; g.lineCap = 'round';
+  lay.items.forEach(it=>{
+    if(!it.kids.length) return;
+    const stemX = it.sx + s * (it.L === 1 ? 26 : 14), y1 = it.y + it.h, last = it.kids[it.kids.length - 1];
+    g.beginPath(); g.moveTo(stemX, y1); g.lineTo(stemX, last.mid); g.stroke();
+    it.kids.forEach(k=>{ g.beginPath(); g.moveTo(stemX, k.mid); g.lineTo(k.sx + s * 14 - s * 11, k.mid); g.stroke(); });
+  });
+  // العقد
+  lay.items.forEach(it=>{
+    const col = it.n.pri ? _YT_PRI_COLOR[it.n.pri] : null;
+    if(it.L === 1){
+      const bw = W - 2 * P, bx = P;
+      g.fillStyle = '#EAF2F8'; _ytRR(g, bx, it.y, bw, it.h, 14); g.fill();
+      g.strokeStyle = '#C9DCEB'; g.lineWidth = 2; _ytRR(g, bx, it.y, bw, it.h, 14); g.stroke();
+      g.fillStyle = col || '#1C6FA5'; _ytRR(g, rtl ? bx + bw - 10 : bx, it.y, 10, it.h, 5); g.fill();
+    } else {
+      g.fillStyle = col || (it.L === 2 ? '#1C6FA5' : '#9aa7b2'); g.beginPath(); g.arc(it.sx + s * 14, it.mid, 7.5, 0, Math.PI * 2); g.fill();
+    }
+    g.textBaseline = 'middle'; g.textAlign = rtl ? 'right' : 'left';
+    g.font = it.font; g.fillStyle = it.L === 1 ? '#123F5C' : '#1f2937';
+    it.lines.forEach((l, i)=>{ g.direction = ar(l) ? 'rtl' : 'ltr'; g.fillText(l, it.tx, it.y + it.pad + i * it.lh + it.lh / 2); });
+    if(it.nlines.length){
+      g.font = it.nfont; g.fillStyle = '#6b7280';
+      it.nlines.forEach((l, i)=>{ g.direction = ar(l) ? 'rtl' : 'ltr'; g.fillText(l, it.tx, it.y + it.pad + it.lines.length * it.lh + 4 + i * 30 + 15); });
+    }
+  });
+  g.fillStyle = '#9ca3af'; g.font = '22px ' + _CH_FONT; g.textAlign = 'center'; g.direction = 'ltr'; g.textBaseline = 'alphabetic'; g.fillText('ALIOUA BTP', W / 2, H - 40);
+  return c;
+}
+function _treeOpen(tree, first){
+  const base = ('شجرة-' + (tree.title || 'ALIOUA')).replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 60);
+  let imgP = null, pdfP = null;
+  const imgCv = ()=> imgP || (imgP = _treeSheet(tree, false));
+  const pdfCv = ()=> pdfP || (pdfP = _treeSheet(tree, true));
+  const pdfDoc = async ()=>{
+    if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش، تأكد من الإنترنت.');
+    const cv = await pdfCv(), PH = 1754, n = Math.max(1, Math.round(cv.height / PH)), d = new window.jspdf.jsPDF({unit: 'mm', format: 'a4', orientation: 'p'});
+    for(let i = 0; i < n; i++){
+      const pc = document.createElement('canvas'); pc.width = cv.width; pc.height = PH;
+      const pg = pc.getContext('2d'); pg.fillStyle = '#ffffff'; pg.fillRect(0, 0, pc.width, PH); pg.drawImage(cv, 0, i * PH, cv.width, PH, 0, 0, cv.width, PH);
+      if(i) d.addPage(); d.addImage(pc.toDataURL('image/png'), 'PNG', 0, 0, 210, 297);
+    }
+    return d;
+  };
+  openFilePreview({title: tree.title || 'شجرة', first, variants: [
+    {key: 'image', label: '🖼 صورة', filename: base + '.png',
+      render: async ()=>{ const cv = await imgCv(), im = document.createElement('img'); im.src = cv.toDataURL('image/png'); im.style.cssText = 'width:100%; max-width:720px; display:block; margin:0 auto; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.25);'; return im; },
+      blob: async ()=>{ const cv = await imgCv(); return await new Promise(r=> cv.toBlob(r, 'image/png')); }},
+    {key: 'pdf', label: 'PDF', filename: base + '.pdf',
+      render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, await pdfDoc()); return w; },
+      blob: async ()=> (await pdfDoc()).output('blob')}
+  ]});
 }
 
 /* ---------- Google Calendar ---------- */
@@ -3207,6 +3453,7 @@ function appendReportAction(container, jsonText){
   try{
     const data = JSON.parse(jsonText);
     if(!data.title || !Array.isArray(data.columns) || !Array.isArray(data.rows)) throw new Error('بيانات ناقصة');
+    try{ const fx = v=> typeof v === 'string' ? fixNumGroups(v) : v; data.title = fx(data.title); data.columns = data.columns.map(fx); data.rows = data.rows.map(r=> Array.isArray(r) ? r.map(fx) : r); if(data.summary) data.summary = fx(data.summary); }catch(e){}
     const formats = Array.isArray(data.formats) && data.formats.length ? data.formats : ['excel','pdf'];
     wrap.innerHTML = `<span class="appt-action-icon">📊</span> جهزت تقرير "<strong>${escapeHtml(data.title)}</strong>" — اضغطي للمعاينة قبل التحميل:`;
     const btnRow = document.createElement('div');
@@ -3396,6 +3643,7 @@ function openFilePreview(cfg){
   if((cfg.variants || []).length > 1) cfg.variants.forEach(v=>{ const b = document.createElement('button'); b.dataset.k = v.key; b.textContent = v.label; b.style.cssText = 'padding:6px 12px; font-size:12.5px;'; b.addEventListener('click', ()=> show(v)); tabs.appendChild(b); });
   (cfg.actions || []).forEach(a=>{ const b = document.createElement('button'); b.className = 'btn-ghost'; b.style.cssText = 'flex:1 1 100%;'; b.textContent = a.label; b.addEventListener('click', async ()=>{ b.disabled = true; try{ await a.fn(); }catch(e){ alert(e && e.message ? e.message : e); } b.disabled = false; }); dl.parentNode.insertBefore(b, dl); });
   dl.parentNode.style.flexWrap = 'wrap';
+  if(cfg.noEdit) m.querySelector('#fpEdit').style.display = 'none';
   m.querySelector('#fpClose').addEventListener('click', ()=> m.remove());
   m.querySelector('#fpEdit').addEventListener('click', ()=>{ m.remove(); (cfg.onEdit || (()=> _prefillChat('عدّل هاد الملف قبل التحميل: ')))(); });
   dl.addEventListener('click', async ()=>{
@@ -3698,7 +3946,7 @@ function _lastAttachmentIndex(msgs, windowSize){
 // باش توقف هاد الخاصية: بدّل القيمة لـ false.
 const HEAVY_GEMINI_FIRST = true;
 let _geminiQuotaUntil = 0; // إلا Gemini وصل لحدو، كنتفاداو نبداو بيه 10 دقايق
-const _HEAVY_RX = /(احسب|حساب|شحال|بشحال|كميات|الكمية|متري|métré|metre|béton|بيتون|خرسانة|حديد|إسمنت|السيمة|ciment|dalle|longrine|chaînage|poteau|semelle|مساحة|حجم|TVA|\bIS\b|\bIR\b|CNSS|AMO|PCGE|قيد|ميزانية|bilan|CPC|اهتلاك|إهتلاك|ضريبة|ضريبي|قانون|مادة|الفصل|مدونة|عقد|إنذار|صفقة|رخصة|تقرير|فاتورة|devis|décompte|retenue|ضمان|تحليل|قارن|دراسة|خطة|جدولة|ربح|خسارة|هامش|تكلفة)/i;
+const _HEAVY_RX = /(احسب|حساب|شحال|بشحال|كميات|الكمية|متري|métré|metre|béton|بيتون|خرسانة|حديد|إسمنت|السيمة|ciment|dalle|longrine|chaînage|poteau|semelle|مساحة|حجم|TVA|\bIS\b|\bIR\b|CNSS|AMO|PCGE|قيد|ميزانية|bilan|CPC|اهتلاك|إهتلاك|ضريبة|ضريبي|قانون|مادة|الفصل|مدونة|عقد|إنذار|صفقة|رخصة|تقرير|فاتورة|devis|décompte|retenue|ضمان|تحليل|قارن|دراسة|خطة|جدولة|ربح|خسارة|هامش|تكلفة|تشجير|شجرة|arborescence|أولويات|مشاكل|مقترحات)/i;
 function _isHeavyQuery(text, hasAtt){
   if(hasAtt) return true;
   const s = (text || '').trim();
@@ -3840,7 +4088,7 @@ async function sendMessage(){
 function accountingSnapshotNeeded(text){
   if(!text) return false;
   const t = String(text).toLowerCase();
-  const kw = ['مورد','عميل','عملاء','زبون','زبناء','مصروف','مصاريف','مصريف','سيولة','صندوق','مشروع','مشاريع','ورش','أجير','أجراء','اجير','اجراء','عامل','عمال','أجرة','اجرة','أجور','اجور','سلف','كريدي','دين','ديون','محاسبة','دخل','مداخيل','ربح','أرباح','خسارة','صافي','فاتور','فواتير','تقرير','رصيد','مستحق','حساب','كشف','خلص','خلصنا','باقي','شحال','مجموع','ميزانية','ضريبة','tva','facture','devis','chantier','caisse','fournisseur','client','salaire','dépense','depense','recette','bénéfice','benefice','solde','compta','budget','total','retenue','acompte','avance'];
+  const kw = ['مورد','عميل','عملاء','زبون','زبناء','مصروف','مصاريف','مصريف','سيولة','صندوق','مشروع','مشاريع','ورش','أجير','أجراء','اجير','اجراء','عامل','عمال','أجرة','اجرة','أجور','اجور','سلف','كريدي','دين','ديون','محاسبة','دخل','مداخيل','ربح','أرباح','خسارة','صافي','فاتور','فواتير','تقرير','رصيد','مستحق','حساب','كشف','خلص','خلصنا','باقي','شحال','مجموع','ميزانية','ضريبة','tva','facture','devis','chantier','caisse','fournisseur','client','salaire','dépense','depense','recette','bénéfice','benefice','solde','compta','budget','total','retenue','acompte','avance','صفقة','صفقات','عقد','marché','marche','contrat','ثمن'];
   if(kw.some(k=> t.includes(k))) return true;
   try{
     const names = [].concat(loadSuppliers(), loadClients(), loadCustomers(), loadProjects(), loadWorkers()).map(x=> String((x && x.name) || '').toLowerCase()).filter(n=> n.length >= 3);
@@ -3923,25 +4171,8 @@ function buildAccountingSnapshotText(){
     const bonsTotal = caisse.bons.reduce((s,b)=>s+bonTotal(b),0);
     lines.push(`\n## السيولة (الصندوق)\n- إجمالي التغذية: ${fundingTotal.toLocaleString('en-US')} درهم\n- إجمالي المصاريف النقدية: ${bonsTotal.toLocaleString('en-US')} درهم\n- الرصيد الحالي: ${(fundingTotal-bonsTotal).toLocaleString('en-US')} درهم`);
 
-    // المشاريع
-    if(projects.length){
-      lines.push('\n## المشاريع');
-      projects.forEach(proj=>{
-        const projPdfInc = pdfInvoices.filter(i=>i.projectId===proj.id).reduce((s,i)=> s + i.items.reduce((ss,it)=>ss+(it.qty*it.price),0)*(1+(i.tvaRate||0)/100), 0);
-        const projClientExp = simpleInvoices.filter(inv=>{ const c = clients.find(x=>x.id===inv.clientId); return c && c.projectId===proj.id; }).reduce((s,inv)=>s+invoiceTotal(inv),0);
-        const projCaisseExp = caisse.bons.filter(b=>b.projectId===proj.id).reduce((s,b)=>s+bonTotal(b),0);
-        const projPurchExp = purchases.filter(p=>p.projectId===proj.id).reduce((s,p)=>s+purchaseTotal(p),0);
-        const projWorkers = workers.filter(w=>w.projectId===proj.id);
-        const projWorkerExp = projWorkers.reduce((sum,w)=>{
-          const wAtt = attendance.filter(a=>a.workerId===w.id);
-          if(!wAtt.length) return sum;
-          const presentDays = wAtt.filter(a=>a.status==='present').length + wAtt.filter(a=>a.status==='half').length*0.5;
-          return sum + (w.type==='daily' ? presentDays*w.wage : w.wage);
-        }, 0);
-        const totalExp = projClientExp + projCaisseExp + projPurchExp + projWorkerExp;
-        lines.push(`- ${proj.name}: الدخل ${projPdfInc.toLocaleString('en-US')} درهم، المصاريف ${totalExp.toLocaleString('en-US')} درهم، الصافي ${(projPdfInc-totalExp).toLocaleString('en-US')} درهم`);
-      });
-    }
+    // المشاريع (مع الصفقة والميزانية) كتتحط فبداية البيانات
+    let projBlock = ''; try{ projBlock = _projSnapshotText(); }catch(e){ console.error('تعذّر تجهيز مشاريع يونس:', e); }
 
     // الأجراء
     if(workers.length){
@@ -3954,6 +4185,7 @@ function buildAccountingSnapshotText(){
       });
     }
 
+    if(projBlock) lines.unshift(projBlock + '\n');
     const _sum = _acctSummaryText(); if(_sum) lines.unshift(_sum + '\n');
     if(lines.length === 0) return '';
     return '\n\n--- بيانات الشركة الحالية (مصدر رسمي ودقيق من قسم المحاسبة. أي رقم كتجاوب بيه على حسابات الشركة خاصو يجي من هنا حصراً. إلا الرقم ماكايناش، قول بصراحة "ماكاينش فقسم المحاسبة" وما تخمنش) ---\n' + lines.join('\n');
@@ -4059,7 +4291,7 @@ async function callGemini(key, msgs){
   return out;
 }
 
-const YUNUS_ROUTING_RULE = '\n\nتوجيه الأسئلة (مهم): (1) أي سؤال على حسابات الشركة (دخل، مصاريف، صافي، موردين، عملاء، مقدمو الخدمات، أجراء، صندوق، مشاريع، فواتير، مبالغ مدفوعة أو متبقية): جاوب بدقة من قسم "بيانات الشركة" اللي تحت الرسالة حصراً. ابدأ بالرقم النهائي بالدرهم كما هو بلا تقريب، ثم بين الحساب فسطر (أ + ب − ج = ...) وحدد الفترة (أجور الشهر الحالي ماشي كل الأشهر). إلا الرقم ماكايناش فالبيانات قول "ماكاينش فقسم المحاسبة" وشنو خاص يتسجل، وما تخمنش ولا تكمل من راسك. (2) أي موضوع آخر (قانون، بناء، تقنية، صياغة، معلومات عامة، نصائح): جاوب بذكاء كخبير بخبرتك وبالبحث فالويب إلا كان متاح، وما تستعملش بيانات الشركة فيه. (3) إلا ما فهمتيش شنو بغا بالضبط، سول سؤال واحد قصير.';
+const YUNUS_ROUTING_RULE = '\n\nتوجيه الأسئلة (مهم): (1) أي سؤال على حسابات الشركة (دخل، مصاريف، صافي، موردين، عملاء، مقدمو الخدمات، أجراء، صندوق، مشاريع، فواتير، مبالغ مدفوعة أو متبقية): جاوب بدقة من قسم "بيانات الشركة" اللي تحت الرسالة حصراً. ابدأ بالرقم النهائي بالدرهم كما هو بلا تقريب، ثم بين الحساب فسطر (أ + ب − ج = ...) وحدد الفترة (أجور الشهر الحالي ماشي كل الأشهر). إلا الرقم ماكايناش فالبيانات قول "ماكاينش فقسم المحاسبة" وشنو خاص يتسجل، وما تخمنش ولا تكمل من راسك. وأي سؤال على مشروع بعينو: قارن دائماً مع ثمن الصفقة والميزانية المخصصة المسجلين فقسم المشاريع. (2) أي موضوع آخر (قانون، بناء، تقنية، صياغة، معلومات عامة، نصائح): جاوب بذكاء كخبير بخبرتك وبالبحث فالويب إلا كان متاح، وما تستعملش بيانات الشركة فيه. (3) إلا ما فهمتيش شنو بغا بالضبط، سول سؤال واحد قصير.';
 const YUNUS_ACCT_MISSING = '\n\nملاحظة: بيانات قسم المحاسبة ما مرفقاش مع هاد الرسالة. إلا السؤال كيخص أرقام أو حسابات الشركة، ما تجاوبش بأرقام من راسك: قل للمستخدم بلي خاصك تشوف قسم المحاسبة وسولو يعاود السؤال بكلمة واضحة (مثلاً مصاريف ولا حساب).';
 const YUNUS_DARIJA_RULE = '\n\nقاعدة ثابتة وتغلب أي قاعدة أخرى فاللغة: جاوب دائماً بالدارجة المغربية الطبيعية (ماشي فصحى ولا لهجة مصرية ولا خليجية)، حتى إلا كتب المستخدم بالفصحى. ما تجاوبش بالفرنسية إلا إذا كتب بيها المستخدم. المستندات الرسمية فقط (فواتير، عقود، تقارير للتسليم، إنذارات) كتكون بفصحى مبسطة أو فرنسية قانونية. وما تبدأش الجواب بـ "عذراً" ولا "آسف" ولا "لا أستطيع". عمرك ما تطلب من المستخدم يدير خدمة تقدر تديرها نتا (حساب، صياغة، بحث قانوني، تحليل صورة). الرسائل اللي جاية من تسجيل صوتي ممكن يكون فيها أخطاء فالتعرف على الكلام. صحّح غير الأخطاء الواضحة (كلمة وحدة مشوّهة والمعنى باين من سياق الشركة: بناء، محاسبة، قانون، أجور، سلفات، موردين، زبناء، مواعيد، مواد بناء، صفقات عمومية). إلا الجملة ما واضحاش ولا فيها كلمة ما فهمتيهاش، ما تخمنش ولا تجاوبش على شي حاجة ما سولش عليها المستخدم: قل بالدارجة شنو سمعتي وسول سؤال واحد قصير باش تتأكد، وانتظر الجواب.';
 // نسخة مضغوطة من البرومت لـ Groq وCerebras (حدود tokens صغيرة): نفس القواعد والأرقام القانونية/المحاسبية والكتل التقنية،
@@ -4364,7 +4596,7 @@ async function syncDecrypt(rec, code){
 }
 
 // المفاتيح المستثناة عمدًا من المزامنة (لأسباب أمان/منطقية بحتة، ماشي نسيان)
-const CLOUD_SYNC_EXCLUDE = ['alioua_btp_sync_base', 'alioua_btp_sync_nonce', 'alioua_btp_sync_conflicts', 'alioua_btp_last_snapshot', 'alioua_btp_hard_backup', 'alioua_btp_hard_backup_prepull', 'alioua_btp_meta_v3', 'alioua_btp_secure_on', 'alioua_btp_sync_vault', 'alioua_btp_cloud_dirty', 'alioua_btp_openrouter_key', 'alioua_btp_mistral_key', 'alioua_btp_fb_dburl', 'alioua_btp_sync_code', 'alioua_btp_gcal_token', 'alioua_btp_pin_hash', 'alioua_btp_last_sync', 'alioua_btp_last_auto_backup'];
+const CLOUD_SYNC_EXCLUDE = ['alioua_btp_files_key', 'alioua_btp_sync_base', 'alioua_btp_sync_nonce', 'alioua_btp_sync_conflicts', 'alioua_btp_last_snapshot', 'alioua_btp_hard_backup', 'alioua_btp_hard_backup_prepull', 'alioua_btp_meta_v3', 'alioua_btp_secure_on', 'alioua_btp_sync_vault', 'alioua_btp_cloud_dirty', 'alioua_btp_openrouter_key', 'alioua_btp_mistral_key', 'alioua_btp_fb_dburl', 'alioua_btp_sync_code', 'alioua_btp_gcal_token', 'alioua_btp_pin_hash', 'alioua_btp_last_sync', 'alioua_btp_last_auto_backup'];
 
 function collectAllAppData(){
   // كنجمعو تلقائيًا كل مفتاح alioua_btp_* من التخزين المحلي، بلا الحاجة نتذكرو واحد واحد
@@ -6367,6 +6599,7 @@ function speakViaGoogleTTS(text, onStatus){
       .replace(/```add_appointment[\s\S]*?```/g, ' تمت إضافة الموعد. ')
       .replace(/```report[\s\S]*?```/g, ' فيه تقرير بالرد. ')
       .replace(/```devis[\s\S]*?```/g, ' فيه عرض سعر بالرد. ')
+      .replace(/```tree[\s\S]*?```/g, ' فيه شجرة بالرد. ')
       .replace(/```metre[\s\S]*?```/g, ' فيه جدول متري بالرد. ')
       .replace(/```image:[\s\S]*?```/g, ' فيه صورة بالرد. ')
       .replace(/```image:.+/g, ' فيه صورة بالرد. ')
@@ -7527,6 +7760,7 @@ function containsArabic(text){
 // jsPDF ما كيدعمش تشكيل الحروف العربية (اتصال الحروف) بشكل صحيح مباشرة.
 // الحل: نرسمو النص فـ canvas (المتصفح كيدير التشكيل صحيح تلقائيًا)، ونحولوه لصورة وندمجوها فالـPDF.
 function drawArabicText(doc, text, xMM, yMM, opts={}){
+  text = fixNumGroups(text);
   const fontSizeMM = opts.fontSizeMM || 4;
   const bold = opts.bold || false;
   const color = opts.color || '#000000';
@@ -7584,6 +7818,12 @@ function docTextAuto(doc, text, x, y, textOpts, fontSizePt){
   }
 }
 
+// أرقام فيها فراغ كفاصل آلاف (51 972) كتتقلب فالنص العربي RTL (972 51): كنبدلو الفراغ بفراغ ما كيتقطعش (NBSP)
+// باش الرقم يبقى كتلة وحدة. كيتطبق على PDF والدردشة والتقارير.
+function fixNumGroups(t){
+  return String(t == null ? '' : t).replace(/(^|[^\d.,])(\d{1,3}(?:[ \u202f\u2009]\d{3})+)(?!\d)/g, (m, a, b)=> a + b.replace(/[ \u202f\u2009]/g, '\u00a0'));
+}
+
 // ===== رسم النص العربي فـ PDF: تقطيع الأسطر حسب عرض الخلية + رسم كل سطر كصورة (بلا نص مشوّه خلف الجدول) =====
 const AR_PX = 12; // بكسل لكل ملم (دقة ~300 dpi)
 function _arFont(bold, px){ return `${bold?'bold ':''}${px}px 'IBM Plex Sans Arabic', Arial, sans-serif`; }
@@ -7595,8 +7835,8 @@ function _arMeasure(text, bold, fontMM){
 }
 function wrapArabicLines(text, bold, fontMM, maxMM){
   const out = [];
-  String(text == null ? '' : text).split(/\n/).forEach(par=>{
-    const words = par.split(/\s+/).filter(Boolean); let cur = '';
+  fixNumGroups(text).split(/\n/).forEach(par=>{
+    const words = par.split(/[^\S\u00a0]+/).filter(Boolean); let cur = '';
     words.forEach(w=>{
       const t = cur ? cur + ' ' + w : w;
       if(cur && _arMeasure(t, bold, fontMM) > maxMM){ out.push(cur); cur = w; } else cur = t;
@@ -7614,6 +7854,7 @@ function _cssColor(c, fallback){
 // yMM = الوسط العمودي للسطر. align: right (xMM = الحافة اليمنى) | left (xMM = الحافة اليسرى) | center
 function drawArabicLine(doc, text, xMM, yMM, o){
   if(!text) return;
+  text = fixNumGroups(text);
   o = o || {};
   const px = Math.max(8, Math.round(o.fontMM * AR_PX));
   const c = document.createElement('canvas'), ctx = c.getContext('2d');
@@ -9277,93 +9518,350 @@ function projectNameById(id){
   return p ? p.name : '';
 }
 
-document.getElementById('projectAddBtn')?.addEventListener('click', ()=>{
-  const name = document.getElementById('projectName').value.trim();
+/* ----- مخزن ملفات العقود: AES-GCM داخل IndexedDB مستقل -----
+   الملفات كبيرة (PDF/صور)، فما كندخلوهاش فالتخزين العادي ولا فالمزامنة السحابية ولا النسخ الاحتياطية JSON.
+   المفتاح عشوائي كيتخزن فـ LS (مشفّر بالـPIN، ومستثنى من المزامنة باش كل جهاز يبقى عندو مفتاحو). */
+const FILEVAULT = (function(){
+  const DB = 'alioua_btp_files', ST = 'f', KEYNAME = 'alioua_btp_files_key';
+  let dbp = null, keyP = null;
+  const open = ()=> dbp || (dbp = new Promise((res, rej)=>{
+    if(!window.indexedDB){ rej(new Error('هاد المتصفح ما كيدعمش IndexedDB.')); return; }
+    const r = indexedDB.open(DB, 1);
+    r.onupgradeneeded = ()=>{ r.result.createObjectStore(ST, {keyPath: 'id'}); };
+    r.onsuccess = ()=> res(r.result);
+    r.onerror = ()=>{ dbp = null; rej(r.error); };
+  }));
+  async function tx(mode, fn){
+    const d = await open();
+    return new Promise((res, rej)=>{
+      const t = d.transaction(ST, mode); let out;
+      fn(t.objectStore(ST), v=>{ out = v; });
+      t.oncomplete = ()=> res(out);
+      t.onerror = t.onabort = ()=> rej(t.error || new Error('خطأ فتخزين الملفات.'));
+    });
+  }
+  async function masterKey(){
+    if(keyP) return keyP;
+    keyP = (async()=>{
+      if(LS.locked) throw new Error('التطبيق مقفول، دخل الرمز أولاً.');
+      const raw = LS.getItem(KEYNAME);
+      if(raw) return crypto.subtle.importKey('raw', _unb64(raw), 'AES-GCM', false, ['encrypt', 'decrypt']);
+      const n = await tx('readonly', (st, set)=>{ const q = st.count(); q.onsuccess = ()=> set(q.result); });
+      if(n > 0) throw new Error('مفتاح تشفير الملفات ما كاينش فهاد الجهاز، والملفات المخزنة هنا ما يمكنش تتفتح.');
+      const k = await crypto.subtle.generateKey({name: 'AES-GCM', length: 256}, true, ['encrypt', 'decrypt']);
+      LS.setItem(KEYNAME, _b64(new Uint8Array(await crypto.subtle.exportKey('raw', k))));
+      return k;
+    })();
+    keyP.catch(()=>{ keyP = null; });
+    return keyP;
+  }
+  return {
+    MAX: 25 * 1024 * 1024,
+    async put(id, file){
+      if(file.size > this.MAX) throw new Error('الملف "' + (file.name || '') + '" كبير بزاف (أكثر من 25 MB).');
+      const key = await masterKey(), buf = await file.arrayBuffer(), iv = crypto.getRandomValues(new Uint8Array(12));
+      const ct = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, buf);
+      await tx('readwrite', st=>{ st.put({id, name: file.name || 'contrat', type: file.type || 'application/octet-stream', size: file.size, iv, ct, at: Date.now()}); });
+    },
+    async get(id){
+      const rec = await tx('readonly', (st, set)=>{ const q = st.get(id); q.onsuccess = ()=> set(q.result); });
+      if(!rec) return null;
+      const buf = await crypto.subtle.decrypt({name: 'AES-GCM', iv: rec.iv}, await masterKey(), rec.ct);
+      return {id, name: rec.name, type: rec.type, size: rec.size, blob: new Blob([buf], {type: rec.type})};
+    },
+    async has(id){ return (await tx('readonly', (st, set)=>{ const q = st.count(id); q.onsuccess = ()=> set(q.result); })) > 0; },
+    async del(id){ await tx('readwrite', st=>{ st.delete(id); }); }
+  };
+})();
+
+function _fileSize(n){ n = +n || 0; return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+function updateProject(id, patch){
+  const l = loadProjects(), i = l.findIndex(p=> p.id === id); if(i < 0) return null;
+  l[i] = Object.assign({}, l[i], patch); saveProjects(l); return l[i];
+}
+async function openContractFile(f){
+  const rec = await FILEVAULT.get(f.id);
+  if(!rec) throw new Error('هاد الملف ما كاينش فهاد الجهاز (تسجّل من جهاز آخر). عاود رفعو من هنا.');
+  const isPdf = /pdf/i.test(rec.type) || /\.pdf$/i.test(rec.name), isImg = /^image\//i.test(rec.type);
+  openFilePreview({title: 'عقد: ' + rec.name, first: 'f', noEdit: true, variants: [{
+    key: 'f', label: rec.name, filename: rec.name,
+    render: async ()=>{
+      const w = document.createElement('div');
+      if(isPdf){ const buf = await rec.blob.arrayBuffer(); await renderPdfPreview(w, {output: ()=> buf.slice(0)}); }
+      else if(isImg){ const im = document.createElement('img'); im.src = URL.createObjectURL(rec.blob); im.style.cssText = 'width:100%; display:block; margin:0 auto 10px; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.25);'; w.appendChild(im); }
+      else { const d = document.createElement('div'); d.style.cssText = 'padding:20px; color:#555;'; d.textContent = 'هاد النوع من الملفات ما كيتعرضش داخل التطبيق، دوس "تحميل" باش تفتحو.'; w.appendChild(d); }
+      return w;
+    },
+    blob: async ()=> rec.blob
+  }]});
+}
+
+/* ----- أرقام المشروع: نفس الصيغ القديمة + مقارنة مع ثمن الصفقة والميزانية المخصصة ----- */
+function _projCtx(){
+  return {pdf: loadPdfInvoices(), simple: loadInvoices(), clients: loadClients(), caisse: loadCaisseData(), purchases: loadPurchases(), workers: loadWorkers(), att: loadAttendance()};
+}
+function projectFinancials(proj, ctx){
+  const c = ctx || _projCtx();
+  const pdfs = c.pdf.filter(i=> i.projectId === proj.id);
+  const income = pdfs.reduce((s, i)=> s + i.items.reduce((ss, it)=> ss + (it.qty * it.price), 0) * (1 + (i.tvaRate || 0) / 100), 0);
+  const sInv = c.simple.filter(inv=>{ const cl = c.clients.find(x=> x.id === inv.clientId); return cl && cl.projectId === proj.id; });
+  const clientsExpense = sInv.reduce((s, inv)=> s + invoiceTotal(inv), 0);
+  const bons = c.caisse.bons.filter(b=> b.projectId === proj.id);
+  const caisseExpense = bons.reduce((s, b)=> s + bonTotal(b), 0);
+  const purch = c.purchases.filter(p=> p.projectId === proj.id);
+  const purchaseExpense = purch.reduce((s, p)=> s + purchaseTotal(p), 0);
+  const pw = c.workers.filter(w=> w.projectId === proj.id);
+  const workerDays = c.att.filter(a=> pw.some(w=> w.id === a.workerId) && a.status !== 'absent').length;
+  const workerLines = [];
+  const workerExpense = pw.reduce((sum, w)=>{
+    const wAtt = c.att.filter(a=> a.workerId === w.id);
+    if(!wAtt.length) return sum;
+    const present = wAtt.filter(a=> a.status === 'present').length + wAtt.filter(a=> a.status === 'half').length * 0.5;
+    const amt = w.type === 'daily' ? present * w.wage : w.wage;
+    workerLines.push({w, days: present, amount: amt});
+    return sum + amt;
+  }, 0);
+  const totalExpense = clientsExpense + caisseExpense + purchaseExpense + workerExpense, net = income - totalExpense;
+  // الصفقة والميزانية
+  const amount = +proj.contractAmount || 0, ttc = proj.contractTtc !== false, rate = (proj.contractTva === 0 || proj.contractTva) ? +proj.contractTva : 20;
+  const ht = amount ? (ttc ? amount / (1 + rate / 100) : amount) : 0, ttcAmt = amount ? (ttc ? amount : amount * (1 + rate / 100)) : 0;
+  const budget = +proj.budget || 0;
+  return {
+    income, clientsExpense, caisseExpense, purchaseExpense, workerExpense, workerDays, totalExpense, net,
+    invoiceCount: pdfs.length + sInv.length, expenseCount: bons.length + purch.length, workerCount: pw.length,
+    pdfs, sInv, bons, purch, workerLines,
+    contract: {has: amount > 0, amount, ttc, rate, ht, ttcAmt, ref: proj.contractRef || ''},
+    budget: {has: budget > 0, amount: budget},
+    billedPct: ttcAmt ? income / ttcAmt * 100 : null, toBill: ttcAmt ? ttcAmt - income : null,
+    budgetPct: budget ? totalExpense / budget * 100 : null, budgetLeft: budget ? budget - totalExpense : null,
+    margin: ht ? ht - totalExpense : null, marginPct: ht ? (ht - totalExpense) / ht * 100 : null
+  };
+}
+const _pf = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('ar');
+const _pp = p => (Math.round((+p || 0) * 10) / 10).toLocaleString('ar') + '%';
+function _projBar(pct, color){
+  const w = Math.max(0, Math.min(100, +pct || 0));
+  return '<div style="height:7px; background:var(--stone-deep); border-radius:6px; overflow:hidden; margin:3px 0 2px;"><div style="height:100%; width:' + w + '%; background:' + color + ';"></div></div>';
+}
+function _projCmpHtml(f){
+  const c = f.contract, b = f.budget, parts = [];
+  if(c.has){
+    parts.push('<div>📑 <b>ثمن الصفقة:</b> ' + _pf(c.amount) + ' درهم <span style="color:var(--ink-soft);">(' + (c.ttc ? 'TTC' : 'HT') + (c.ref ? ' · ' + escapeHtml(c.ref) : '') + ')</span></div>'
+      + _projBar(f.billedPct, f.billedPct > 100 ? '#b91c1c' : '#1C6FA5')
+      + '<div style="color:var(--ink-soft);">المفوتر (TTC): ' + _pf(f.income) + ' = <b>' + _pp(f.billedPct) + '</b> من الصفقة · ' + (f.toBill >= 0 ? 'باقي للفوترة: ' + _pf(f.toBill) : 'تفوتر أكثر من الصفقة بـ ' + _pf(-f.toBill)) + ' درهم</div>');
+  }
+  if(b.has){
+    const over = f.budgetPct > 100, warn = !over && f.budgetPct >= 90, col = over ? '#b91c1c' : (warn ? '#ef8a17' : '#2e9e57');
+    parts.push('<div>💰 <b>الميزانية المخصصة:</b> ' + _pf(b.amount) + ' درهم</div>' + _projBar(f.budgetPct, col)
+      + '<div style="color:' + (over || warn ? col : 'var(--ink-soft)') + ';">المصروف: ' + _pf(f.totalExpense) + ' = <b>' + _pp(f.budgetPct) + '</b> من الميزانية · '
+      + (over ? '⚠️ تجاوز الميزانية بـ ' + _pf(-f.budgetLeft) : (warn ? '⚠️ قريبة تسالي، المتبقي ' + _pf(f.budgetLeft) : 'المتبقي ' + _pf(f.budgetLeft))) + ' درهم</div>');
+  }
+  if(c.has) parts.push('<div>📊 الهامش المتوقع (الصفقة HT − المصاريف): <b style="color:' + (f.margin >= 0 ? '#2e7d32' : '#b91c1c') + ';">' + _pf(f.margin) + '</b> درهم (' + _pp(f.marginPct) + ')</div>');
+  if(!parts.length) return '<div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">📑 ما مسجّلش ثمن الصفقة ولا الميزانية. دوس "الصفقة والعقد" باش تسجّلهم وتبان المقارنة.</div>';
+  return '<div style="margin-top:8px; border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:11.5px; display:flex; flex-direction:column; gap:6px;">' + parts.join('') + '</div>';
+}
+
+/* نص المشاريع لـ يونس (كيتحط فبداية بيانات الشركة باش ما يتقطعش فالنسخة المضغوطة) */
+function _projSnapshotText(){
+  const projects = loadProjects(); if(!projects.length) return '';
+  const R = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US'), P = p => (Math.round((+p || 0) * 10) / 10) + '%', ctx = _projCtx();
+  const L = ['## المشاريع: ثمن الصفقة والميزانية المخصصة مقابل المفوتر والمصاريف (مرجع أي تحليل أو تقرير أو رسم لمشروع: قارن دائماً مع الصفقة والميزانية)'];
+  projects.forEach(proj=>{
+    const f = projectFinancials(proj, ctx), c = f.contract, b = f.budget;
+    L.push(`- ${proj.name}: الدخل (المفوتر TTC) ${R(f.income)} درهم، المصاريف ${R(f.totalExpense)} درهم (مقدمو الخدمات ${R(f.clientsExpense)} + مشتريات الموردين ${R(f.purchaseExpense)} + السيولة ${R(f.caisseExpense)} + أجور الأجراء ${R(f.workerExpense)})، الصافي ${R(f.net)} درهم`);
+    if(c.has) L.push(`  · الصفقة: ثمن ${R(c.amount)} درهم (${c.ttc ? 'TTC' : 'HT'}${c.ref ? '، مرجع ' + c.ref : ''}) = HT ${R(c.ht)} / TTC ${R(c.ttcAmt)} — المفوتر ${P(f.billedPct)} من الصفقة، ${f.toBill >= 0 ? 'باقي للفوترة ' + R(f.toBill) : 'تفوتر أكثر من الصفقة بـ ' + R(-f.toBill)} درهم`);
+    else L.push('  · ثمن الصفقة: ماكاينش مسجل فقسم المشاريع');
+    if(b.has) L.push(`  · الميزانية المخصصة: ${R(b.amount)} درهم — المصروف ${P(f.budgetPct)}، ${f.budgetLeft >= 0 ? 'المتبقي ' + R(f.budgetLeft) : 'تجاوز الميزانية بـ ' + R(-f.budgetLeft)} درهم${f.budgetPct > 100 ? ' ⚠️ تجاوز' : (f.budgetPct >= 90 ? ' ⚠️ قريبة تسالي' : '')}`);
+    else L.push('  · الميزانية المخصصة: ماكاينش مسجلة فقسم المشاريع');
+    if(c.has) L.push(`  · الهامش المتوقع (ثمن الصفقة HT − المصاريف): ${R(f.margin)} درهم (${P(f.marginPct)})`);
+    if((proj.contractFiles || []).length) L.push(`  · نسخة العقد: ${proj.contractFiles.length} ملف مسجل فقسم المشاريع (يونس ما كيقراهاش إلا بعتيها ليه فالدردشة)`);
+  });
+  return L.join('\n');
+}
+
+/* تصدير حساب مشروع (PDF/Excel) مع مقارنة الصفقة والميزانية */
+function buildProjectReport(proj){
+  const f = projectFinancials(proj), N = round2, C = f.contract, B = f.budget;
+  const sups = loadSuppliers(), provs = loadClients();
+  const pc = (a, b)=> b ? (Math.round(a / b * 1000) / 10).toLocaleString('fr-FR') + ' %' : '';
+  const rec = [['Projet', proj.name || '', '', '']];
+  if(C.ref) rec.push(['Référence du marché', C.ref, '', '']);
+  if(C.has){
+    rec.push(['Montant du marché HT', N(C.ht), '', C.ttc ? 'Déduit du montant TTC (TVA ' + C.rate + ' %)' : 'Montant saisi HT']);
+    rec.push(['Montant du marché TTC', N(C.ttcAmt), '100 %', C.ttc ? 'Montant saisi TTC' : 'TVA ' + C.rate + ' %']);
+    rec.push(['Facturé à ce jour (TTC)', N(f.income), pc(f.income, C.ttcAmt), 'Factures de vente liées au projet']);
+    rec.push([f.toBill >= 0 ? 'Reste à facturer (TTC)' : 'Facturation au-delà du marché (TTC)', N(Math.abs(f.toBill)), pc(Math.abs(f.toBill), C.ttcAmt), f.toBill < 0 ? 'Vérifier : avenant non enregistré ?' : '']);
+  } else rec.push(['Facturé à ce jour (TTC)', N(f.income), '', 'Montant du marché non renseigné']);
+  if(B.has){
+    rec.push(['Budget alloué (dépenses)', N(B.amount), '100 %', '']);
+    rec.push(['Dépenses enregistrées', N(f.totalExpense), pc(f.totalExpense, B.amount), f.budgetPct > 100 ? 'DÉPASSEMENT du budget' : (f.budgetPct >= 90 ? 'Attention : budget presque consommé' : 'Dans le budget')]);
+    rec.push([f.budgetLeft >= 0 ? 'Budget restant' : 'Dépassement du budget', N(Math.abs(f.budgetLeft)), pc(Math.abs(f.budgetLeft), B.amount), '']);
+  } else rec.push(['Dépenses enregistrées', N(f.totalExpense), '', 'Budget non renseigné']);
+  if(C.has) rec.push(['Marge prévisionnelle (marché HT − dépenses)', N(f.margin), pc(f.margin, C.ht), '']);
+  rec.push(['Résultat actuel (facturé TTC − dépenses)', N(f.net), '', '']);
+  const sheets = [{name: 'Synthèse du marché', columns: ['Rubrique', 'Montant (MAD)', '% du marché / budget', 'Observation'], numCols: [1], rows: rec}];
+  const nat = [['Prestataires de services', f.clientsExpense], ['Achats fournisseurs', f.purchaseExpense], ['Bons de caisse', f.caisseExpense], ["Main-d'œuvre (présences)", f.workerExpense]];
+  sheets.push({name: 'Dépenses par nature', columns: ['Nature', 'Montant (MAD)', '% des dépenses', '% du budget'], numCols: [1],
+    rows: nat.map(n=> [n[0], N(n[1]), pc(n[1], f.totalExpense), pc(n[1], B.amount)]), totals: ['TOTAL', N(f.totalExpense), f.totalExpense ? '100 %' : '', pc(f.totalExpense, B.amount)]});
+  const det = [];
+  f.purch.forEach(p=> det.push([p.date || '', 'Achat', p.invoiceNo || p.bl || '', (sups.find(s=> s.id === p.supplierId) || {}).name || '', N(purchaseTotal(p))]));
+  f.bons.forEach(b=> det.push([b.date || '', 'Caisse', b.bonNumber || '', '', N(bonTotal(b))]));
+  f.sInv.forEach(i=> det.push([i.date || '', 'Prestataire', '', (provs.find(c=> c.id === i.clientId) || {}).name || '', N(invoiceTotal(i))]));
+  det.sort((a, b)=> String(a[0] || '9999').localeCompare(String(b[0] || '9999')));
+  const rows = det.map(r=> [frDate(r[0]), r[1], r[2], r[3], r[4]]);
+  f.workerLines.forEach(x=> rows.push(['', "Main-d'œuvre", (x.w.name || '') + (x.w.type === 'daily' ? ' (' + x.days + ' j)' : ' (mensuel)'), '', N(x.amount)]));
+  if(rows.length) sheets.push({name: 'Détail des dépenses', columns: ['Date', 'Nature', 'Pièce / libellé', 'Tiers', 'Montant (MAD)'], numCols: [4], rows, totals: ['TOTAL', '', '', '', N(rows.reduce((s, r)=> s + (+r[4] || 0), 0))]});
+  if(f.pdfs.length){
+    const vr = f.pdfs.slice().sort((a, b)=> String(a.invDate || '').localeCompare(String(b.invDate || ''))).map(i=>{ const b = pdfInvBreakdown(i); return [frDate(i.invDate), i.invNumber || '', i.clientName || '', N(b.ht), N(b.ttc), N(b.net)]; });
+    sheets.push({name: 'Facturation', columns: ['Date', 'N° facture', 'Client', 'HT', 'TTC', 'Net à encaisser'], numCols: [3, 4, 5], rows: vr, totals: ['TOTAL', '', '', N(vr.reduce((s, r)=> s + r[3], 0)), N(vr.reduce((s, r)=> s + r[4], 0)), N(vr.reduce((s, r)=> s + r[5], 0))]});
+  }
+  const safe = String(proj.name || 'projet').replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 40);
+  return {title: 'COMPTE DU PROJET', fileBase: 'Compte-projet-' + safe + '-' + todayStr(), subtitle: 'ALIOUA BTP — Édité le ' + frDate(todayStr()), sheets,
+    summary: "Montants en dirhams (MAD). Le facturé est le total TTC des factures de vente liées au projet (avant retenue de garantie, avance et RAS). Les dépenses sont reprises telles qu'enregistrées dans l'application ; la marge prévisionnelle compare le marché HT aux dépenses enregistrées.",
+    formats: ['pdf', 'excel']};
+}
+
+/* ----- واجهة المشاريع ----- */
+const _projOpen = {};
+document.getElementById('projectAddBtn')?.addEventListener('click', async ()=>{
+  const nameEl = document.getElementById('projectName'), name = nameEl.value.trim();
   if(!name) return;
-  const list = loadProjects();
-  list.push({id:'proj'+Date.now(), name, createdAt: Date.now()});
-  saveProjects(list);
-  document.getElementById('projectName').value = '';
-  renderProjects();
+  const num = id => { const x = parseFloat(String((document.getElementById(id) || {}).value || '').replace(',', '.')); return isFinite(x) && x > 0 ? x : 0; };
+  const fileEl = document.getElementById('projectContractFile'), files = fileEl ? Array.from(fileEl.files || []) : [];
+  const proj = {id: 'proj' + Date.now(), name, createdAt: Date.now()};
+  const amount = num('projectContractAmount'), budget = num('projectBudget');
+  if(amount){ proj.contractAmount = amount; proj.contractTtc = ((document.getElementById('projectContractTtc') || {}).value || '1') === '1'; proj.contractTva = 20; }
+  if(budget) proj.budget = budget;
+  const list = loadProjects(); list.push(proj); saveProjects(list);
+  nameEl.value = '';
+  ['projectContractAmount', 'projectBudget'].forEach(id=>{ const e = document.getElementById(id); if(e) e.value = ''; });
+  if(fileEl) fileEl.value = '';
+  let err = '';
+  if(files.length){
+    const added = [];
+    for(const file of files){
+      try{ const fid = 'c' + Date.now() + Math.random().toString(36).slice(2, 6); await FILEVAULT.put(fid, file); added.push({id: fid, name: file.name || 'contrat', size: file.size, type: file.type || '', addedAt: Date.now()}); }
+      catch(e){ err = (e && e.message) || String(e); }
+    }
+    if(added.length) updateProject(proj.id, {contractFiles: added});
+  }
+  renderProjects(true);
+  if(err) alert('المشروع تسجّل، ولكن ما قدرتش نخزّن نسخة العقد: ' + err);
 });
 
-function renderProjects(){
+function _projPanel(proj){
+  const p = document.createElement('div'); p.className = 'card-form'; p.style.cssText = 'margin:10px 0 0; background:var(--stone); border-radius:12px; padding:11px;';
+  const selStyle = 'width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:11px; background:#fff; font-family:inherit; font-size:13.5px; color:var(--ink);';
+  const LB = t => '<div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:-5px;">' + t + '</div>';
+  p.innerHTML = '<div class="mini-title">📑 الصفقة والعقد</div>'
+    + LB('ثمن الصفقة (درهم)') + '<input type="number" inputmode="decimal" min="0" step="any" data-f="amount" placeholder="مثال: 150000">'
+    + LB('نوع الثمن') + '<select data-f="ttc" style="' + selStyle + '"><option value="1">الثمن شامل الضريبة (TTC)</option><option value="0">الثمن بدون الضريبة (HT)</option></select>'
+    + LB('نسبة TVA %') + '<input type="number" inputmode="decimal" min="0" step="any" data-f="tva" placeholder="20">'
+    + LB('مرجع الصفقة / رقم العقد (اختياري)') + '<input type="text" dir="auto" data-f="ref" placeholder="مثال: M-2026/14">'
+    + LB('الميزانية المخصصة للمصاريف (درهم)') + '<input type="number" inputmode="decimal" min="0" step="any" data-f="budget" placeholder="مثال: 90000">'
+    + '<button class="btn-primary" data-save style="flex:none;">💾 حفظ الصفقة والميزانية</button>'
+    + '<div class="mini-title" style="margin-top:4px;">📎 نسخ العقد</div>'
+    + '<div data-files style="display:flex; flex-direction:column; gap:6px;"></div>'
+    + '<label class="btn-ghost" style="text-align:center; cursor:pointer; display:block;">➕ إضافة نسخة العقد (PDF أو صور)<input type="file" data-addfile accept="application/pdf,image/*" multiple style="display:none;"></label>'
+    + '<div style="font-size:10.5px; color:var(--ink-soft); line-height:1.7;">🔒 الملفات كتتخزن مشفّرة فهاد الجهاز فقط (ماكتتسينكرونيش مع السحابة وماكتدخلش فالنسخة الاحتياطية JSON). حمّل نسخة بالزر ⬇️ وحفظها فمكان آخر للاحتياط.</div>';
+  const g = k => p.querySelector('[data-f="' + k + '"]');
+  g('amount').value = proj.contractAmount || ''; g('ttc').value = proj.contractTtc === false ? '0' : '1';
+  g('tva').value = (proj.contractTva === 0 || proj.contractTva) ? proj.contractTva : 20; g('ref').value = proj.contractRef || ''; g('budget').value = proj.budget || '';
+  p.querySelector('[data-save]').addEventListener('click', ()=>{
+    const num = v => { const x = parseFloat(String(v).replace(',', '.')); return isFinite(x) && x > 0 ? x : 0; };
+    const tvaRaw = g('tva').value.trim(), tva = tvaRaw === '' ? 20 : Math.max(0, Math.min(100, parseFloat(tvaRaw) || 0));
+    updateProject(proj.id, {contractAmount: num(g('amount').value), contractTtc: g('ttc').value === '1', contractTva: tva, contractRef: g('ref').value.trim(), budget: num(g('budget').value)});
+    renderProjects(true);
+  });
+  const box = p.querySelector('[data-files]');
+  const files = proj.contractFiles || [];
+  if(!files.length) box.innerHTML = '<div style="font-size:11.5px; color:var(--ink-soft);">ما كاين حتى نسخة من العقد مسجلة.</div>';
+  files.forEach(f=>{
+    const row = document.createElement('div'); row.style.cssText = 'display:flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--line); border-radius:10px; padding:6px 9px; font-size:12px;';
+    const nm = document.createElement('span'); nm.setAttribute('dir', 'auto'); nm.style.cssText = 'flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'; nm.textContent = f.name + ' · ' + _fileSize(f.size);
+    const st = document.createElement('span'); st.style.cssText = 'font-size:10.5px; color:#92400e;';
+    row.appendChild(nm); row.appendChild(st);
+    const btn = (lab, fn)=>{ const b = document.createElement('button'); b.className = 'btn-ghost'; b.style.cssText = 'padding:4px 9px; font-size:12px;'; b.textContent = lab; b.addEventListener('click', async ()=>{ b.disabled = true; try{ await fn(); }catch(e){ alert((e && e.message) || String(e)); } b.disabled = false; }); row.appendChild(b); return b; };
+    const bv = btn('👁', ()=> openContractFile(f));
+    const bd = btn('⬇️', async ()=>{ const rec = await FILEVAULT.get(f.id); if(!rec) throw new Error('الملف ما كاينش فهاد الجهاز.'); downloadBlob(rec.blob, rec.name); });
+    btn('🗑', async ()=>{
+      if(!confirm('نمسح نسخة العقد "' + f.name + '" من هاد الجهاز؟')) return;
+      await FILEVAULT.del(f.id);
+      const cur = loadProjects().find(x=> x.id === proj.id);
+      updateProject(proj.id, {contractFiles: ((cur && cur.contractFiles) || []).filter(x=> x.id !== f.id)});
+      renderProjects(true);
+    });
+    FILEVAULT.has(f.id).then(ok=>{ if(!ok){ st.textContent = '⚠️ غير موجود فهاد الجهاز'; bv.disabled = true; bd.disabled = true; } }).catch(()=>{});
+    box.appendChild(row);
+  });
+  p.querySelector('[data-addfile]').addEventListener('change', async e=>{
+    const fl = Array.from(e.target.files || []); e.target.value = '';
+    if(!fl.length) return;
+    const added = []; let err = '';
+    for(const file of fl){
+      try{ const fid = 'c' + Date.now() + Math.random().toString(36).slice(2, 6); await FILEVAULT.put(fid, file); added.push({id: fid, name: file.name || 'contrat', size: file.size, type: file.type || '', addedAt: Date.now()}); }
+      catch(ex){ err = (ex && ex.message) || String(ex); }
+    }
+    if(added.length){ const cur = loadProjects().find(x=> x.id === proj.id); updateProject(proj.id, {contractFiles: ((cur && cur.contractFiles) || []).concat(added)}); }
+    renderProjects(true);
+    if(err) alert('ما قدرتش نخزّن بعض الملفات: ' + err);
+  });
+  return p;
+}
+
+function renderProjects(force){
+  const el = document.getElementById('projectsList'); if(!el) return;
+  const ae = document.activeElement;
+  if(!force && ae && el.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;   // ما نمسحوش شنو كيكتب المستخدم
   const projects = loadProjects();
-  const el = document.getElementById('projectsList');
   if(!projects.length){ el.innerHTML = '<div class="empty-hint">ماكاينش مشاريع مسجلة بعد. ضيفي أول مشروع فوق ⬆️</div>'; return; }
-
-  const pdfInvoices = loadPdfInvoices();
-  const simpleInvoices = loadInvoices();
-  const clientsList = loadClients();
-  const caisseData = loadCaisseData();
-  const purchases = loadPurchases();
-  const workers = loadWorkers();
-  const attendance = loadAttendance();
-
+  const ctx = _projCtx();
   el.innerHTML = '';
   projects.forEach(proj=>{
-    const projPdfInvoices = pdfInvoices.filter(i=>i.projectId===proj.id);
-    const pdfIncome = projPdfInvoices.reduce((s,i)=> s + i.items.reduce((ss,it)=>ss+(it.qty*it.price),0)*(1+(i.tvaRate||0)/100), 0);
-
-    const projSimpleInvoices = simpleInvoices.filter(inv=>{
-      const client = clientsList.find(c=>c.id === inv.clientId);
-      return client && client.projectId === proj.id;
-    });
-    const clientsExpense = projSimpleInvoices.reduce((s,inv)=> s + invoiceTotal(inv), 0);
-    const income = pdfIncome;
-    const invoiceCount = projPdfInvoices.length + projSimpleInvoices.length;
-
-    const projBons = caisseData.bons.filter(b=>b.projectId===proj.id);
-    const caisseExpense = projBons.reduce((s,b)=> s+bonTotal(b), 0);
-    const projPurchases = purchases.filter(p=>p.projectId===proj.id);
-    const purchaseExpense = projPurchases.reduce((s,p)=> s+purchaseTotal(p), 0);
-
-    const projWorkers = workers.filter(w=>w.projectId===proj.id);
-    const projWorkerAttendance = attendance.filter(a=> projWorkers.some(w=>w.id===a.workerId));
-    const workerDays = projWorkerAttendance.filter(a=>a.status!=='absent').length;
-    const workerExpense = projWorkers.reduce((sum, w)=>{
-      const wAtt = attendance.filter(a=>a.workerId===w.id);
-      if(!wAtt.length) return sum;
-      const presentDays = wAtt.filter(a=>a.status==='present').length + wAtt.filter(a=>a.status==='half').length*0.5;
-      return sum + (w.type==='daily' ? presentDays * w.wage : w.wage);
-    }, 0);
-
-    const totalExpense = clientsExpense + caisseExpense + purchaseExpense + workerExpense;
-    const net = income - totalExpense;
-
+    const f = projectFinancials(proj, ctx);
     const card = document.createElement('div');
     card.className = 'list-card';
     card.innerHTML = `
       <div class="lc-row">
         <div class="lc-body">
           <div class="lc-title" dir="auto">${escapeHtml(proj.name)}</div>
-          <div class="lc-meta">${invoiceCount} فاتورة · ${projBons.length+projPurchases.length} مصروف · ${projWorkers.length} أجير</div>
+          <div class="lc-meta">${f.invoiceCount} فاتورة · ${f.expenseCount} مصروف · ${f.workerCount} أجير${(proj.contractFiles || []).length ? ' · 📎 ' + proj.contractFiles.length + ' ملف عقد' : ''}</div>
         </div>
         <button class="lc-del" data-del-project="${proj.id}">🗑</button>
       </div>
       <div style="display:flex; gap:6px; margin-top:8px; font-size:11px;">
         <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
           <div style="color:var(--ink-soft);">المداخيل</div>
-          <div style="font-weight:700; color:#2e7d32;">${income.toLocaleString('ar')} درهم</div>
+          <div style="font-weight:700; color:#2e7d32;">${f.income.toLocaleString('ar')} درهم</div>
         </div>
         <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
           <div style="color:var(--ink-soft);">المصاريف</div>
-          <div style="font-weight:700; color:#b91c1c;">${totalExpense.toLocaleString('ar')} درهم</div>
+          <div style="font-weight:700; color:#b91c1c;">${f.totalExpense.toLocaleString('ar')} درهم</div>
         </div>
         <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
           <div style="color:var(--ink-soft);">الصافي</div>
-          <div style="font-weight:700; color:${net>=0?'#2e7d32':'#b91c1c'};">${net.toLocaleString('ar')} درهم</div>
+          <div style="font-weight:700; color:${f.net >= 0 ? '#2e7d32' : '#b91c1c'};">${f.net.toLocaleString('ar')} درهم</div>
         </div>
       </div>
-      <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">مصروف مقدِّمي الخدمات: ${clientsExpense.toLocaleString('ar')} درهم · أجور الأجراء: ${workerExpense.toLocaleString('ar')} درهم (${workerDays} يوم عمل مسجّل)</div>
+      ${_projCmpHtml(f)}
+      <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">مصروف مقدِّمي الخدمات: ${f.clientsExpense.toLocaleString('ar')} درهم · أجور الأجراء: ${f.workerExpense.toLocaleString('ar')} درهم (${f.workerDays} يوم عمل مسجّل)</div>
+      <div class="lc-actions">
+        <button class="btn-ghost" data-proj-edit style="flex:1; padding:9px 8px; font-size:12px;">📑 الصفقة والعقد</button>
+        <button class="btn-ghost" data-proj-export style="flex:1; padding:9px 8px; font-size:12px;">📤 تصدير الحساب</button>
+      </div>
     `;
+    const panel = _projPanel(proj); panel.style.display = _projOpen[proj.id] ? 'flex' : 'none'; card.appendChild(panel);
+    card.querySelector('[data-proj-edit]').addEventListener('click', ()=>{ _projOpen[proj.id] = !_projOpen[proj.id]; panel.style.display = _projOpen[proj.id] ? 'flex' : 'none'; });
+    card.querySelector('[data-proj-export]').addEventListener('click', ()=>{ try{ openReportPreview(buildProjectReport(proj), 'pdf'); }catch(e){ alert('تعذّر تجهيز التصدير: ' + ((e && e.message) || e)); } });
     el.appendChild(card);
   });
   el.querySelectorAll('[data-del-project]').forEach(b=>{
     b.addEventListener('click', ()=>{
-      if(!confirm('متأكدة؟ الفواتير والمصاريف المرتبطة بهاد المشروع غادي تبقى موجودة لكن بلا تصنيف.')) return;
-      saveProjects(loadProjects().filter(p=>p.id !== b.dataset.delProject));
-      renderProjects();
+      const pr = loadProjects().find(p=> p.id === b.dataset.delProject), nf = pr && pr.contractFiles ? pr.contractFiles.length : 0;
+      if(!confirm('متأكدة؟ الفواتير والمصاريف المرتبطة بهاد المشروع غادي تبقى موجودة لكن بلا تصنيف.' + (nf ? '\nوغادي تتمسح ' + nf + ' ملف/ملفات ديال العقد من هاد الجهاز.' : ''))) return;
+      if(nf) pr.contractFiles.forEach(f=>{ FILEVAULT.del(f.id).catch(()=>{}); });
+      saveProjects(loadProjects().filter(p=> p.id !== b.dataset.delProject));
+      renderProjects(true);
     });
   });
 }
@@ -10172,7 +10670,7 @@ function nextQuoteNumber(dateStr){
   const d = dateStr ? new Date(dateStr + 'T12:00:00') : new Date();
   const yy = String(isNaN(d) ? new Date().getFullYear() : d.getFullYear()).slice(-2);
   let max = (yy === QUOTE_SEQ_START.yy) ? QUOTE_SEQ_START.last : 0;
-  loadQuotes().forEach(q=>{ const m = /^Dev\s*(\d+)\/(\d{2})$/i.exec(String(q.ref || '').trim()); if(m && m[2] === yy) max = Math.max(max, parseInt(m[1], 10)); });
+  loadQuotes().forEach(q=>{ if(q.status === 'draft') return; const m = /^Dev\s*(\d+)\/(\d{2})$/i.exec(String(q.ref || '').trim()); if(m && m[2] === yy) max = Math.max(max, parseInt(m[1], 10)); });
   return 'Dev ' + String(max + 1).padStart(2, '0') + '/' + yy;
 }
 function quoteTotals(q){
@@ -10260,14 +10758,27 @@ function buildQuotePdfDoc(q){
   return doc;
 }
 function saveQuoteRecord(q){
-  const all = loadQuotes(), exists = all.some(x=> x.id === q.id);
-  if(!exists || all.some(x=> x.ref === q.ref && x.id !== q.id)) q.ref = nextQuoteNumber(q.date);   // الرقم النهائي كيتعطى وقت الحفظ فقط
-  const rec = {id: q.id, ref: q.ref, date: q.date, clientName: q.clientName, clientAddr: q.clientAddr || '', clientNo: q.clientNo || '', title: q.title || '', items: q.items, tvaRate: q.tvaRate, createdAt: q.createdAt || Date.now()};
+  const all = loadQuotes(), cur = all.find(x=> x.id === q.id), issued = !!cur && cur.status !== 'draft';
+  if(!issued || all.some(x=> x.ref === q.ref && x.id !== q.id && x.status !== 'draft')) q.ref = nextQuoteNumber(q.date);   // الرقم النهائي كيتعطى وقت الإصدار (التحميل) فقط
+  const now = Date.now();
+  const rec = {id: q.id, ref: q.ref, status: 'issued', date: q.date, clientName: q.clientName, clientAddr: q.clientAddr || '', clientNo: q.clientNo || '', title: q.title || '', items: q.items, tvaRate: q.tvaRate, createdAt: (cur && cur.createdAt) || q.createdAt || now, issuedAt: (cur && cur.issuedAt) || now, updatedAt: now};
   const i = all.findIndex(x=> x.id === q.id); if(i >= 0) all[i] = rec; else all.push(rec);
+  saveQuotes(all);
+}
+// نسخة مسودة كتتحفظ بمجرد المعاينة (بلا ما تاخد رقم Dev رسمي) باش ما يضيع حتى عرض محرَّر
+function saveQuoteDraft(q){
+  const all = loadQuotes(), i = all.findIndex(x=> x.id === q.id);
+  if(i >= 0 && all[i].status !== 'draft') return;            // عرض صدر: ما كنبدلوهش
+  const rec = {id: q.id, ref: '', status: 'draft', date: q.date, clientName: q.clientName, clientAddr: q.clientAddr || '', clientNo: q.clientNo || '', title: q.title || '', items: q.items, tvaRate: q.tvaRate, createdAt: (i >= 0 && all[i].createdAt) || q.createdAt || Date.now()};
+  if(i >= 0){
+    const o = all[i]; if(['date', 'clientName', 'clientAddr', 'clientNo', 'title', 'tvaRate'].every(k=> o[k] === rec[k]) && JSON.stringify(o.items) === JSON.stringify(rec.items)) return;   // ما تبدل والو
+    rec.updatedAt = Date.now(); all[i] = rec;
+  } else { rec.updatedAt = Date.now(); all.push(rec); }
   saveQuotes(all);
 }
 function openQuotePreview(q, o){
   o = o || {};
+  try{ saveQuoteDraft(q); renderQuoteHistory(); }catch(e){ console.error('تعذّر حفظ مسودة عرض السعر:', e); }
   openFilePreview({
     title: 'DEVIS ' + (q.ref || '') + ' — ' + (q.clientName || ''), first: 'pdf', onEdit: o.onEdit,
     variants: [{key:'pdf', label:'PDF', filename: ()=> 'Devis-' + String(q.ref || 'x').replace(/[\\\/:*?"<>|\s]+/g, '-') + '-' + String(q.clientName || '').replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 30) + '.pdf',
@@ -10290,7 +10801,7 @@ function appendDevisAction(container, jsonText){
     const tx = document.createElement('span'); tx.setAttribute('dir', 'auto'); tx.textContent = ' عرض سعر جاهز للزبون "' + q.clientName + '" — HT: ' + fmtNum(t.ht) + ' · TTC: ' + fmtNum(t.ttc) + ' درهم'; wrap.appendChild(tx);
     const row = document.createElement('div'); row.style.cssText = 'display:flex; gap:6px; margin-top:8px;';
     const b = document.createElement('button'); b.className = 'btn-ghost'; b.style.cssText = 'padding:8px 14px; font-size:12.5px;'; b.textContent = '👁 معاينة عرض السعر';
-    b.addEventListener('click', ()=>{ if(!loadQuotes().some(x=> x.id === q.id)) q.ref = nextQuoteNumber(q.date); openQuotePreview(q, {onSaved: ()=>{ try{ renderQuoteHistory(); refreshQuoteRef(); }catch(e){} }, onEdit: ()=> _prefillChat('عدّل عرض السعر قبل التحميل: ')}); });
+    b.addEventListener('click', ()=>{ const sv = loadQuotes().find(x=> x.id === q.id); if(!sv || sv.status === 'draft') q.ref = nextQuoteNumber(q.date); openQuotePreview(q, {onSaved: ()=>{ try{ renderQuoteHistory(); refreshQuoteRef(); }catch(e){} }, onEdit: ()=> _prefillChat('عدّل عرض السعر قبل التحميل: ')}); });
     row.appendChild(b); wrap.appendChild(row);
   }catch(e){ wrap.textContent = '⚠️ ما قدرتش نجهز عرض السعر، صار خطأ بالبيانات.'; }
   container.appendChild(wrap);
@@ -10306,21 +10817,62 @@ function fillQuoteClients(){
   sel.value = cur;
 }
 function prefillQuoteAddr(){ const nm = _qv('quoteClientName'), ad = document.getElementById('quoteClientAddr'); if(!nm || !ad || ad.value.trim()) return; const prev = loadQuotes().slice().reverse().find(x=> x.clientName === nm); if(prev && prev.clientAddr) ad.value = prev.clientAddr; }
+let _quoteFormId = null, _quoteFilter = 'all', _quoteSearch = '', _quoteShowAll = false;
 function renderQuoteHistory(){
   const box = document.getElementById('quoteHistory'); if(!box) return;
-  const list = loadQuotes().slice().sort((a, b)=> (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 15);
-  box.innerHTML = list.length ? '<div style="font-weight:700; font-size:12.5px; margin-bottom:4px;">🗂️ آخر عروض الأسعار</div>' : '';
-  list.forEach(q=>{
-    const r = document.createElement('div'); r.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:6px; border:1px solid var(--line); border-radius:10px; padding:6px 10px; margin-top:6px; font-size:12px;';
-    const s = document.createElement('span'); s.setAttribute('dir', 'auto'); s.textContent = q.ref + ' — ' + q.clientName + ' — ' + fmtNum(quoteTotals(q).ttc) + ' TTC';
-    const b = document.createElement('button'); b.className = 'btn-ghost'; b.style.cssText = 'padding:4px 10px; font-size:12px;'; b.textContent = '👁'; b.addEventListener('click', ()=> openQuotePreview(Object.assign({}, q)));
-    r.appendChild(s); r.appendChild(b); box.appendChild(r);
+  if(!box._init){
+    box._init = true;
+    box.innerHTML = '<div style="font-weight:700; font-size:12.5px; margin-bottom:6px;">🗂️ أرشيف عروض الأسعار <span id="quoteArchCount" style="font-weight:400; color:var(--ink-soft);"></span></div>'
+      + '<input type="search" id="quoteSearch" dir="auto" placeholder="🔎 بحث (زبون، رقم، عنوان الأشغال)" style="width:100%; margin-bottom:6px;">'
+      + '<div id="quoteChips" style="display:flex; gap:6px; margin-bottom:4px;"></div><div id="quoteArchList"></div>';
+    box.querySelector('#quoteSearch').addEventListener('input', e=>{ _quoteSearch = e.target.value.trim().toLowerCase(); _quoteShowAll = false; renderQuoteHistory(); });
+  }
+  const all = loadQuotes(), nd = all.filter(q=> q.status === 'draft').length;
+  box.querySelector('#quoteArchCount').textContent = '(' + all.length + ')';
+  const chips = box.querySelector('#quoteChips'); chips.innerHTML = '';
+  [['all', 'الكل (' + all.length + ')'], ['draft', 'مسودات (' + nd + ')'], ['issued', 'صادرة (' + (all.length - nd) + ')']].forEach(([k, lab])=>{
+    const b = document.createElement('button'); b.className = _quoteFilter === k ? 'btn-primary' : 'btn-ghost'; b.style.cssText = 'padding:6px 10px; font-size:12px; flex:1;'; b.textContent = lab;
+    b.addEventListener('click', ()=>{ _quoteFilter = k; _quoteShowAll = false; renderQuoteHistory(); }); chips.appendChild(b);
   });
+  let list = all.slice().sort((a, b)=> (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+  if(_quoteFilter === 'draft') list = list.filter(q=> q.status === 'draft'); else if(_quoteFilter === 'issued') list = list.filter(q=> q.status !== 'draft');
+  if(_quoteSearch) list = list.filter(q=> [q.ref, q.clientName, q.title, q.clientAddr].join(' ').toLowerCase().includes(_quoteSearch));
+  const total = list.length; if(!_quoteShowAll) list = list.slice(0, 15);
+  const host = box.querySelector('#quoteArchList'); host.innerHTML = '';
+  if(!total){ host.innerHTML = '<div style="font-size:12px; color:var(--ink-soft); padding:6px 2px;">ما كاين حتى عرض سعر ' + (all.length ? 'بهاد البحث.' : 'محفوظ بعد. كل عرض كتحرّرو وكتعاينو كيتحفظ هنا أوتوماتيكيا.') + '</div>'; return; }
+  list.forEach(q=>{
+    const draft = q.status === 'draft', t = quoteTotals(q);
+    const r = document.createElement('div'); r.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:6px; border:1px solid var(--line); border-radius:10px; padding:7px 10px; margin-top:6px; font-size:12px;';
+    const info = document.createElement('div'); info.style.cssText = 'flex:1; min-width:0;';
+    const l1 = document.createElement('div'); l1.setAttribute('dir', 'auto'); l1.style.cssText = 'font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+    l1.textContent = (draft ? '📝 مسودة' : q.ref) + ' — ' + q.clientName;
+    const l2 = document.createElement('div'); l2.setAttribute('dir', 'auto'); l2.style.cssText = 'color:var(--ink-soft); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+    l2.textContent = frDate(q.date) + ' · ' + fmtNum(t.ttc) + ' TTC' + (q.title ? ' · ' + q.title : '');
+    info.appendChild(l1); info.appendChild(l2); r.appendChild(info);
+    const btn = (lab, fn)=>{ const b = document.createElement('button'); b.className = 'btn-ghost'; b.style.cssText = 'padding:4px 9px; font-size:12px;'; b.textContent = lab; b.addEventListener('click', fn); r.appendChild(b); };
+    btn('👁', ()=>{ const c = Object.assign({}, q); if(draft) c.ref = nextQuoteNumber(c.date); openQuotePreview(c, {onSaved: ()=>{ refreshQuoteRef(); renderQuoteHistory(); }}); });
+    btn('✏️', ()=> loadQuoteIntoForm(q));
+    if(draft) btn('🗑', ()=>{ if(!confirm('نمسح هاد المسودة (' + q.clientName + ')؟')) return; saveQuotes(loadQuotes().filter(x=> x.id !== q.id)); if(_quoteFormId === q.id) _quoteFormId = null; renderQuoteHistory(); });
+    host.appendChild(r);
+  });
+  if(total > list.length){ const m = document.createElement('button'); m.className = 'btn-ghost'; m.style.cssText = 'width:100%; margin-top:8px; padding:8px; font-size:12px;'; m.textContent = 'عرض الكل (' + total + ')'; m.addEventListener('click', ()=>{ _quoteShowAll = true; renderQuoteHistory(); }); host.appendChild(m); }
+}
+function loadQuoteIntoForm(q){
+  const set = (id, v)=>{ const e = document.getElementById(id); if(e) e.value = v == null ? '' : v; };
+  const draft = q.status === 'draft';
+  set('quoteClientName', q.clientName); set('quoteClientAddr', q.clientAddr || ''); set('quoteTitle', q.title || ''); set('quoteDate', draft ? (q.date || todayStr()) : todayStr());
+  const tva = document.getElementById('quoteTva');
+  if(tva){ const v = String((q.tvaRate === 0 || q.tvaRate) ? q.tvaRate : 20); if(!Array.from(tva.options).some(o=> o.value === v)){ const o = document.createElement('option'); o.value = v; o.textContent = 'TVA ' + v + '%'; tva.appendChild(o); } tva.value = v; }
+  const rows = document.getElementById('quoteRows'); rows.innerHTML = '';
+  (q.items && q.items.length ? q.items : [{}]).forEach(it=>{ addQuoteRow(); const r = rows.lastElementChild; r.querySelector('.q-desc').value = it.d || ''; r.querySelector('.q-unit').value = it.u || 'ENS'; r.querySelector('.q-qty').value = it.q != null ? it.q : 1; r.querySelector('.q-price').value = it.p != null ? it.p : ''; });
+  _quoteFormId = draft ? q.id : null;      // مسودة: كنكملو عليها. عرض صدر: كنديرو منو نسخة جديدة وما كنبدلوش الأصل
+  updateQuoteTotal(); refreshQuoteRef();
+  try{ document.getElementById('quoteClientName').scrollIntoView({behavior: 'smooth', block: 'center'}); }catch(e){}
 }
 function quoteFormToObj(){
   const items = [];
   document.querySelectorAll('#quoteRows .quote-row').forEach(row=>{ const d = row.querySelector('.q-desc').value.trim(); if(!d) return; items.push({d, u: (row.querySelector('.q-unit').value.trim() || 'ENS'), q: parseFloat(row.querySelector('.q-qty').value) || 0, p: parseFloat(row.querySelector('.q-price').value) || 0}); });
-  return {id: 'qt' + Date.now(), date: _qv('quoteDate') || todayStr(), clientName: _qv('quoteClientName'), clientAddr: _qv('quoteClientAddr'), clientNo: '', title: _qv('quoteTitle'), items, tvaRate: +_qv('quoteTva'), createdAt: Date.now()};
+  return {id: _quoteFormId || (_quoteFormId = 'qt' + Date.now()), date: _qv('quoteDate') || todayStr(), clientName: _qv('quoteClientName'), clientAddr: _qv('quoteClientAddr'), clientNo: '', title: _qv('quoteTitle'), items, tvaRate: +_qv('quoteTva'), createdAt: Date.now()};
 }
 (function initQuoteUi(){
   const dt = document.getElementById('quoteDate'); if(dt && !dt.value) dt.value = todayStr();
@@ -10335,7 +10887,13 @@ function quoteFormToObj(){
     if(!q.clientName){ alert('اكتب اسم الزبون أولاً.'); return; }
     if(!q.items.length){ alert('زيد بند واحد على الأقل (وصف + كمية + سعر).'); return; }
     q.ref = nextQuoteNumber(q.date);
-    openQuotePreview(q, {onSaved: ()=>{ refreshQuoteRef(); renderQuoteHistory(); }});
+    openQuotePreview(q, {onSaved: ()=>{ _quoteFormId = null; refreshQuoteRef(); renderQuoteHistory(); }});
+  });
+  document.getElementById('quoteNewBtn')?.addEventListener('click', ()=>{
+    ['quoteClientName', 'quoteClientAddr', 'quoteTitle'].forEach(id=>{ const e = document.getElementById(id); if(e) e.value = ''; });
+    const cs = document.getElementById('quoteClientSel'); if(cs) cs.value = '';
+    document.getElementById('quoteDate').value = todayStr(); document.getElementById('quoteRows').innerHTML = ''; addQuoteRow(); updateQuoteTotal();
+    _quoteFormId = null; refreshQuoteRef();
   });
 })();
 
@@ -10850,7 +11408,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 07-11-2026 ب'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:2147483000; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 13-11-2026'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -10858,7 +11416,7 @@ if('serviceWorker' in navigator){
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='fix-2026-11-07b';
+    const BUILD='fix-2026-11-13a';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
