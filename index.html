@@ -2357,14 +2357,18 @@ const SYSTEM_PROMPT = `أنت "يونس"، المساعد الشخصي والم�
 \`\`\`devis
 {"clientName":"...","clientAddr":"...","title":"TRAVAUX DE ...","items":[{"d":"...","u":"ENS","q":1,"p":0}],"tvaRate":20,"date":"YYYY-MM-DD"}
 \`\`\`
-- **تشجير / شجرة احترافية** (كلما طلب المستخدم تلخيص المشاكل ولا الأولويات ولا المقترحات ولا خطة عمل ولا تحليل **بتشجير** ولا "شجرة" ولا arborescence ولا "خريطة ذهنية" ولا mind map، وحتى بلا ما يذكر الصيغة إلا كان الجواب متفرع بطبيعتو (مشكل ← أسباب ← حلول)، عرضو كشجرة. ما تكتبش لائحة عادية ولا رسم بحروف (├── │ └──). السطر الأول هو عنوان الشجرة، وكل فرع فسطر بـ "- " وكل مستوى جديد بزيادة فراغين فالبداية، أقصى 4 مستويات. كل عقدة قصيرة (أقل من 12 كلمة) وواضحة، والمشاكل المتشابهة جمعها فعقدة وحدة. للأولوية بدا العقدة بـ 🔴 (عاجل) ولا 🟠 (مهم) ولا 🟢 (عادي)، وللرقم ولا الملاحظة حطها بعد " :: ". رتب الفروع من الأهم للأقل أهمية. الأرقام كتجي من "بيانات الشركة" فقط. التطبيق كيحول الكتلة أوتوماتيكيًا لشجرة احترافية قابلة للطي بأزرار صورة وPDF، فما تقولش بلي ما تقدرش. زيد بعد الكتلة جملة وحدة فيها أهم نقطة):
+- **تشجير / شجرة / مخطط تفرعي** (كلما طلب المستخدم **تشجير** ولا "شجرة" ولا مخطط ولا arborescence ولا organigramme ولا "خريطة ذهنية" ولا mind map، على **أي موضوع** (مشاكل، أولويات، مقترحات، خطة عمل، تحليل، مراحل مشروع، هيكل شركة، درس، ملخص نص ولا ملف ولا صورة بعثها المستخدم)، وحتى بلا ما يذكر الصيغة إلا كان الجواب متفرع بطبيعتو (مشكل ← أسباب ← حلول)، عرضو **كمخطط شجري**: من فوق لتحت، مربعات ملونة حسب المستوى وخطوط ربط. ما تكتبش لائحة عادية ولا رسم بحروف (├── │ └──). السطر الأول هو عنوان المخطط (كيتحط فمربع الجذر)، وكل فرع فسطر بـ "- " وكل مستوى جديد بزيادة فراغين فالبداية. باش يخرج المخطط مزيان: أقصى 5 مستويات تحت العنوان، والأحسن من 2 حتى 5 فروع لكل عقدة (ما تزيدش على 6)، كل عقدة قصيرة (أقل من 10 كلمات) وواضحة، والمتشابه جمعو فعقدة وحدة، ورتب الفروع من الأهم للأقل أهمية. للأولوية بدا العقدة بـ 🔴 (عاجل) ولا 🟠 (مهم) ولا 🟢 (عادي)، وللرقم ولا الملاحظة القصيرة حطها بعد " :: ". المحتوى كيتبنى على اللي طلب المستخدم (ولا على النص/الملف اللي بعث)، والأرقام الخاصة بالشركة كتجي من "بيانات الشركة" فقط، وما تخترعش معلومات. إلا كان موضوع المخطط غامض سول سؤال واحد قصير. التطبيق كيحول الكتلة أوتوماتيكيًا لمخطط احترافي بأزرار صورة وPDF ونسخ وعرض لائحة، فما تقولش بلي ما تقدرش. زيد بعد الكتلة جملة وحدة فيها أهم نقطة):
 \`\`\`tree
-المشاكل الحالية فالورش
-- 🔴 مالية :: عاجل
-  - تأخر تحصيل الفواتير :: 45,000 درهم
-    - 🟢 حل: تذكير أسبوعي للزبون
-- 🟠 يد عاملة
-  - غياب متكرر فالورش
+خطة تسليم الورش
+- 🔴 الجانب المالي
+  - تحصيل الفواتير :: 45,000 درهم
+    - 🟢 تذكير أسبوعي للزبون
+  - أجور الأسبوع
+- 🟠 اليد العاملة
+  - غياب متكرر
+    - 🟢 نظام تتبع الحضور
+- المعدات
+  - صيانة الخلاطة
 \`\`\`
 - **موعد/تذكير** (استعمل التاريخ ديال اليوم لحساب "غدا"، "بعد غد"، أسماء الأيام. إلا كانو عدة مواعيد فجدول، كتلة منفصلة لكل موعد بلا تأكيد، وفالأخير جملة وحدة بالعدد):
 \`\`\`add_appointment
@@ -2865,6 +2869,9 @@ function appendChart(container, jsonText){
 .yt-body{ flex:1; min-width:0; }
 .yt-note{ display:inline-block; margin-inline-start:6px; font-size:11px; font-weight:600; color:var(--ink-soft); background:var(--stone); border-radius:6px; padding:0 7px; }
 .yt-li.yt-closed > .yt-ul{ display:none; }
+.yt-dg{ overflow:auto; -webkit-overflow-scrolling:touch; max-height:74vh; background:#fff; border:1px solid var(--line); border-radius:10px; margin-bottom:8px; }
+.yt-dg img{ display:block; max-width:none; min-width:100%; height:auto; cursor:zoom-in; }
+.yt-dg-wait{ padding:16px; text-align:center; font-size:12.5px; color:var(--ink-soft); }
 `;
   document.head.appendChild(s);
 })();
@@ -2914,7 +2921,9 @@ function _treeText(tree){
 function appendTreeCard(container, text){
   const tree = _treeParse(text);
   const wrap = document.createElement('div'); wrap.className = 'yt-wrap'; wrap.setAttribute('dir', tree.rtl ? 'rtl' : 'ltr');
-  if(tree.title){ const h = document.createElement('div'); h.className = 'yt-title'; h.setAttribute('dir', 'auto'); h.textContent = tree.title; wrap.appendChild(h); }
+  const dg = document.createElement('div'); dg.className = 'yt-dg'; wrap.appendChild(dg);           // المخطط (افتراضي)
+  const lb = document.createElement('div'); lb.className = 'yt-listbox'; lb.style.display = 'none'; wrap.appendChild(lb); // اللائحة القابلة للطي
+  if(tree.title){ const h = document.createElement('div'); h.className = 'yt-title'; h.setAttribute('dir', 'auto'); h.textContent = tree.title; lb.appendChild(h); }
   const OPEN = '▾', SHUT = tree.rtl ? '◂' : '▸';
   const build = (nodes, lv)=>{
     const ul = document.createElement('ul'); ul.className = 'yt-ul';
@@ -2936,9 +2945,9 @@ function appendTreeCard(container, text){
     });
     return ul;
   };
-  wrap.appendChild(build(tree.kids, 1));
+  lb.appendChild(build(tree.kids, 1));
   const row = document.createElement('div'); row.className = 'chart-actions';
-  const mk = (lab, fn)=>{ const b = document.createElement('button'); b.className = 'chart-share-btn'; b.textContent = lab; b.addEventListener('click', ()=>{ try{ fn(b); }catch(e){ alert('تعذّر تجهيز الملف: ' + (e && e.message || e)); } }); row.appendChild(b); };
+  const mk = (lab, fn)=>{ const b = document.createElement('button'); b.className = 'chart-share-btn'; b.textContent = lab; b.addEventListener('click', ()=>{ try{ fn(b); }catch(e){ alert('تعذّر تجهيز الملف: ' + (e && e.message || e)); } }); row.appendChild(b); return b; };
   mk('🖼 صورة', ()=> _treeOpen(tree, 'image'));
   mk('📄 PDF', ()=> _treeOpen(tree, 'pdf'));
   mk('📋 نسخ', b=>{
@@ -2946,13 +2955,130 @@ function appendTreeCard(container, text){
     if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, ()=>{});
     else { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); done(); }catch(e){} ta.remove(); }
   });
-  mk('⇕ طي/فتح', ()=>{
+  const bFold = mk('⇕ طي/فتح', ()=>{
     const tops = Array.from(wrap.querySelectorAll('.yt-lv1.yt-has')); if(!tops.length) return;
     const anyOpen = tops.some(l=> !l.classList.contains('yt-closed'));
     tops.forEach(l=>{ l.classList.toggle('yt-closed', anyOpen); const g = l.querySelector(':scope > .yt-node > .yt-tg'); if(g) g.textContent = anyOpen ? SHUT : OPEN; });
   });
+  bFold.style.display = 'none';
+  let mode = 'diagram', drawn = false;
+  const bMode = mk('🔀 لائحة', ()=> setMode(mode === 'diagram' ? 'list' : 'diagram'));
+  async function setMode(m){
+    mode = m;
+    dg.style.display = m === 'diagram' ? '' : 'none';
+    lb.style.display = m === 'list' ? '' : 'none';
+    bFold.style.display = m === 'list' ? '' : 'none';
+    bMode.textContent = m === 'diagram' ? '🔀 لائحة' : '🌳 مخطط';
+    if(m === 'diagram' && !drawn){
+      drawn = true; dg.className = 'yt-dg yt-dg-wait'; dg.textContent = '⏳ كنرسم المخطط...';
+      try{
+        const cv = await _tdCanvas(tree, {header: false});
+        const im = document.createElement('img'); im.alt = tree.title || 'مخطط'; im.src = cv.toDataURL('image/png');
+        im.style.width = Math.max(300, Math.round(cv._nat * 0.45)) + 'px';
+        im.addEventListener('click', ()=> _treeOpen(tree, 'image'));
+        dg.className = 'yt-dg'; dg.textContent = ''; dg.appendChild(im);
+      }catch(e){ drawn = false; dg.className = 'yt-dg'; dg.textContent = ''; bMode.style.display = 'none'; setMode('list'); }
+    }
+  }
   wrap.appendChild(row);
   container.appendChild(wrap);
+  setMode('diagram');
+}
+
+/* ---- المخطط الشجري (من فوق لتحت، مربعات ملونة حسب المستوى وخطوط ربط) ---- */
+const _TD_PAL = [
+  {a:'#FCE0CF', b:'#F8CDB3', t:'#4a2c1a'},   // الجذر: خوخي
+  {a:'#F9CDD9', b:'#EFA6BC', t:'#5a1d34'},   // المستوى 1: وردي
+  {a:'#BBE0DB', b:'#8FC7C1', t:'#10413d'},   // المستوى 2: تركوازي
+  {a:'#F2DC93', b:'#E0BC55', t:'#4a3a07'},   // المستوى 3: ذهبي
+  {a:'#E7D8F2', b:'#CDB4E3', t:'#3b2352'}    // المستوى 4: بنفسجي
+];
+const _TD_LEAF = {a:'#DCEBF8', b:'#B8D5EE', t:'#173a5c'};   // الأوراق (آخر الفروع): أزرق فاتح
+async function _tdCanvas(tree, opt){
+  opt = opt || {};
+  try{ await document.fonts.ready; }catch(e){}
+  const rtl = tree.rtl, ar = t=> /[\u0600-\u06FF]/.test(t);
+  const mg = document.createElement('canvas').getContext('2d');
+  const FS = [32, 28, 26, 25, 25, 25], GX = 22, GY = 70, PX = 20, PY = 13, MINW = 160;
+  const wrapTxt = (txt, font, maxW)=>{
+    mg.font = font; const out = []; let cur = '';
+    String(txt).split(/\s+/).forEach(w=>{ const t = cur ? cur + ' ' + w : w; if(cur && mg.measureText(t).width > maxW){ out.push(cur); cur = w; } else cur = t; });
+    if(cur) out.push(cur); return out.length ? out : [''];
+  };
+  const mkN = (n, d)=>{
+    const root = d === 0, leaf = !n.kids.length, sz = FS[Math.min(d, FS.length - 1)];
+    const font = (root ? 'bold ' : (d === 1 ? '600 ' : '')) + sz + 'px ' + _CH_FONT, nfont = '21px ' + _CH_FONT;
+    const maxTw = root ? 520 : (leaf ? 200 : 210);
+    const lines = wrapTxt(n.t, font, maxTw), nlines = n.note ? wrapTxt(n.note, nfont, maxTw) : [];
+    let tw = 0; mg.font = font; lines.forEach(l=>{ tw = Math.max(tw, mg.measureText(l).width); });
+    mg.font = nfont; nlines.forEach(l=>{ tw = Math.max(tw, mg.measureText(l).width); });
+    const lh = Math.round(sz * 1.5), h = PY * 2 + lines.length * lh + (nlines.length ? nlines.length * 28 + 4 : 0);
+    const w = Math.max(MINW, Math.ceil(tw) + PX * 2 + (n.pri ? 10 : 0));
+    const o = {n, d, root, leaf, lines, nlines, font, nfont, lh, w, h};
+    o.kids = n.kids.map(k=> mkN(k, d + 1));
+    o.tot = o.kids.reduce((a, k)=> a + k.sw, 0) + GX * Math.max(0, o.kids.length - 1);
+    o.sw = Math.max(w, o.tot);
+    return o;
+  };
+  const R = mkN({t: tree.title || 'التشجير', note: '', pri: null, kids: tree.kids}, 0);
+  if(R.sw > 7000) throw new Error('المخطط عريض بزاف');
+  const rowH = []; (function col(o){ rowH[o.d] = Math.max(rowH[o.d] || 0, o.h); o.kids.forEach(col); })(R);
+  const rowY = []; { let y = 0; rowH.forEach((h, i)=>{ rowY[i] = y; y += h + GY; }); }
+  const dgW = R.sw, dgH = rowY[rowY.length - 1] + rowH[rowH.length - 1];
+  (function place(o, cx){
+    o.cx = cx; o.y = rowY[o.d]; o.hh = rowH[o.d];
+    let edge = rtl ? cx + o.tot / 2 : cx - o.tot / 2;
+    o.kids.forEach(k=>{
+      if(rtl){ place(k, edge - k.sw / 2); edge -= k.sw + GX; }
+      else { place(k, edge + k.sw / 2); edge += k.sw + GX; }
+    });
+  })(R, dgW / 2);
+  const M = 50, HDR = opt.header ? 220 : 0, FTR = opt.header ? 70 : 0;
+  const W0 = Math.max(dgW + 2 * M, opt.header ? 1240 : 0), H0 = HDR + dgH + 2 * M + FTR;
+  const sc = Math.min(1, 9000 / W0, 12000 / H0);
+  const c = document.createElement('canvas'); c.width = Math.round(W0 * sc); c.height = Math.round(H0 * sc);
+  const g = c.getContext('2d'); g.scale(sc, sc); g.fillStyle = '#ffffff'; g.fillRect(0, 0, W0, H0);
+  if(opt.header){
+    let info = {}; try{ info = loadCompanyInfo() || {}; }catch(e){}
+    if(info.logoDataUrl){ try{ const im = await _chImg(info.logoDataUrl), hh = 90; g.drawImage(im, 70, 60, Math.min(im.width / im.height * hh, 300), hh); }catch(e){} }
+    g.fillStyle = '#6b7280'; g.font = '24px ' + _CH_FONT; g.textAlign = 'right'; g.direction = 'ltr'; g.textBaseline = 'alphabetic'; g.fillText(new Date().toLocaleDateString('fr-FR'), W0 - 70, 100);
+    g.fillStyle = '#1E64A0'; g.fillRect(70, 184, W0 - 140, 4);
+  }
+  g.save(); g.translate((W0 - dgW) / 2, HDR + M);
+  // خطوط الربط
+  g.strokeStyle = '#E9A98A'; g.lineWidth = 3.5; g.lineCap = 'round'; g.lineJoin = 'round';
+  (function links(o){
+    if(o.kids.length){
+      const y0 = o.y + o.hh, yb = y0 + GY / 2, xs = o.kids.map(k=> k.cx).concat([o.cx]);
+      g.beginPath(); g.moveTo(o.cx, y0); g.lineTo(o.cx, yb);
+      if(o.kids.length > 1){ g.moveTo(Math.min.apply(null, xs), yb); g.lineTo(Math.max.apply(null, xs), yb); }
+      o.kids.forEach(k=>{ g.moveTo(k.cx, yb); g.lineTo(k.cx, k.y); });
+      g.stroke();
+    }
+    o.kids.forEach(links);
+  })(R);
+  // المربعات
+  (function nodes(o){
+    const p = o.root ? _TD_PAL[0] : (o.leaf && o.d >= 2 ? _TD_LEAF : _TD_PAL[Math.min(o.d, 4)]);
+    const x = o.cx - o.w / 2, y = o.y, w = o.w, h = o.hh;
+    g.save(); g.shadowColor = 'rgba(0,0,0,.15)'; g.shadowBlur = 8; g.shadowOffsetY = 3;
+    const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, p.a); gr.addColorStop(1, p.b);
+    g.fillStyle = gr; _ytRR(g, x, y, w, h, 16); g.fill(); g.restore();
+    if(o.n.pri){ g.save(); _ytRR(g, x, y, w, h, 16); g.clip(); g.fillStyle = _YT_PRI_COLOR[o.n.pri]; g.fillRect(rtl ? x + w - 9 : x, y, 9, h); g.restore(); }
+    const bodyH = o.lines.length * o.lh + (o.nlines.length ? o.nlines.length * 28 + 4 : 0), ty = y + (h - bodyH) / 2, tx = o.cx + (o.n.pri ? (rtl ? -4 : 4) : 0);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = p.t; g.font = o.font;
+    o.lines.forEach((l, i)=>{ g.direction = ar(l) ? 'rtl' : 'ltr'; g.fillText(l, tx, ty + i * o.lh + o.lh / 2); });
+    if(o.nlines.length){
+      g.font = o.nfont; g.globalAlpha = .8;
+      o.nlines.forEach((l, i)=>{ g.direction = ar(l) ? 'rtl' : 'ltr'; g.fillText(l, tx, ty + o.lines.length * o.lh + 4 + i * 28 + 14); });
+      g.globalAlpha = 1;
+    }
+    o.kids.forEach(nodes);
+  })(R);
+  g.restore();
+  if(opt.header){ g.fillStyle = '#9ca3af'; g.font = '22px ' + _CH_FONT; g.textAlign = 'center'; g.direction = 'ltr'; g.textBaseline = 'alphabetic'; g.fillText('ALIOUA BTP', W0 / 2, H0 - 30); }
+  c._nat = W0; c._dg = true;
+  return c;
 }
 
 /* ---- التصدير: كانفاس A4 (1240×1754) بنفس هوية رسوم الشركة ---- */
@@ -3041,11 +3167,24 @@ async function _treeSheet(tree, paginate){
 function _treeOpen(tree, first){
   const base = ('شجرة-' + (tree.title || 'ALIOUA')).replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 60);
   let imgP = null, pdfP = null;
-  const imgCv = ()=> imgP || (imgP = _treeSheet(tree, false));
-  const pdfCv = ()=> pdfP || (pdfP = _treeSheet(tree, true));
+  // المخطط الملون هو الأصل؛ إلا كان عريض بزاف كنرجعو للائحة A4 المرقّمة
+  const imgCv = ()=> imgP || (imgP = _tdCanvas(tree, {header: true}).catch(()=> _treeSheet(tree, false)));
+  const pdfCv = ()=> pdfP || (pdfP = _tdCanvas(tree, {header: true}).catch(()=> _treeSheet(tree, true)));
   const pdfDoc = async ()=>{
     if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش، تأكد من الإنترنت.');
-    const cv = await pdfCv(), PH = 1754, n = Math.max(1, Math.round(cv.height / PH)), d = new window.jspdf.jsPDF({unit: 'mm', format: 'a4', orientation: 'p'});
+    const cv = await pdfCv();
+    if(cv._dg){
+      // صفحة A4 (أفقية/عمودية حسب شكل المخطط)؛ إلا كبر المخطط كنكبرو الصفحة باش النص يبقى مقروء
+      const natW = cv._nat, natH = cv.height * natW / cv.width;
+      const land = natW >= natH, bw = land ? 297 : 210, bh = land ? 210 : 297, mm = 8, k0 = 0.15;
+      let k = Math.min((bw - 2 * mm) / natW, (bh - 2 * mm) / natH), pw = bw, ph = bh;   // k = ملم لكل بيكسل
+      if(k < k0){ k = k0; pw = natW * k + 2 * mm; ph = natH * k + 2 * mm; }
+      const iw = natW * k, ih = natH * k;
+      const d = new window.jspdf.jsPDF({unit: 'mm', format: [pw, ph], orientation: pw >= ph ? 'l' : 'p'});
+      d.addImage(cv.toDataURL('image/png'), 'PNG', (pw - iw) / 2, (ph - ih) / 2, iw, ih);
+      return d;
+    }
+    const PH = 1754, n = Math.max(1, Math.round(cv.height / PH)), d = new window.jspdf.jsPDF({unit: 'mm', format: 'a4', orientation: 'p'});
     for(let i = 0; i < n; i++){
       const pc = document.createElement('canvas'); pc.width = cv.width; pc.height = PH;
       const pg = pc.getContext('2d'); pg.fillStyle = '#ffffff'; pg.fillRect(0, 0, pc.width, PH); pg.drawImage(cv, 0, i * PH, cv.width, PH, 0, 0, cv.width, PH);
@@ -3055,7 +3194,12 @@ function _treeOpen(tree, first){
   };
   openFilePreview({title: tree.title || 'شجرة', first, variants: [
     {key: 'image', label: '🖼 صورة', filename: base + '.png',
-      render: async ()=>{ const cv = await imgCv(), im = document.createElement('img'); im.src = cv.toDataURL('image/png'); im.style.cssText = 'width:100%; max-width:720px; display:block; margin:0 auto; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.25);'; return im; },
+      render: async ()=>{
+        const cv = await imgCv(), im = document.createElement('img'); im.src = cv.toDataURL('image/png');
+        const w = cv._dg ? Math.max(window.innerWidth - 24, Math.min(Math.round(cv._nat * 0.5), 2600)) : Math.min(window.innerWidth - 24, 720);
+        im.style.cssText = 'width:' + w + 'px; max-width:none; display:block; margin:0 auto; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.25);';
+        return im;
+      },
       blob: async ()=>{ const cv = await imgCv(); return await new Promise(r=> cv.toBlob(r, 'image/png')); }},
     {key: 'pdf', label: 'PDF', filename: base + '.pdf',
       render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, await pdfDoc()); return w; },
