@@ -1781,6 +1781,7 @@ input, select, textarea{ min-width:0; }
       <p style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">لما تربطي، كل موعد يضيفو يونس كيتزاد تلقائيًا لـ Google Calendar ديالك بتذكير قبل بـ30 و5 دقايق — هادشي كيخليك توصلك تنبيهات حتى والتطبيق مسكّر. تحتاجي تسويي Client ID خاص بيك من <a href="https://console.cloud.google.com/apis/credentials" target="_blank">console.cloud.google.com</a> (اسألي يونس/الدعم فالتفاصيل).</p>
       <button class="btn-ghost" id="gcalConnectBtn" style="width:100%; margin-top:8px;">🔗 ربط الحساب</button>
       <p id="gcalStatus" style="font-size:12px; margin-top:6px; color:var(--ink-soft);">غير متصل</p>
+      <p style="font-size:11px; color:var(--ink-soft); direction:ltr; word-break:break-all;">Redirect URI: <b id="gcalRedirectUri"></b></p>
     </div>
 
     <div style="margin-top:14px;">
@@ -3233,6 +3234,25 @@ function saveGcalToken(token, expiresInSec){
   safeSetItem(GCAL_TOKEN_KEY, JSON.stringify({access_token: token, expiry: gcalTokenExpiry}));
 }
 loadGcalToken();
+/* ربط Google بإعادة التوجيه (يعمل في Brave/أندرويد بلا نافذة منبثقة) */
+function gcalRedirectUri(){ return location.origin + location.pathname.replace(/index\.html$/, ''); }
+function gcalStartRedirect(clientId){
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({client_id: clientId, redirect_uri: gcalRedirectUri(), response_type: 'token', scope: 'https://www.googleapis.com/auth/calendar.events', include_granted_scopes: 'true', state: 'gcal'}).toString();
+}
+(function(){
+  try{
+    const h = location.hash || '';
+    if(/state=gcal/.test(h)){
+      const q = new URLSearchParams(h.replace(/^#/, ''));
+      history.replaceState(null, '', location.pathname + location.search);
+      if(q.get('access_token')){
+        saveGcalToken(q.get('access_token'), parseInt(q.get('expires_in'), 10) || 3500);
+        setTimeout(()=>{ try{ updateGcalStatusUI(); apptToast('✅ تم ربط Google Calendar'); gcalSyncPending(false).then(r=>{ if(r && r.ok) apptToast('📅 تمت مزامنة ' + r.ok + ' موعد ✅'); }); }catch(e){} }, 3000);
+      }else setTimeout(()=>{ try{ apptToast('⚠️ تعذّر ربط Google: ' + (q.get('error') || 'خطأ')); }catch(e){} }, 3000);
+    }
+    const el = document.getElementById('gcalRedirectUri'); if(el) el.textContent = gcalRedirectUri();
+  }catch(e){}
+})();
 
 function updateGcalStatusUI(){
   const el = document.getElementById('gcalStatus');
@@ -3273,21 +3293,14 @@ document.getElementById('gcalConnectBtn')?.addEventListener('click', ()=>{
     return;
   }
   setGcalClientId(clientId);
-  if(!window.google || !google.accounts || !google.accounts.oauth2){
-    alert('مكتبة Google ماتحملاتش بعد. تأكدي من الإنترنت وجربي مرة ثانية بعد شوي.');
-    return;
-  }
-  gcalTokenClient = initGcalTokenClient(clientId);
-  if(!gcalTokenClient){
-    alert('ما قدرتش نجهز الاتصال بـ Google. تأكدي من الـ Client ID.');
-    return;
-  }
-  gcalTokenClient.requestAccessToken({prompt: 'consent'});
+  gcalStartRedirect(clientId);
 });
 
 async function ensureGcalToken(interactive){
   if(gcalAccessToken && gcalTokenExpiry > Date.now()) return gcalAccessToken;
-  if(!interactive) return null; // التجديد يحتاج نقرة من المستخدم، وإلا يحجب المتصفح النافذة
+  if(!interactive) return null;
+  if(getGcalClientId()){ gcalStartRedirect(getGcalClientId()); return null; }
+ // التجديد يحتاج نقرة من المستخدم، وإلا يحجب المتصفح النافذة
   const clientId = getGcalClientId();
   if(!clientId || !window.google || !google.accounts || !google.accounts.oauth2) return null;
   if(!gcalTokenClient) gcalTokenClient = initGcalTokenClient(clientId);
@@ -7183,7 +7196,7 @@ document.getElementById('apptAddBtn').addEventListener('click', ()=>{
   }
   renderAppts();
   if(getGcalClientId()){
-    syncApptToGoogleCalendar(newAppt, true).then(r=>{
+    syncApptToGoogleCalendar(newAppt, false).then(r=>{
       if(r.ok) apptToast('📅 تمت مزامنة الموعد مع Google Calendar ✅');
       else apptToast('⚠️ لم تتم المزامنة مع Google Calendar: ' + gcalReasonText(r));
     });
