@@ -1434,6 +1434,7 @@ input, select, textarea{ min-width:0; }
 
       <div class="sub-view" id="subCheques">
         <div id="chqSummary"></div>
+        <button class="btn-ghost" id="chqCalBtn" type="button" style="width:100%; margin:8px 0;">📥 إضافة آجال الشيكات لتقويم الهاتف (تنبيه قبل يوم وقبل ساعة)</button>
         <div class="card-form">
           <p class="mini-title" style="margin-bottom:8px;">📅 تسجيل شيك / أجل</p>
           <label class="btn-primary" id="chqScanBtn" for="chqFileInput" style="display:block; text-align:center; cursor:pointer; padding:12px;">📷 صوّر الشيك (كاميرا + قراءة تلقائية)</label>
@@ -3215,7 +3216,7 @@ let gcalAccessToken = null;
 let gcalTokenExpiry = 0;
 
 function getGcalClientId(){ return LS.getItem(GCAL_CLIENT_ID_KEY) || ''; }
-function setGcalClientId(v){ safeSetItem(GCAL_CLIENT_ID_KEY, v); }
+function setGcalClientId(v){ safeSetItem(GCAL_CLIENT_ID_KEY, String(v||'').replace(/\s+/g,'')); }
 
 function loadGcalToken(){
   try{
@@ -3262,9 +3263,13 @@ function initGcalTokenClient(clientId){
 }
 
 document.getElementById('gcalConnectBtn')?.addEventListener('click', ()=>{
-  const clientId = document.getElementById('gcalClientIdInput').value.trim();
+  const clientId = document.getElementById('gcalClientIdInput').value.replace(/\s+/g,'');
   if(!clientId){
     alert('حطي أولاً Client ID ديال Google قبل ما تربطي الحساب.');
+    return;
+  }
+  if(!/^[0-9]+-[a-z0-9_]+\.apps\.googleusercontent\.com$/i.test(clientId)){
+    alert('⚠️ الـ Client ID غير صحيح (هذا هو سبب خطأ 401 invalid_client).\nلازم يكون بهذا الشكل: 123456-abc.apps.googleusercontent.com\nانسخه كاملًا من Google Cloud ← APIs & Services ← Credentials ← OAuth client ID من نوع Web application، وأضف رابط موقعك (https://اسمك.github.io) في Authorized JavaScript origins.');
     return;
   }
   setGcalClientId(clientId);
@@ -3338,7 +3343,7 @@ async function syncApptToGoogleCalendar(appt, interactive){
     end: {dateTime: endDt.toISOString(), timeZone: tz},
     reminders: {
       useDefault: false,
-      overrides: [ {method:'popup', minutes: 30}, {method:'popup', minutes: 5} ]
+      overrides: (appt.alarmMin || [30, 5]).map(m=> ({method:'popup', minutes:m}))
     }
   };
   try{
@@ -7209,7 +7214,7 @@ function buildIcsEvent(appt){
   return ['BEGIN:VEVENT', 'UID:' + appt.id + '@alioua-btp', 'DTSTAMP:' + stamp,
     'DTSTART:' + apptLocalStamp(start), 'DTEND:' + apptLocalStamp(end),
     'SUMMARY:' + icsEscape(appt.title), 'DESCRIPTION:' + icsEscape(appt.notes || '')]
-    .concat(alarm('-PT30M'), alarm('-PT5M'), ['END:VEVENT']);
+    .concat(...(appt.alarms || ['-PT30M', '-PT5M']).map(alarm), ['END:VEVENT']);
 }
 function buildIcs(list){
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ALIOUA BTP//Younes//AR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
@@ -11128,13 +11133,36 @@ function applyRolePermissions(){
 /* ===== الآجال والشيكات + قراءة الشيك بالتصويرة (مع مسح التوقيع/الخاتم إجباريًا قبل Gemini Vision) ===== */
 const CHQ_KEY = 'alioua_btp_cheques';
 function loadCheques(){ try{ return JSON.parse(LS.getItem(CHQ_KEY) || '[]'); }catch(e){ return []; } }
-function saveCheques(l){ safeSetItem(CHQ_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
+function saveCheques(l){ safeSetItem(CHQ_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); try{ chqSyncAppts(true, l); }catch(e){ console.error(e); } }
+/* كل شيك = موعد تلقائي يوم الأجل 09:00 مع تنبيه قبل يوم وقبل ساعة (يظهر في المواعيد + Google Calendar + ملف .ics) */
+function chqSyncAppts(full, list){
+  const ch = list || loadCheques(); if(!ch.length && !full) return;
+  const ap = loadAppts(); let chg = false;
+  ch.forEach(c=>{
+    const id = 'chq-' + c.id, done = c.status === 'cleared', i = ap.findIndex(a=> a.id === id);
+    if(i < 0 && done) return;
+    const t = (c.dir === 'in' ? '💰 شيك وارد: ' : '💳 شيك صادر: ') + (c.name || '—') + ' — ' + fmtNum(c.amount) + ' DH';
+    const n = [c.number ? 'رقم الشيك: ' + c.number : '', c.bank, c.note].filter(Boolean).join(' · ');
+    const dt = c.date + 'T09:00';
+    if(i < 0){ ap.push({id, title:t, dt, notes:n, done:false, notified:false, chq:true, alarms:['-P1D','-PT1H'], alarmMin:[1440,60]}); chg = true; return; }
+    const a = ap[i];
+    if(a.dt !== dt){ a.dt = dt; delete a.gcalId; a.notified = false; chg = true; }
+    if(a.title !== t || a.notes !== n || a.done !== done){ a.title = t; a.notes = n; a.done = done; chg = true; }
+  });
+  if(full){ const ids = new Set(ch.map(c=> 'chq-' + c.id)), k = ap.filter(a=> !a.chq || ids.has(a.id)); if(k.length !== ap.length){ ap.length = 0; k.forEach(x=> ap.push(x)); chg = true; } }
+  if(chg){
+    saveAppts(ap);
+    try{ if(document.getElementById('viewAppt')?.classList.contains('active')) renderAppts(); }catch(e){}
+    try{ if(getGcalClientId()) gcalSyncPending(false); }catch(e){}
+  }
+}
 let chqEditId = null, chqDir = 'out';
 function chqDaysLeft(d){ return Math.round((new Date(d + 'T00:00:00') - new Date(todayStr() + 'T00:00:00')) / 86400000); }
 function chqResetForm(){ chqEditId = null; try{ document.getElementById('chqAmountWords').textContent = ''; }catch(e){} ['chqName', 'chqAmount', 'chqNumber', 'chqBank', 'chqNote'].forEach(id=>{ document.getElementById(id).value = ''; }); document.getElementById('chqDate').value = todayStr(); document.getElementById('chqSaveBtn').textContent = '➕ حفظ الشيك'; document.getElementById('chqCancelEditBtn').style.display = 'none'; }
 function setChqDir(d){ chqDir = d; document.querySelectorAll('.chq-dir').forEach(b=> b.classList.toggle('active', b.dataset.dir === d)); }
 function renderCheques(){
   const box = document.getElementById('chqList'); if(!box) return;
+  try{ chqSyncAppts(false); }catch(e){}
   const emp = currentRole === 'employee';
   const all = loadCheques().filter(c=> !emp || c.dir !== 'in');
   const pend = all.filter(c=> c.status !== 'cleared');
@@ -11284,6 +11312,7 @@ async function scanChequeWithAI(dataUrl){
   $('chqAmount').addEventListener('change', showWords);
   window.chqShowWords = showWords;
   $('chqCancelEditBtn').addEventListener('click', chqResetForm);
+  $('chqCalBtn').addEventListener('click', ()=>{ chqSyncAppts(false); const l = loadAppts().filter(a=> a.chq && !a.done); if(!l.length){ alert('لا توجد شيكات معلّقة.'); return; } downloadIcs(l, 'chiques-alioua-btp.ics'); });
   renderCheques();
 })();
 
