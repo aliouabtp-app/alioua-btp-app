@@ -8387,7 +8387,8 @@ function buildInvoicePdf(invData){
     theme:'grid',
     headStyles:{fillColor:[220,220,220], textColor:20, fontSize:8},
     bodyStyles:{fontSize:8, textColor:20},
-    margin:{left:15, right:130}
+    columnStyles:{0:{cellWidth:17}, 1:{cellWidth:14}, 2:{cellWidth:44}, 3:{cellWidth:18}},
+    margin:{left:15, right:102}
   });
   const ribBottomY = doc.lastAutoTable.finalY;
   doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(20,20,20);
