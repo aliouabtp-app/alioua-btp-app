@@ -778,7 +778,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 .list-card .lc-balance{ font-family:'IBM Plex Mono', monospace; font-weight:800; font-size:13px; white-space:nowrap; }
 .list-card .lc-balance.due{ color:var(--maroon); }
 .list-card .lc-balance.clear{ color:#1C7C3F; }
-.list-card .lc-actions{ display:flex; gap:8px; margin-top:9px; }
+.list-card .lc-actions{ display:flex; gap:8px; margin-top:9px; flex-wrap:wrap; }
 .lc-btn{
   flex:1;
   padding:8px;
@@ -1671,6 +1671,7 @@ input, select, textarea{ min-width:0; }
           </select>
           <button class="btn-primary" id="clientAddBtn" style="margin-top:10px;">➕ إضافة مقدِّم خدمة</button>
         </div>
+        <button class="btn-ghost" id="clientPrintAllBtn" style="width:100%; margin:10px 0 4px;">🖨 طباعة تقرير كل مقدِّمي الخدمات</button>
         <div id="clientList"></div>
       </div>
 
@@ -1742,6 +1743,16 @@ input, select, textarea{ min-width:0; }
 
           <div id="bonTotalPreview" style="margin-top:10px; font-size:13px; font-weight:700;"></div>
           <button class="btn-primary" id="bonSaveBtn" style="width:100%; margin-top:10px;">💾 حفظ البون</button>
+        </div>
+
+        <div class="card-form" style="margin-top:12px;">
+          <p class="mini-title" style="margin-bottom:6px;">🖨 تقرير الصندوق (طباعة / معاينة)</p>
+          <p style="font-size:11.5px; color:var(--ink-soft); margin-bottom:6px; line-height:1.7;">كيطلع فيه: ملخص المصاريف حسب الفئة، تفاصيل البونات بند ببند، وحركات الصندوق مع الرصيد. الفترة اختيارية (إلا خليتيها خاوية كيطلعو كل الحركات).</p>
+          <div style="display:flex; gap:6px;">
+            <div style="flex:1;"><div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:3px;">من</div><input type="date" id="caissePrintFrom"></div>
+            <div style="flex:1;"><div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:3px;">إلى</div><input type="date" id="caissePrintTo"></div>
+          </div>
+          <button class="btn-primary" id="caissePrintBtn" style="width:100%; margin-top:10px;">🖨 طباعة / معاينة التقرير</button>
         </div>
 
         <div style="margin-top:16px;">
@@ -3791,6 +3802,7 @@ function frDate(iso){ const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''
 function downloadBlob(blob, filename){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
 function _prefillChat(text){ try{ navBtns.forEach(b=> b.classList.toggle('active', b.dataset.view === 'viewChat')); views.forEach(v=> v.classList.toggle('active', v.id === 'viewChat')); inputEl.value = text; autoGrow(); inputEl.focus(); }catch(e){} }
 function reportSheets(rep){ return rep.sheets || [{name: '', columns: rep.columns || [], rows: rep.rows || []}]; }
+function _totalsRows(s){ const t = s && s.totals; if(!t || !t.length) return []; return Array.isArray(t[0]) ? t : [t]; }   // totals: ligne unique OU liste de lignes
 function _cellTxt(v, isNum){ if(v == null) return ''; return (isNum && typeof v === 'number') ? fmtNum(v) : String(v); }
 
 function buildPdfReportDoc(rep){
@@ -3818,13 +3830,13 @@ function buildPdfReportDoc(rep){
       else { doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(30, 100, 160); doc.text(s.name, ML, y + 4); y += 7; }
     }
     const rowsIn = (s.rows || []).map(r=>{ const a = (Array.isArray(r) ? r : [r]).map((x, i)=> _cellTxt(x, nums.includes(i))); while(a.length < nc) a.push(''); return a.slice(0, nc); });
-    if(s.totals) rowsIn.push(s.totals.map((x, i)=> _cellTxt(x, nums.includes(i))));
+    const _tots = _totalsRows(s); _tots.forEach(t=> rowsIn.push(t.map((x, i)=> _cellTxt(x, nums.includes(i)))));
     const colStyles = {}; nums.forEach(oi=>{ const ni = order.indexOf(oi); if(ni >= 0) colStyles[ni] = {halign:'right'}; });
     arabicAwareAutoTable(doc, {
       startY: y, head: [order.map(i=> cols[i])], body: rowsIn.map(r=> order.map(i=> r[i])), theme: 'grid',
       styles: {halign: rtl ? 'right' : 'left', fontSize: 8.5}, headStyles: {fillColor:[31,78,121], textColor:255, fontSize:9, fontStyle:'bold', halign: rtl ? 'right' : 'left'},
       bodyStyles: {fontSize: 8.5}, alternateRowStyles: {fillColor:[245,247,250]}, columnStyles: colStyles,
-      didParseCell: d=>{ if(s.totals && d.section === 'body' && d.row.index === rowsIn.length - 1){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [221,230,242]; } },
+      didParseCell: d=>{ if(_tots.length && d.section === 'body' && d.row.index >= rowsIn.length - _tots.length){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [221,230,242]; } },
       margin: {top:15, bottom:18, left:ML, right:MR}
     });
     y = doc.lastAutoTable.finalY + 8;
@@ -3861,7 +3873,7 @@ async function buildXlsxBlob(rep){
   sheets.forEach((s, si)=>{
     const cols = s.columns || [], nc = Math.max(cols.length, 2), nums = s.numCols || [];
     const rtl = containsArabic(rep.title) || cols.filter(containsArabic).length >= cols.length / 2;
-    let nm = String(s.name || rep.title || 'Feuille').replace(/[\\\/?*\[\]:]/g, ' ').trim().slice(0, 31) || 'Feuille';
+    let nm = String(s.tab || s.name || rep.title || 'Feuille').replace(/[\\\/?*\[\]:]/g, ' ').trim().slice(0, 31) || 'Feuille';
     while(used.has(nm.toLowerCase())) nm = nm.slice(0, 28) + '_' + (si + 1); used.add(nm.toLowerCase());
     const ws = wb.addWorksheet(nm, {views:[{rightToLeft: rtl, state:'frozen', ySplit: 6}], pageSetup:{paperSize: 9, orientation: nc > 6 ? 'landscape' : 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0}});
     ws.columns = cols.map((h, i)=>{ let w = String(h).length; (s.rows || []).forEach(r=>{ const v = r[i], l = (nums.includes(i) && typeof v === 'number') ? fmtNum(v).length : String(v == null ? '' : v).length; if(l > w) w = l; }); return {width: Math.min(46, Math.max(11, w + 3))}; });
@@ -3873,7 +3885,7 @@ async function buildXlsxBlob(rep){
     cols.forEach((h, i)=>{ const cell = hr.getCell(i + 1); cell.value = h; cell.font = {bold:true, color:{argb:'FFFFFFFF'}}; cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF1F4E79'}}; cell.alignment = {horizontal:'center', vertical:'middle', wrapText:true}; cell.border = {top:thin, left:thin, bottom:thin, right:thin}; });
     const put = (vals, bold, bg)=>{ const row = ws.addRow(vals.map(v=> v == null ? '' : v)); row.eachCell({includeEmpty:true}, (cell, i)=>{ if(i > cols.length) return; cell.border = {top:thin, left:thin, bottom:thin, right:thin}; cell.alignment = {vertical:'top', wrapText:true, horizontal: nums.includes(i - 1) ? 'right' : (rtl ? 'right' : 'left')}; if(nums.includes(i - 1) && typeof cell.value === 'number') cell.numFmt = '#,##0.00'; if(bold) cell.font = {bold:true}; if(bg) cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:bg}}; }); };
     (s.rows || []).forEach((r, i)=> put(r, false, i % 2 ? 'FFF5F7FA' : null));
-    if(s.totals) put(s.totals, true, 'FFDDE6F2');
+    _totalsRows(s).forEach(t=> put(t, true, 'FFDDE6F2'));
     if(si === sheets.length - 1 && rep.summary){ ws.addRow([]); const sr = ws.addRow([rep.summary]); ws.mergeCells(sr.number, 1, sr.number, nc); sr.getCell(1).alignment = {wrapText:true, vertical:'top'}; sr.height = 32; }
     ws.headerFooter.oddFooter = '&L' + (c.name || 'ALIOUA BTP') + '&RPage &P / &N';
   });
@@ -3882,7 +3894,7 @@ async function buildXlsxBlob(rep){
 function _xlsxPlainBlob(rep){
   if(!window.XLSX) throw new Error('مكتبة Excel ماتحملاتش بعد، تأكد من الإنترنت.');
   const wb = XLSX.utils.book_new();
-  reportSheets(rep).forEach((s, i)=>{ const aoa = [[rep.title || ''], [], s.columns || []].concat(s.rows || []); if(s.totals) aoa.push(s.totals); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), String(s.name || ('Feuille' + (i + 1))).slice(0, 31)); });
+  reportSheets(rep).forEach((s, i)=>{ const aoa = [[rep.title || ''], [], s.columns || []].concat(s.rows || []); _totalsRows(s).forEach(t=> aoa.push(t)); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), String(s.name || ('Feuille' + (i + 1))).slice(0, 31)); });
   return new Blob([XLSX.write(wb, {bookType:'xlsx', type:'array'})], {type:'application/octet-stream'});
 }
 function xlsxPreviewNode(rep){
@@ -3901,7 +3913,7 @@ function xlsxPreviewNode(rep){
     const mk = (cells, tag, bg, color, bold)=>{ const tr = document.createElement('tr'); cells.forEach((v, i)=>{ const td = document.createElement(tag); td.textContent = _cellTxt(v, nums.includes(i)); td.setAttribute('dir', 'auto'); td.style.cssText = 'border:1px solid #cbd5e1; padding:4px 6px; min-width:56px;' + (bg ? 'background:' + bg + ';' : '') + (color ? 'color:' + color + ';' : '') + (bold ? 'font-weight:700;' : '') + (nums.includes(i) && tag === 'td' ? 'text-align:right; white-space:nowrap;' : ''); tr.appendChild(td); }); tb.appendChild(tr); };
     mk(s.columns || [], 'th', '#1F4E79', '#fff', true);
     (s.rows || []).forEach((r, i)=> mk(r, 'td', i % 2 ? '#f5f7fa' : '', '', false));
-    if(s.totals) mk(s.totals, 'td', '#dde6f2', '', true);
+    _totalsRows(s).forEach(t=> mk(t, 'td', '#dde6f2', '', true));
     wrap.appendChild(tb); root.appendChild(wrap);
   });
   if(rep.summary){ const p = document.createElement('div'); p.style.cssText = 'margin-top:10px; color:#334155;'; p.setAttribute('dir', 'auto'); p.textContent = rep.summary; root.appendChild(p); }
@@ -3965,7 +3977,7 @@ function openReportPreview(rep, first){
   if(rep.csvText) all.csv = {key:'csv', label:'CSV', filename: base + '.csv', render: async ()=>{ const p = document.createElement('pre'); p.style.cssText = 'background:#fff; padding:10px; font-size:11px; overflow:auto; direction:ltr; text-align:left;'; p.textContent = rep.csvText().split('\r\n').slice(0, 60).join('\n'); return p; }, blob: async ()=> new Blob([rep.csvText()], {type:'text/csv;charset=utf-8'})};
   const wanted = (Array.isArray(rep.formats) && rep.formats.length ? rep.formats : ['excel', 'pdf']).filter(k=> all[k]);
   if(!wanted.includes(first) && all[first]) wanted.push(first);
-  openFilePreview({title: rep.title, first, variants: wanted.map(k=> all[k]), onEdit: rep.onEdit});
+  openFilePreview({title: rep.title, first, variants: wanted.map(k=> all[k]), onEdit: rep.onEdit, noEdit: !!rep.noEdit});
 }
 function generateExcelReport(data){ openReportPreview(data, 'excel'); }
 function generatePdfReport(data){ openReportPreview(data, 'pdf'); }
@@ -8784,6 +8796,73 @@ document.getElementById('clientAddBtn').addEventListener('click', ()=>{
   renderClients();
 });
 
+/* ---------- تقرير مقدِّم الخدمة للطباعة: الفواتير + الأشغال بالتفصيل + المدفوع والباقي ---------- */
+function _provInvList(clientId, invs){
+  const idNum = x=> Number(String((x && x.id) || '').replace(/\D/g, '')) || 0;
+  return invs.filter(i=> i.clientId === clientId).slice().sort((a, b)=> String(a.date || '').localeCompare(String(b.date || '')) || (idNum(a) - idNum(b)));
+}
+function _provStatusFr(inv){ const r = invoiceRemaining(inv), p = invoicePaid(inv); return r <= 0.005 ? 'Payée' : (p > 0 ? 'Partiellement payée' : 'Non payée'); }
+function buildProviderReport(clientIds){
+  const N = round2, invs = loadInvoices();
+  const data = loadClients().filter(c=> !clientIds || clientIds.includes(c.id)).map(c=>{
+    const l = _provInvList(c.id, invs);
+    return {c, l, total: N(l.reduce((s, i)=> s + invoiceTotal(i), 0)), paid: N(l.reduce((s, i)=> s + invoicePaid(i), 0)), rem: N(l.reduce((s, i)=> s + invoiceRemaining(i), 0))};
+  }).filter(d=> d.l.length);
+  if(!data.length) return null;
+  const sum = k=> N(data.reduce((s, d)=> s + d[k], 0));
+  const iref = (i, k)=> 'n°' + (k + 1) + ' — ' + frDate(i.date);
+  const itemRow = (it, j)=> [String(j + 1), String(it.desc || ''), +it.qty || 0, String(it.unit || ''), N(+it.price || 0), N((+it.qty || 0) * (+it.price || 0))];
+  const sheets = [], one = data.length === 1;
+  if(one){
+    const d = data[0], pj = projectNameById(d.c.projectId), syn = [['Prestataire', d.c.name || '']];
+    if(d.c.phone) syn.push(['Téléphone', d.c.phone]);
+    if(pj) syn.push(['Projet', pj]);
+    syn.push(['Nombre de factures', String(d.l.length)], ['Total des factures (MAD)', d.total], ['Total payé (MAD)', d.paid], ['RESTE À PAYER (MAD)', d.rem]);
+    sheets.push({name: 'Synthèse', columns: ['Rubrique', 'Détail'], numCols: [1], rows: syn});
+    sheets.push({name: 'Récapitulatif des factures', columns: ['N°', 'Date', 'Total (MAD)', 'Payé (MAD)', 'Reste à payer (MAD)', 'Statut'], numCols: [2, 3, 4],
+      rows: d.l.map((i, k)=> [String(k + 1), frDate(i.date), N(invoiceTotal(i)), N(invoicePaid(i)), N(invoiceRemaining(i)), _provStatusFr(i)]),
+      totals: ['TOTAL', '', d.total, d.paid, d.rem, '']});
+    d.l.forEach((i, k)=>{
+      sheets.push({name: 'Facture ' + iref(i, k) + ' — ' + _provStatusFr(i), tab: 'Facture ' + (k + 1),
+        columns: ['N°', 'Désignation des travaux', 'Qté', 'Unité', 'P.U (MAD)', 'Total (MAD)'], numCols: [2, 4, 5],
+        rows: i.items.map(itemRow),
+        totals: [['', 'TOTAL FACTURE', '', '', '', N(invoiceTotal(i))], ['', 'DÉJÀ PAYÉ', '', '', '', N(invoicePaid(i))], ['', 'RESTE À PAYER', '', '', '', N(invoiceRemaining(i))]]});
+    });
+    const prow = [];
+    d.l.forEach((i, k)=>{
+      if(Array.isArray(i.payments) && i.payments.length) i.payments.slice().sort((a, b)=> String(a.date || '').localeCompare(String(b.date || ''))).forEach(p=> prow.push([frDate(p.date), iref(i, k), N(+p.amount || 0), String(p.note || '')]));
+      else if(i.status === 'paid') prow.push(['', iref(i, k), N(invoiceTotal(i)), 'Réglée (date de paiement non enregistrée)']);
+    });
+    if(prow.length) sheets.push({name: 'Règlements effectués', columns: ['Date', 'Facture', 'Montant (MAD)', 'Observation'], numCols: [2], rows: prow, totals: ['TOTAL PAYÉ', '', d.paid, '']});
+  } else {
+    sheets.push({name: 'Récapitulatif par prestataire', columns: ['Prestataire', 'Projet', 'Factures', 'Total (MAD)', 'Payé (MAD)', 'Reste à payer (MAD)'], numCols: [2, 3, 4, 5],
+      rows: data.map(d=> [d.c.name || '', projectNameById(d.c.projectId), String(d.l.length), d.total, d.paid, d.rem]),
+      totals: ['TOTAL', '', String(data.reduce((s, d)=> s + d.l.length, 0)), sum('total'), sum('paid'), sum('rem')]});
+    const ir = [], wk = [];
+    data.forEach(d=> d.l.forEach((i, k)=>{
+      ir.push([d.c.name || '', iref(i, k), N(invoiceTotal(i)), N(invoicePaid(i)), N(invoiceRemaining(i)), _provStatusFr(i)]);
+      i.items.forEach((it, j)=> wk.push([j ? '' : (d.c.name || ''), j ? '' : iref(i, k), String(it.desc || ''), +it.qty || 0, String(it.unit || ''), N(+it.price || 0), N((+it.qty || 0) * (+it.price || 0))]));
+    }));
+    sheets.push({name: 'Factures - payé et reste', columns: ['Prestataire', 'Facture', 'Total (MAD)', 'Payé (MAD)', 'Reste (MAD)', 'Statut'], numCols: [2, 3, 4],
+      rows: ir, totals: ['TOTAL', '', sum('total'), sum('paid'), sum('rem'), '']});
+    sheets.push({name: 'Détail des travaux par facture', columns: ['Prestataire', 'Facture', 'Désignation des travaux', 'Qté', 'Unité', 'P.U (MAD)', 'Total (MAD)'], numCols: [3, 5, 6],
+      rows: wk, totals: ['TOTAL', '', '', '', '', '', sum('total')]});
+  }
+  const slug = s=> String(s || '').replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 40);
+  return {title: one ? 'RELEVÉ PRESTATAIRE DE SERVICES' : 'RELEVÉ DES PRESTATAIRES DE SERVICES',
+    fileBase: 'Releve-prestataire-' + (one ? slug(data[0].c.name) : 'tous') + '-' + todayStr(), subtitle: 'ALIOUA BTP — Édité le ' + frDate(todayStr()), sheets,
+    summary: "Montants en dirhams (MAD). Ce relevé reprend chaque facture avec le détail des travaux, les règlements enregistrés et le reste à payer.",
+    formats: ['pdf', 'excel'], noEdit: true};
+}
+function printProviderReport(ids){
+  try{
+    const rep = buildProviderReport(ids);
+    if(!rep){ alert('ما كاين حتى فاتورة مسجّلة باش نطبعو التقرير.'); return; }
+    openReportPreview(rep, 'pdf');
+  }catch(e){ alert('تعذّر تجهيز التقرير: ' + ((e && e.message) || e)); }
+}
+document.getElementById('clientPrintAllBtn')?.addEventListener('click', ()=> printProviderReport(null));
+
 function renderClients(){
   const clients = loadClients();
   const invoices = loadInvoices();
@@ -8811,6 +8890,7 @@ function renderClients(){
         <button class="lc-btn" data-open="${client.id}">🧾 فاتورة جديدة</button>
         <button class="lc-btn" data-edit-client="${client.id}">✏️ تعديل</button>
         <button class="lc-btn" data-report-client="${client.id}">📊 تقرير أداء</button>
+        <button class="lc-btn" data-print-client="${client.id}">🖨 طباعة التقرير</button>
       </div>
       <div id="editForm_${client.id}"></div>
       <div id="invForm_${client.id}"></div>
@@ -8987,6 +9067,9 @@ function renderClients(){
       const msg = `جهّز لي جدول أداء احترافي للعميل "${client.name}" باسم شركة ALIOUA BTP، فيه: عدد الفواتير (${clientInvoices.length})، الإجمالي (${total.toLocaleString('ar')} درهم)، المدفوع (${paid.toLocaleString('ar')} درهم)، المتبقي (${due.toLocaleString('ar')} درهم). تفاصيل الفواتير:\n${linesDetail || 'لا يوجد فواتير بعد'}`;
       goToChatWithText(msg);
     });
+  });
+  el.querySelectorAll('[data-print-client]').forEach(b=>{
+    b.addEventListener('click', ()=> printProviderReport([b.dataset.printClient]));
   });
   el.querySelectorAll('.lc-del').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -10000,6 +10083,17 @@ function _projSnapshotText(){
     else L.push('  · الميزانية المخصصة: ماكاينش مسجلة فقسم المشاريع');
     if(c.has) L.push(`  · الهامش المتوقع (ثمن الصفقة HT − المصاريف): ${R(f.margin)} درهم (${P(f.marginPct)})`);
     if((proj.contractFiles || []).length) L.push(`  · نسخة العقد: ${proj.contractFiles.length} ملف مسجل فقسم المشاريع (يونس ما كيقراهاش إلا بعتيها ليه فالدردشة)`);
+    if(_payTermsHas(proj.payTerms)){
+      const t = proj.payTerms, b2 = [];
+      if(t.mode) b2.push('طريقة الأداء ' + (PAY_MODES_AR[t.mode] || t.mode));
+      if(t.delay) b2.push('أجل الأداء ' + t.delay + ' يوم');
+      if(t.advPct) b2.push('تسبيق ' + t.advPct + '%');
+      if(t.retPct) b2.push('اقتطاع الضمان ' + t.retPct + '%' + (t.guarMonths ? ' لمدة ' + t.guarMonths + ' شهر' : ''));
+      else if(t.guarMonths) b2.push('مدة الضمان ' + t.guarMonths + ' شهر');
+      if((t.schedule || []).length) b2.push('جدول الدفعات: ' + t.schedule.map(r=> (r.label || '?') + (r.pct ? ' ' + r.pct + '%' : '') + (r.due ? ' (' + r.due + ')' : '')).join(' ← '));
+      if((t.notes || '').trim()) b2.push('ملاحظات: ' + t.notes.trim());
+      L.push('  · طرق الأداء (Modalités de paiement): ' + b2.join(' | '));
+    }
   });
   return L.join('\n');
 }
@@ -10040,6 +10134,24 @@ function buildProjectReport(proj){
     const vr = f.pdfs.slice().sort((a, b)=> String(a.invDate || '').localeCompare(String(b.invDate || ''))).map(i=>{ const b = pdfInvBreakdown(i); return [frDate(i.invDate), i.invNumber || '', i.clientName || '', N(b.ht), N(b.ttc), N(b.net)]; });
     sheets.push({name: 'Facturation', columns: ['Date', 'N° facture', 'Client', 'HT', 'TTC', 'Net à encaisser'], numCols: [3, 4, 5], rows: vr, totals: ['TOTAL', '', '', N(vr.reduce((s, r)=> s + r[3], 0)), N(vr.reduce((s, r)=> s + r[4], 0)), N(vr.reduce((s, r)=> s + r[5], 0))]});
   }
+  if(_payTermsHas(proj.payTerms)){
+    const pt = proj.payTerms, ttcAmt = _projTtc(proj), est = v=> (ttcAmt && v) ? ' — ≈ ' + fmtNum(round2(ttcAmt * v / 100)) + ' MAD (sur le marché TTC)' : '';
+    const pr = [];
+    if(pt.mode) pr.push(['Mode de règlement', PAY_MODES_FR[pt.mode] || pt.mode]);
+    if(pt.delay) pr.push(['Délai de paiement', pt.delay + ' jours après facture / décompte']);
+    if(pt.advPct) pr.push(['Avance de démarrage', pt.advPct + ' %' + est(pt.advPct)]);
+    if(pt.retPct) pr.push(['Retenue de garantie', pt.retPct + ' %' + est(pt.retPct)]);
+    if(pt.guarMonths) pr.push(['Durée de garantie', pt.guarMonths + ' mois']);
+    if((pt.notes || '').trim()) pr.push(['Conditions particulières', pt.notes.trim()]);
+    if(pr.length) sheets.push({name: 'Modalités de paiement', columns: ['Rubrique', 'Détail'], rows: pr});
+    const sc = pt.schedule || [];
+    if(sc.length){
+      const tp = round2(sc.reduce((s, r)=> s + (+r.pct || 0), 0));
+      sheets.push({name: 'Échéancier de paiement', columns: ['N°', 'Étape / condition', '% du marché', 'Montant TTC estimé (MAD)', 'Date prévue'], numCols: [2, 3],
+        rows: sc.map((r, i)=> [String(i + 1), r.label || '', r.pct ? r.pct + ' %' : '', (ttcAmt && r.pct) ? round2(ttcAmt * r.pct / 100) : '', r.due ? frDate(r.due) : '']),
+        totals: ['TOTAL', '', tp + ' %', ttcAmt ? round2(ttcAmt * tp / 100) : '', '']});
+    }
+  }
   const safe = String(proj.name || 'projet').replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 40);
   return {title: 'COMPTE DU PROJET', fileBase: 'Compte-projet-' + safe + '-' + todayStr(), subtitle: 'ALIOUA BTP — Édité le ' + frDate(todayStr()), sheets,
     summary: "Montants en dirhams (MAD). Le facturé est le total TTC des factures de vente liées au projet (avant retenue de garantie, avance et RAS). Les dépenses sont reprises telles qu'enregistrées dans l'application ; la marge prévisionnelle compare le marché HT aux dépenses enregistrées.",
@@ -10048,6 +10160,91 @@ function buildProjectReport(proj){
 
 /* ----- واجهة المشاريع ----- */
 const _projOpen = {};
+const _projPayOpen = {};
+var PAY_MODES_AR = {virement: 'تحويل بنكي (Virement)', cheque: 'شيك (Chèque)', especes: 'نقدًا (Espèces)', effet: 'كمبيالة (Effet de commerce)', mixte: 'مختلط (Mixte)'};
+var PAY_MODES_FR = {virement: 'Virement bancaire', cheque: 'Chèque', especes: 'Espèces', effet: 'Effet de commerce', mixte: 'Mixte (plusieurs modes)'};
+function _projTtc(proj){ const a = +proj.contractAmount || 0; if(!a) return 0; const ttc = proj.contractTtc !== false, r = (proj.contractTva === 0 || proj.contractTva) ? +proj.contractTva : 20; return round2(ttc ? a : a * (1 + r / 100)); }
+function _payTermsHas(pt){ return !!pt && !!(pt.mode || pt.delay || pt.advPct || pt.retPct || pt.guarMonths || String(pt.notes || '').trim() || (pt.schedule || []).length); }
+function _payTermsHtml(proj){
+  const pt = proj.payTerms; if(!_payTermsHas(pt)) return '';
+  const bits = [];
+  if(pt.mode) bits.push((PAY_MODES_AR[pt.mode] || pt.mode).replace(/\s*\(.*\)$/, ''));
+  if(pt.delay) bits.push('أجل ' + pt.delay + ' يوم');
+  if(pt.advPct) bits.push('تسبيق ' + pt.advPct + '%');
+  if(pt.retPct) bits.push('اقتطاع الضمان ' + pt.retPct + '%' + (pt.guarMonths ? ' (' + pt.guarMonths + ' شهر)' : ''));
+  else if(pt.guarMonths) bits.push('مدة الضمان ' + pt.guarMonths + ' شهر');
+  if((pt.schedule || []).length) bits.push(pt.schedule.length + ' دفعات مجدولة');
+  if(!bits.length) bits.push('ملاحظات الدفع مسجلة');
+  return '<div style="font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.7;" dir="auto">💳 ' + escapeHtml(bits.join(' · ')) + '</div>';
+}
+function _projPayPanel(proj){
+  const pt = proj.payTerms || {};
+  const sched = (pt.schedule || []).map(r=> ({label: r.label || '', pct: r.pct ? r.pct : '', due: r.due || ''}));
+  const p = document.createElement('div'); p.className = 'card-form'; p.style.cssText = 'margin:10px 0 0; background:var(--stone); border-radius:12px; padding:11px;';
+  const selStyle = 'width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:11px; background:#fff; font-family:inherit; font-size:13.5px; color:var(--ink);';
+  const LB = t => '<div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:-5px;">' + t + '</div>';
+  p.innerHTML = '<div class="mini-title">💳 تفاصيل الدفع (Modalités de paiement)</div>'
+    + LB('طريقة الأداء (Mode de règlement)') + '<select data-f="mode" style="' + selStyle + '"><option value="">— غير محدد —</option>' + Object.keys(PAY_MODES_AR).map(k=> '<option value="' + k + '">' + PAY_MODES_AR[k] + '</option>').join('') + '</select>'
+    + LB('أجل الأداء بالأيام بعد الفاتورة / الكشف (Délai de paiement)') + '<input type="number" inputmode="numeric" min="0" step="1" data-f="delay" placeholder="مثال: 30">'
+    + LB('التسبيق % (Avance de démarrage)') + '<input type="number" inputmode="decimal" min="0" max="100" step="any" data-f="adv" placeholder="حسب الاتفاق مع الزبون">'
+    + LB('اقتطاع الضمان % (Retenue de garantie)') + '<input type="number" inputmode="decimal" min="0" max="100" step="any" data-f="ret" placeholder="حسب الاتفاق مع الزبون">'
+    + LB('مدة الضمان بالأشهر (Durée de garantie)') + '<input type="number" inputmode="numeric" min="0" step="1" data-f="guar" placeholder="حسب الاتفاق مع الزبون">'
+    + '<div data-calc style="font-size:11.5px; color:var(--ink-soft); line-height:1.8;"></div>'
+    + '<div class="mini-title" style="margin-top:4px;">🗓 جدول الدفعات (Échéancier)</div>'
+    + '<div data-sched style="display:flex; flex-direction:column; gap:6px;"></div>'
+    + '<button class="btn-ghost" data-addrow style="flex:none;">➕ إضافة دفعة</button>'
+    + '<div data-schedsum style="font-size:11.5px; color:var(--ink-soft); line-height:1.8;"></div>'
+    + LB('شروط أخرى / ملاحظات') + '<textarea data-f="notes" rows="2" dir="auto" placeholder="مثال: الأداء بعد المصادقة على الكشف من طرف المهندس"></textarea>'
+    + '<button class="btn-primary" data-save style="flex:none;">💾 حفظ تفاصيل الدفع</button>';
+  const g = k => p.querySelector('[data-f="' + k + '"]');
+  g('mode').value = pt.mode || ''; g('delay').value = pt.delay || ''; g('adv').value = pt.advPct || ''; g('ret').value = pt.retPct || ''; g('guar').value = pt.guarMonths || ''; g('notes').value = pt.notes || '';
+  const ttc = _projTtc(proj), money = n => fmtMAD(n) + ' درهم';
+  const num = v => { const x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) && x > 0 ? x : 0; };
+  const calc = p.querySelector('[data-calc]'), host = p.querySelector('[data-sched]'), sum = p.querySelector('[data-schedsum]');
+  function refreshCalc(){
+    const a = num(g('adv').value), r = num(g('ret').value), out = [];
+    if((a || r) && !ttc) out.push('ℹ️ سجّل ثمن الصفقة فـ "الصفقة والعقد" باش كتبان المبالغ التقديرية.');
+    if(ttc && a) out.push('التسبيق ≈ <b>' + money(round2(ttc * a / 100)) + '</b> (على الصفقة TTC)');
+    if(ttc && r) out.push('اقتطاع الضمان ≈ <b>' + money(round2(ttc * r / 100)) + '</b> (على الصفقة TTC كاملة)');
+    calc.innerHTML = out.join('<br>');
+  }
+  function refreshSum(){
+    const t = round2(sched.reduce((s, r)=> s + num(r.pct), 0));
+    sum.innerHTML = sched.length ? ('مجموع النسب: <b style="color:' + (t > 100.005 ? '#b91c1c' : '#2e7d32') + ';">' + t + '%</b>' + (t > 100.005 ? ' ⚠️ كيفوت 100%' : (t < 99.995 ? ' — باقي ' + round2(100 - t) + '%' : ' ✓')) + (ttc ? ' · ≈ ' + money(round2(ttc * t / 100)) : '')) : '';
+  }
+  function drawRows(){
+    host.innerHTML = '';
+    sched.forEach((r, i)=>{
+      const row = document.createElement('div'); row.style.cssText = 'background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px;';
+      row.innerHTML = '<input type="text" dir="auto" data-l placeholder="البيان / الشرط (مثال: عند التوقيع، نهاية الأشغال الكبرى)">'
+        + '<div style="display:flex; gap:6px; align-items:center;"><input type="number" inputmode="decimal" min="0" max="100" step="any" data-p placeholder="%" style="flex:1;"><input type="date" data-d style="flex:1.4;"><button class="btn-ghost" data-x style="flex:0 0 40px; padding:8px 0;">🗑</button></div>'
+        + '<div data-a style="font-size:11px; color:var(--ink-soft);"></div>';
+      const L = row.querySelector('[data-l]'), P = row.querySelector('[data-p]'), D = row.querySelector('[data-d]'), A = row.querySelector('[data-a]');
+      L.value = r.label; P.value = r.pct; D.value = r.due;
+      const upA = ()=>{ const v = num(P.value); A.textContent = (ttc && v) ? '≈ ' + money(round2(ttc * v / 100)) + ' (TTC)' : ''; };
+      upA();
+      L.addEventListener('input', ()=>{ r.label = L.value; });
+      P.addEventListener('input', ()=>{ r.pct = P.value; upA(); refreshSum(); });
+      D.addEventListener('input', ()=>{ r.due = D.value; });
+      row.querySelector('[data-x]').addEventListener('click', ()=>{ sched.splice(i, 1); drawRows(); });
+      host.appendChild(row);
+    });
+    refreshSum();
+  }
+  p.querySelector('[data-addrow]').addEventListener('click', ()=>{ sched.push({label: '', pct: '', due: ''}); drawRows(); });
+  ['adv', 'ret'].forEach(k=> g(k).addEventListener('input', refreshCalc));
+  p.querySelector('[data-save]').addEventListener('click', ()=>{
+    const adv = num(g('adv').value), ret = num(g('ret').value), delay = Math.round(num(g('delay').value)), guar = Math.round(num(g('guar').value));
+    if(adv > 100 || ret > 100 || sched.some(r=> num(r.pct) > 100)){ alert('النسبة ما يمكنش تفوت 100%.'); return; }
+    const rows = sched.map(r=> ({label: String(r.label || '').trim(), pct: num(r.pct), due: r.due || ''})).filter(r=> r.label || r.pct || r.due);
+    const tot = round2(rows.reduce((s, r)=> s + r.pct, 0));
+    if(tot > 100.005){ alert('مجموع نسب جدول الدفعات (' + tot + '%) كيفوت 100%. صحّحو قبل الحفظ.'); return; }
+    updateProject(proj.id, {payTerms: {mode: g('mode').value, delay, advPct: adv, retPct: ret, guarMonths: guar, notes: g('notes').value.trim(), schedule: rows}});
+    renderProjects(true);
+  });
+  refreshCalc(); drawRows();
+  return p;
+}
 document.getElementById('projectAddBtn')?.addEventListener('click', async ()=>{
   const nameEl = document.getElementById('projectName'), name = nameEl.value.trim();
   if(!name) return;
@@ -10169,14 +10366,18 @@ function renderProjects(force){
         </div>
       </div>
       ${_projCmpHtml(f)}
+      ${_payTermsHtml(proj)}
       <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">مصروف مقدِّمي الخدمات: ${f.clientsExpense.toLocaleString('ar')} درهم · أجور الأجراء: ${f.workerExpense.toLocaleString('ar')} درهم (${f.workerDays} يوم عمل مسجّل)</div>
       <div class="lc-actions">
         <button class="btn-ghost" data-proj-edit style="flex:1; padding:9px 8px; font-size:12px;">📑 الصفقة والعقد</button>
+        <button class="btn-ghost" data-proj-pay style="flex:1; padding:9px 8px; font-size:12px;">💳 تفاصيل الدفع</button>
         <button class="btn-ghost" data-proj-export style="flex:1; padding:9px 8px; font-size:12px;">📤 تصدير الحساب</button>
       </div>
     `;
     const panel = _projPanel(proj); panel.style.display = _projOpen[proj.id] ? 'flex' : 'none'; card.appendChild(panel);
     card.querySelector('[data-proj-edit]').addEventListener('click', ()=>{ _projOpen[proj.id] = !_projOpen[proj.id]; panel.style.display = _projOpen[proj.id] ? 'flex' : 'none'; });
+    const payPanel = _projPayPanel(proj); payPanel.style.display = _projPayOpen[proj.id] ? 'flex' : 'none'; card.appendChild(payPanel);
+    card.querySelector('[data-proj-pay]').addEventListener('click', ()=>{ _projPayOpen[proj.id] = !_projPayOpen[proj.id]; payPanel.style.display = _projPayOpen[proj.id] ? 'flex' : 'none'; });
     card.querySelector('[data-proj-export]').addEventListener('click', ()=>{ try{ openReportPreview(buildProjectReport(proj), 'pdf'); }catch(e){ alert('تعذّر تجهيز التصدير: ' + ((e && e.message) || e)); } });
     el.appendChild(card);
   });
@@ -10919,8 +11120,9 @@ function renderCaisse(){
   // ملخص المصاريف حسب الفئة
   const summaryEl = document.getElementById('caisseCategorySummary');
   summaryEl.innerHTML = '';
-  CAISSE_CATEGORIES.forEach(cat=>{
-    const catTotal = data.bons.filter(b=>b.category === cat).reduce((s,b)=> s+bonTotal(b), 0);
+  const _catsAll = CAISSE_CATEGORIES.slice(); data.bons.forEach(b=>{ const c = b.category || 'غير مصنّف'; if(!_catsAll.includes(c)) _catsAll.push(c); });
+  _catsAll.forEach(cat=>{
+    const catTotal = data.bons.filter(b=> (b.category || 'غير مصنّف') === cat).reduce((s,b)=> s+bonTotal(b), 0);
     const row = document.createElement('div');
     row.style.cssText = 'display:flex; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--line); font-size:13px;';
     row.innerHTML = `<span dir="auto">${escapeHtml(cat)}</span><strong>${fmtMAD(catTotal)} درهم</strong>`;
@@ -10931,6 +11133,60 @@ function renderCaisse(){
   totalRow.innerHTML = `<span>الإجمالي</span><span>${fmtMAD(totalSpent)} درهم</span>`;
   summaryEl.appendChild(totalRow);
 }
+
+/* ---------- تقرير الصندوق: معاينة / طباعة (التفاصيل + ملخص المصاريف حسب الفئة) ---------- */
+function buildCaisseReport(from, to){
+  const data = loadCaisseData(), N = round2;
+  const idNum = x=> Number(String((x && x.id) || '').replace(/\D/g, '')) || 0;
+  const byDate = (a, b)=> String(a.date || '').localeCompare(String(b.date || '')) || (idNum(a) - idNum(b));
+  const inR = d=> (!from || String(d || '') >= from) && (!to || String(d || '') <= to);
+  const funds = data.fundings.filter(f=> inR(f.date)).slice().sort(byDate);
+  const bons = data.bons.filter(b=> inR(b.date)).slice().sort(byDate);
+  const sumF = l=> N(l.reduce((s, f)=> s + (+f.amount || 0), 0)), sumB = l=> N(l.reduce((s, b)=> s + bonTotal(b), 0));
+  const opening = from ? N(sumF(data.fundings.filter(f=> String(f.date || '') < from)) - sumB(data.bons.filter(b=> String(b.date || '') < from))) : 0;
+  const totalIn = sumF(funds), totalOut = sumB(bons);
+  if(!funds.length && !bons.length) return null;
+  const NC = 'Non classé', catOf = b=> b.category || NC;
+  const cats = CAISSE_CATEGORIES.slice(); bons.forEach(b=>{ if(!cats.includes(catOf(b))) cats.push(catOf(b)); });
+  const pc = (a, b)=> b ? (Math.round(a / b * 1000) / 10).toLocaleString('fr-FR') + ' %' : '';
+  const sheets = [];
+  // 1) ملخص المصاريف حسب الفئة
+  const catRows = [];
+  cats.forEach(c=>{ const l = bons.filter(b=> catOf(b) === c); if(l.length) catRows.push([c, String(l.length), sumB(l), pc(sumB(l), totalOut)]); });
+  sheets.push({name: 'Résumé des dépenses par catégorie', columns: ['Catégorie', 'Nb de bons', 'Montant (MAD)', '% des dépenses'], numCols: [1, 2, 3],
+    rows: catRows.length ? catRows : [['Aucune dépense sur la période', '', 0, '']], totals: ['TOTAL DES DÉPENSES', String(bons.length), totalOut, totalOut ? '100 %' : '']});
+  // 2) تفاصيل البونات بند ببند (مرتبة حسب الفئة)
+  const det = [];
+  cats.forEach(c=> bons.filter(b=> catOf(b) === c).forEach(b=>{
+    const its = (b.items && b.items.length) ? b.items : [{desc: '', qty: 0, price: 0}];
+    its.forEach((it, k)=> det.push([k ? '' : c, k ? '' : frDate(b.date), k ? '' : String(b.bonNumber || ''), k ? '' : projectNameById(b.projectId), String(it.desc || ''), N(+it.qty || 0), N(+it.price || 0), N((+it.qty || 0) * (+it.price || 0))]));
+  }));
+  if(det.length) sheets.push({name: 'Détail des bons de caisse', columns: ['Catégorie', 'Date', 'N° bon', 'Projet', 'Désignation', 'Qté', 'P.U (MAD)', 'Montant (MAD)'], numCols: [5, 6, 7],
+    rows: det, totals: ['TOTAL', '', '', '', '', '', '', totalOut]});
+  // 3) حركات الصندوق مع الرصيد بعد كل حركة
+  const mv = [];
+  funds.forEach(f=> mv.push({date: f.date, id: f.id, t: 'Alimentation', ref: String(f.note || ''), inn: N(+f.amount || 0), out: 0}));
+  bons.forEach(b=> mv.push({date: b.date, id: b.id, t: 'Bon de caisse', ref: String(b.bonNumber || ''), inn: 0, out: N(bonTotal(b))}));
+  mv.sort(byDate);
+  let run = opening; const mrows = [];
+  if(from) mrows.push([frDate(from), "Solde d'ouverture", '', '', '', opening]);
+  mv.forEach(m=>{ run = N(run + m.inn - m.out); mrows.push([frDate(m.date), m.t, m.ref, m.inn || '', m.out || '', run]); });
+  sheets.push({name: 'Mouvements de caisse', columns: ['Date', 'Type', 'Référence / note', 'Entrée (MAD)', 'Sortie (MAD)', 'Solde (MAD)'], numCols: [3, 4, 5],
+    rows: mrows, totals: ['TOTAL / SOLDE FINAL', '', '', totalIn, totalOut, run]});
+  const per = [from ? 'du ' + frDate(from) : '', to ? 'au ' + frDate(to) : ''].filter(Boolean).join(' ');
+  return {title: 'ÉTAT DE LA CAISSE', fileBase: 'Etat-caisse-' + todayStr(), subtitle: 'ALIOUA BTP — Édité le ' + frDate(todayStr()) + (per ? ' — Période : ' + per : ''), sheets,
+    summary: "Montants en dirhams (MAD). Les dépenses sont les bons de caisse enregistrés dans l'application ; le solde est égal aux alimentations moins les bons.",
+    formats: ['pdf', 'excel'], noEdit: true};
+}
+document.getElementById('caissePrintBtn')?.addEventListener('click', ()=>{
+  const from = (document.getElementById('caissePrintFrom') || {}).value || '', to = (document.getElementById('caissePrintTo') || {}).value || '';
+  if(from && to && from > to){ alert('تاريخ البداية جا بعد تاريخ النهاية، صحّح الفترة.'); return; }
+  try{
+    const rep = buildCaisseReport(from, to);
+    if(!rep){ alert('ما كاين حتى حركة فالصندوق فهاد الفترة.'); return; }
+    openReportPreview(rep, 'pdf');
+  }catch(e){ alert('تعذّر تجهيز تقرير الصندوق: ' + ((e && e.message) || e)); }
+});
 
 /* ---------- التسويق ---------- */
 document.getElementById('marketingGenBtn').addEventListener('click', ()=>{
