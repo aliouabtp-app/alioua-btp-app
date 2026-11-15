@@ -8419,7 +8419,7 @@ function buildInvoicePdf(invData){
   doc.text('SOMME FINALE À PAYER :', 138, ty);
   ty += 6;
   doc.setFontSize(11); doc.setTextColor(0,0,0);
-  doc.text(numberToFrenchWords(_bk.net) + ' Dirhams', 138, ty, {maxWidth:60});
+  doc.text(amountWordsFr(_bk.net), 138, ty, {maxWidth:60});
 
   ty = Math.max(ty+6, ribBottomY + 14);
 
