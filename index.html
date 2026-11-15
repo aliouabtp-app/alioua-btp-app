@@ -4401,19 +4401,21 @@ function _acctSummaryText(){
   try{
     const R = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US');
     const clientsExp = loadInvoices().reduce((a, i)=> a + invoiceTotal(i), 0);
-    const pdfInc = loadPdfInvoices().reduce((a, inv)=> a + inv.items.reduce((x, it)=> x + it.qty * it.price, 0) * (1 + (inv.tvaRate || 0) / 100), 0);
+    const pdfInc = loadPdfInvoices().reduce((a, inv)=> a + pdfInvTotalTTC(inv), 0);
     const supExp = loadPurchases().reduce((a, p)=> a + purchaseTotal(p), 0);
-    const mp = curMonthPrefix(), att = loadAttendance().filter(a=> a.date && a.date.startsWith(mp)), ext = loadExtras().filter(x=> x.date && x.date.startsWith(mp));
-    const wk = []; loadWorkers().forEach(w=>{ const d = workerCalc(w, att.filter(a=> a.workerId === w.id), ext.filter(x=> x.workerId === w.id), 1, true).total; if(d > 0) wk.push([w.name, d]); });
+    const att = loadAttendance(), ext = loadExtras();
+    const wk = []; loadWorkers().forEach(w=>{ const d = workerCostAllTime(w, att, ext).total; if(d > 0) wk.push([w.name, d]); });
     const wkExp = wk.reduce((a, w)=> a + w[1], 0);
     const caisseExp = loadCaisseData().bons.reduce((a, b)=> a + bonTotal(b), 0);
     const tx = loadTx(), mi = tx.filter(t=> t.type === 'income').reduce((a, t)=> a + t.amount, 0), me = tx.filter(t=> t.type === 'expense').reduce((a, t)=> a + t.amount, 0);
     const income = pdfInc + mi, expense = clientsExp + supExp + wkExp + caisseExp + me;
+    const _t = tvaSummary();
     const L = ['## ملخص قسم المحاسبة (هادي هي نفس الأرقام اللي كتبان فشاشة المحاسبة، وهي المرجع الأول لأي سؤال على حسابات الشركة)',
       `- إجمالي الدخل: ${R(income)} درهم = فواتير "الفواتير" PDF شاملة TVA ${R(pdfInc)} + مداخيل يدوية ${R(mi)}`,
-      `- إجمالي المصاريف: ${R(expense)} درهم = مقدمو الخدمات ${R(clientsExp)} + الموردون ${R(supExp)} + أجور الشهر الحالي ${R(wkExp)} + السيولة النقدية ${R(caisseExp)} + مصاريف يدوية ${R(me)}`,
+      `- إجمالي المصاريف: ${R(expense)} درهم = مقدمو الخدمات ${R(clientsExp)} + الموردون ${R(supExp)} + أجور الأجراء (من أول تسجيل) ${R(wkExp)} + السيولة النقدية ${R(caisseExp)} + مصاريف يدوية ${R(me)}`,
       `- الصافي (الدخل − المصاريف): ${R(income - expense)} درهم`];
-    if(wk.length) L.push('- أجور الشهر الحالي لكل أجير (حضور + إضافي): ' + wk.map(w=> w[0] + ' ' + R(w[1])).join('، '));
+    L.push(`- TVA: المحصّلة ${R(_t.col)} − القابلة للاسترجاع ${R(_t.ded)} = المستحقة ${R(_t.due)} درهم؛ النتيجة بعد TVA (HT) ${R(income - expense - _t.due)} درهم (المشتريات بلا نسبة TVA محددة ${R(_t.noTva)})`);
+    if(wk.length) L.push('- أجور كل أجير من أول تسجيل (حضور + إضافي): ' + wk.map(w=> w[0] + ' ' + R(w[1])).join('، '));
     const cat = {}; tx.forEach(t=>{ const k = (t.type === 'income' ? 'دخل' : 'مصروف') + ' — ' + (t.category || 'بلا فئة'); cat[k] = (cat[k] || 0) + t.amount; });
     const ck = Object.keys(cat); if(ck.length) L.push('- المعاملات اليدوية حسب الفئة: ' + ck.map(k=> k + ' ' + R(cat[k])).join('، '));
     L.push('- ملاحظة: عروض الأسعار (devis) والشيكات ما كيدخلوش فهاد المجاميع.');
@@ -4462,7 +4464,7 @@ function buildAccountingSnapshotText(){
     if(pdfInvoices.length){
       lines.push('\n## فواتير "الفواتير" PDF (دخل حقيقي)');
       pdfInvoices.forEach(inv=>{
-        const total = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
+        const total = pdfInvTotalTTC(inv);
         lines.push(`- فاتورة ${inv.invNumber} — ${inv.clientName||'عميل'} — ${inv.invDate}: ${total.toLocaleString('en-US')} درهم`);
       });
     }
@@ -7582,7 +7584,7 @@ document.getElementById('exportReportBtn').addEventListener('click', ()=>{
     expense += amt;
   });
   if(currentRole !== 'employee') loadPdfInvoices().forEach(inv=>{
-    const amt = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
+    const amt = pdfInvTotalTTC(inv);
     rows.push([inv.invDate, 'دخل', inv.clientName || 'عميل', 'فاتورة PDF ' + inv.invNumber, amt]);
     income += amt;
   });
@@ -7598,13 +7600,11 @@ document.getElementById('exportReportBtn').addEventListener('click', ()=>{
     rows.push([b.date, 'مصروف', 'سيولة — ' + b.category, 'بون ' + b.bonNumber, amt]);
     expense += amt;
   });
-  const _mpx = curMonthPrefix();
-  const attendance = loadAttendance().filter(a=> a.date && a.date.startsWith(_mpx));
-  const extrasX = loadExtras().filter(x=> x.date && x.date.startsWith(_mpx));
+  const attendance = loadAttendance(), extrasX = loadExtras();
   loadWorkers().forEach(w=>{
-    const amt = workerCalc(w, attendance.filter(a=>a.workerId===w.id), extrasX.filter(x=>x.workerId===w.id), 1, true).total;
+    const amt = workerCostAllTime(w, attendance, extrasX).total;
     if(amt > 0){
-      rows.push(['', 'مصروف', 'أجير — ' + w.name, 'مستحق الشهر الحالي ' + _mpx, amt]);
+      rows.push(['', 'مصروف', 'أجير — ' + w.name, 'أجور من أول تسجيل حتى اليوم', amt]);
       expense += amt;
     }
   });
@@ -7695,6 +7695,25 @@ function renderOverdueAlertsBase(){
   `;
 }
 
+// ملخص TVA: المحصّلة (من الفواتير غير الملغاة) − القابلة للاسترجاع (مشتريات بنسبة TVA محددة، المبلغ TTC) = المستحقة
+function tvaSummary(){
+  let col = 0, ded = 0, noTva = 0;
+  loadPdfInvoices().forEach(i=>{ col += pdfInvBreakdown(i).tva; });
+  loadPurchases().forEach(p=>{ const r = +p.tvaRate || 0, t = purchaseTotal(p); if(r > 0) ded += t - t / (1 + r / 100); else noTva += t; });
+  col = round2(col); ded = round2(ded);
+  return {col, ded, due: round2(col - ded), noTva: round2(noTva)};
+}
+function renderTvaCard(income, expense){
+  try{
+    const anchor = document.getElementById('sumNet'); if(!anchor) return;
+    const cards = anchor.closest('.s-card') && anchor.closest('.s-card').parentElement; if(!cards) return;
+    let el = document.getElementById('tvaCard');
+    if(currentRole === 'employee'){ if(el) el.remove(); return; }
+    if(!el){ el = document.createElement('div'); el.id = 'tvaCard'; el.style.cssText = 'margin:10px 0; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:#fff; font-size:12.5px; line-height:1.9;'; cards.parentElement.insertBefore(el, cards.nextSibling); }
+    const t = tvaSummary(), f = n => round2(n).toLocaleString('ar');
+    el.innerHTML = `<b>🧾 TVA</b> (حسب الفوترة)<br>المحصّلة: <b>${f(t.col)}</b> · القابلة للاسترجاع: <b>${f(t.ded)}</b> · <b style="color:${t.due>=0?'#b91c1c':'#2e7d32'};">${t.due>=0?'المستحقة للدولة':'فائض TVA'}: ${f(Math.abs(t.due))}</b><br>📊 النتيجة بعد TVA (HT): <b>${f(income - expense - t.due)}</b>` + (t.noTva > 0 ? `<br><span style="color:var(--ink-soft); font-size:11px;">مشتريات بلا نسبة TVA محددة: ${f(t.noTva)} (TVA ما محسوبة قابلة للاسترجاع حتى تحدد النسبة فكل شراء)</span>` : '');
+  }catch(e){ console.error('TVA:', e); }
+}
 function renderAccountingBase(){
   // ===== نحسبو كل قسم مباشرة من مصدره الأصلي (بلا نسخ وسيطة) — هكذا كل البيانات
   // (القديمة والجديدة) كتبان دايمًا بلا أي احتمال تأخر أو نسيان =====
@@ -7713,7 +7732,7 @@ function renderAccountingBase(){
   loadPdfInvoices().forEach(inv=>{
     const linked = inv.customerId ? loadCustomers().find(c=>c.id===inv.customerId) : null;
     const name = linked ? linked.name : (inv.clientName || 'عميل');
-    const total = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
+    const total = pdfInvTotalTTC(inv);
     pdfInvoiceTotals[name] = (pdfInvoiceTotals[name]||0) + total;
   });
 
@@ -7726,13 +7745,11 @@ function renderAccountingBase(){
     supplierTotals[name] = (supplierTotals[name]||0) + purchaseTotal(p);
   });
 
-  // ----- 3) مصروف الأجراء: مجمّع حسب اسم الأجير — الشهر الحالي فقط (حضور + أيام/ساعات إضافية) -----
+  // ----- 3) مصروف الأجراء: مجمّع حسب اسم الأجير — من أول تسجيل حتى اليوم (حضور + أيام/ساعات إضافية) -----
   const workerTotals = {};
-  const _mp = curMonthPrefix();
-  const allAttendance = loadAttendance().filter(a=> a.date && a.date.startsWith(_mp));
-  const allExtras = loadExtras().filter(x=> x.date && x.date.startsWith(_mp));
+  const allAttendance = loadAttendance(), allExtras = loadExtras();
   loadWorkers().forEach(w=>{
-    const due = workerCalc(w, allAttendance.filter(a=>a.workerId===w.id), allExtras.filter(x=>x.workerId===w.id), 1, true).total;
+    const due = workerCostAllTime(w, allAttendance, allExtras).total;
     if(due > 0) workerTotals[w.name] = (workerTotals[w.name]||0) + due;
   });
 
@@ -7749,13 +7766,14 @@ function renderAccountingBase(){
   const supplierExpenseTotal = Object.values(supplierTotals).reduce((s,v)=>s+v, 0);
   const workerExpenseTotal = Object.values(workerTotals).reduce((s,v)=>s+v, 0);
 
-  const income = pdfIncomeTotal + manualIncome;
-  const expense = clientsExpenseTotal + supplierExpenseTotal + workerExpenseTotal + caisseTotal + manualExpense;
+  const income = round2(pdfIncomeTotal + manualIncome);
+  const expense = round2(clientsExpenseTotal + supplierExpenseTotal + workerExpenseTotal + caisseTotal + manualExpense);
 
   const _emp = currentRole === 'employee';
   document.getElementById('sumIncome').textContent = _emp ? '' : income.toLocaleString('ar');
   document.getElementById('sumExpense').textContent = expense.toLocaleString('ar');
-  document.getElementById('sumNet').textContent = _emp ? '' : (income-expense).toLocaleString('ar');
+  document.getElementById('sumNet').textContent = _emp ? '' : round2(income-expense).toLocaleString('ar');
+  renderTvaCard(income, expense);
 
   // ----- عرض قسم "المصاريف": مجموع كل عنصر بالاسم (بلا تفاصيل خام) + الحركات اليدوية -----
   const el = document.getElementById('txList');
@@ -7770,7 +7788,7 @@ function renderAccountingBase(){
     rows.push({label: '🤝 ' + name, amount: pdfInvoiceTotals[name], type:'income'});
   });
   Object.keys(workerTotals).forEach(name=>{
-    rows.push({label: '👷 ' + name + ' (هاد الشهر)', amount: workerTotals[name], type:'expense'});
+    rows.push({label: '👷 ' + name + ' (الأجور)', amount: workerTotals[name], type:'expense'});
   });
   if(caisseTotal > 0){
     rows.push({label: '💵 سيولة (مصاريف نقدية)', amount: caisseTotal, type:'expense'});
@@ -7825,7 +7843,7 @@ function renderAccountingBase(){
   const datedEntries = [];
   loadInvoices().forEach(inv=> datedEntries.push({date: inv.date, amount: invoiceTotal(inv), type:'expense'}));
   loadPdfInvoices().forEach(inv=>{
-    const total = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0) * (1 + (inv.tvaRate||0)/100);
+    const total = pdfInvTotalTTC(inv);
     datedEntries.push({date: inv.invDate, amount: total, type:'income'});
   });
   loadPurchases().forEach(p=> datedEntries.push({date: p.date, amount: purchaseTotal(p), type:'expense'}));
@@ -8385,7 +8403,7 @@ function buildInvoicePdf(invData){
   ty += 7;
   doc.setFont('helvetica','bold'); doc.text('TOTAL TTC :', 138, ty);
   doc.setFont('helvetica','normal'); doc.text(fmtMAD(ttc) + ' Dh', 195, ty, {align:'right'});
-  const _bk = pdfInvBreakdown(invData);
+  const _bk = pdfInvBreakdown(Object.assign({}, invData, {_forPdf:true}));
   [[`Retenue de garantie (${invData.retGarPct||0}%) :`, _bk.rg], ['Avance de démarrage à déduire :', _bk.av], [`RAS (${invData.rasPct||0}%) :`, _bk.ras]].forEach(([lbl, v])=>{
     if(!v) return; ty += 7;
     doc.setFont('helvetica','bold'); doc.text(lbl, 138, ty, {maxWidth:38});
@@ -8437,20 +8455,19 @@ function renderInvoicesList(){
   if(!list.length){ wrap.innerHTML = '<p style="font-size:12px; color:var(--ink-soft); text-align:center; padding:10px;">ماكاينش فواتير مسجلة بعد.</p>'; return; }
   wrap.innerHTML = '';
   list.forEach(inv=>{
-    const totalHT = inv.items.reduce((s,it)=> s + (it.qty*it.price), 0);
-    const ttc = totalHT * (1 + inv.tvaRate/100);
+    const ttc = pdfInvBreakdown(Object.assign({}, inv, {_forPdf:true})).ttc, cx = !!inv.cancelled;
     const row = document.createElement('div');
     row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-top:8px;';
     row.innerHTML = `
       <div>
-        <div dir="ltr" style="font-weight:600; font-size:13px; text-align:right;">${escapeHtml(inv.invNumber)} — ${escapeHtml(inv.clientName)}</div>
+        <div dir="ltr" style="font-weight:600; font-size:13px; text-align:right;${cx?' text-decoration:line-through; opacity:.6;':''}">${escapeHtml(inv.invNumber)} — ${escapeHtml(inv.clientName)}</div>${cx?'<div style="font-size:11px; color:#b91c1c; font-weight:700;">⛔ ملغاة — الرقم محفوظ وما كيدخلش فالحسابات</div>':''}
         <div style="font-size:11px; color:var(--ink-soft);">${inv.invDate.split('-').reverse().join('/')} · ${fmtMAD(ttc)} Dh TTC</div>
       </div>
       <div style="display:flex; gap:4px;">
-        <button type="button" class="btn-ghost" data-act="edit" data-id="${inv.id}" style="padding:6px 8px; font-size:12px;">✏️</button>
+        ${cx?'':`<button type="button" class="btn-ghost" data-act="edit" data-id="${inv.id}" style="padding:6px 8px; font-size:12px;">✏️</button>`}
         <button type="button" class="btn-ghost" data-act="pdf" data-id="${inv.id}" style="padding:6px 8px; font-size:12px;">⬇️</button>
         <button type="button" class="btn-ghost" data-act="print" data-id="${inv.id}" style="padding:6px 8px; font-size:12px;">🖨️</button>
-        <button type="button" class="btn-ghost" data-act="del" data-id="${inv.id}" style="padding:6px 8px; font-size:12px; color:#b91c1c;">🗑</button>
+        ${cx?'':`<button type="button" class="btn-ghost" data-act="cancel" data-id="${inv.id}" style="padding:6px 8px; font-size:12px; color:#b91c1c;">⛔</button>`}
       </div>
     `;
     wrap.appendChild(row);
@@ -8475,9 +8492,11 @@ document.getElementById('invoicesListWrap')?.addEventListener('click', (e)=>{
     if(!inv) return;
     const doc = buildInvoicePdf(inv);
     if(doc){ doc.autoPrint(); window.open(doc.output('bloburl'), '_blank'); }
-  }else if(act === 'del'){
-    if(!confirm('متأكدة بغيتي تمسحي هاد الفاتورة؟ ما تقدريش ترجعيها بعد.')) return;
-    const list = loadPdfInvoices().filter(i=>i.id !== id);
+  }else if(act === 'cancel'){
+    if(!confirm('إلغاء هاد الفاتورة؟ غادي تبقى فاللائحة بنفس الرقم (الترقيم المتسلسل إلزامي قانونياً) وتتحيد من كل الحسابات. ما يمكنش التراجع.')) return;
+    const list = loadPdfInvoices(), inv = list.find(i=>i.id === id);
+    if(!inv) return;
+    inv.cancelled = true; inv.cancelledAt = todayStr();
     savePdfInvoices(list);
     renderInvoicesList();
   }
@@ -8565,6 +8584,7 @@ function saveCustPayments(l){ safeSetItem(CUSTOMER_PAYMENTS_KEY, JSON.stringify(
 function round2(n){ return Math.round((+n||0) * 100) / 100; }
 // تفصيل الفاتورة/الكشف المرحلي: HT، TVA، TTC، اقتطاع الضمان (على TTC)، خصم التسبيق، الضريبة المقتطعة RAS (على HT)، الصافي للأداء
 function pdfInvBreakdown(inv){
+  if(inv && inv.cancelled && !inv._forPdf) return {ht:0, tva:0, ttc:0, rg:0, av:0, ras:0, net:0};
   const ht = round2((inv.items||[]).reduce((s,it)=> s + (it.qty*it.price), 0));
   const tva = round2(ht * (inv.tvaRate||0) / 100);
   const ttc = round2(ht + tva);
@@ -8574,8 +8594,8 @@ function pdfInvBreakdown(inv){
   const net = round2(ttc - rg - av - ras);
   return {ht, tva, ttc, rg, av, ras, net};
 }
-function pdfInvTotalTTC(inv){ return pdfInvBreakdown(inv).ttc; }
-function pdfInvNet(inv){ return pdfInvBreakdown(inv).net; }
+function pdfInvTotalTTC(inv){ return inv && inv.cancelled ? 0 : pdfInvBreakdown(inv).ttc; }
+function pdfInvNet(inv){ return inv && inv.cancelled ? 0 : pdfInvBreakdown(inv).net; }
 let openCustId = null;
 
 function fillCustomerSelect(selectedId){
@@ -9419,6 +9439,9 @@ function renderSuppliers(){
         <select id="pProject_${sup.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:8px;">
           <option value="">بلا مشروع محدد</option>
         </select>
+        <select id="pTva_${sup.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:8px;">
+          ${[[0,'TVA: بلا (غير مسجلة / غير قابلة للاسترجاع)'],[20,'TVA 20% — المبلغ المدخل TTC'],[14,'TVA 14% — المبلغ المدخل TTC'],[10,'TVA 10% — المبلغ المدخل TTC'],[7,'TVA 7% — المبلغ المدخل TTC']].map(([v,l])=>`<option value="${v}" ${(editingPurchase && +editingPurchase.tvaRate === v) ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
         <button class="btn-primary" id="pSave_${sup.id}">💾 ${editingPurchase ? 'حفظ التعديل' : 'حفظ الشراء'}</button>
       `;
       fillProjectSelect(pHost.querySelector('#pProject_'+sup.id), editingPurchase ? editingPurchase.projectId : '', true);
@@ -9471,10 +9494,10 @@ function renderSuppliers(){
         let purchase;
         if(editingPurchase){
           purchase = all.find(p=>p.id === editingPurchase.id);
-          purchase.items = items; purchase.date = date; purchase.projectId = projectId;
+          purchase.items = items; purchase.date = date; purchase.projectId = projectId; purchase.tvaRate = +pHost.querySelector('#pTva_'+sup.id).value || 0;
           editPurchaseId = null;
         }else{
-          purchase = {id:'p'+Date.now(), supplierId: sup.id, date, items, projectId};
+          purchase = {id:'p'+Date.now(), supplierId: sup.id, date, items, projectId, tvaRate: +pHost.querySelector('#pTva_'+sup.id).value || 0};
           all.push(purchase);
         }
         savePurchases(all);
@@ -9899,12 +9922,12 @@ async function openContractFile(f){
 
 /* ----- أرقام المشروع: نفس الصيغ القديمة + مقارنة مع ثمن الصفقة والميزانية المخصصة ----- */
 function _projCtx(){
-  return {pdf: loadPdfInvoices(), simple: loadInvoices(), clients: loadClients(), caisse: loadCaisseData(), purchases: loadPurchases(), workers: loadWorkers(), att: loadAttendance()};
+  return {pdf: loadPdfInvoices(), simple: loadInvoices(), clients: loadClients(), caisse: loadCaisseData(), purchases: loadPurchases(), workers: loadWorkers(), att: loadAttendance(), ext: loadExtras()};
 }
 function projectFinancials(proj, ctx){
   const c = ctx || _projCtx();
   const pdfs = c.pdf.filter(i=> i.projectId === proj.id);
-  const income = pdfs.reduce((s, i)=> s + i.items.reduce((ss, it)=> ss + (it.qty * it.price), 0) * (1 + (i.tvaRate || 0) / 100), 0);
+  const income = round2(pdfs.reduce((s, i)=> s + pdfInvTotalTTC(i), 0));
   const sInv = c.simple.filter(inv=>{ const cl = c.clients.find(x=> x.id === inv.clientId); return cl && cl.projectId === proj.id; });
   const clientsExpense = sInv.reduce((s, inv)=> s + invoiceTotal(inv), 0);
   const bons = c.caisse.bons.filter(b=> b.projectId === proj.id);
@@ -9914,15 +9937,15 @@ function projectFinancials(proj, ctx){
   const pw = c.workers.filter(w=> w.projectId === proj.id);
   const workerDays = c.att.filter(a=> pw.some(w=> w.id === a.workerId) && a.status !== 'absent').length;
   const workerLines = [];
+  const _ext = c.ext || loadExtras();
   const workerExpense = pw.reduce((sum, w)=>{
     const wAtt = c.att.filter(a=> a.workerId === w.id);
-    if(!wAtt.length) return sum;
-    const present = wAtt.filter(a=> a.status === 'present').length + wAtt.filter(a=> a.status === 'half').length * 0.5;
-    const amt = w.type === 'daily' ? present * w.wage : w.wage;
-    workerLines.push({w, days: present, amount: amt});
-    return sum + amt;
+    const wc = workerCostAllTime(w, c.att, _ext);
+    if(!wAtt.length && !wc.total) return sum;
+    workerLines.push({w, days: wc.days, amount: wc.total});
+    return sum + wc.total;
   }, 0);
-  const totalExpense = clientsExpense + caisseExpense + purchaseExpense + workerExpense, net = income - totalExpense;
+  const totalExpense = round2(clientsExpense + caisseExpense + purchaseExpense + workerExpense), net = round2(income - totalExpense);
   // الصفقة والميزانية
   const amount = +proj.contractAmount || 0, ttc = proj.contractTtc !== false, rate = (proj.contractTva === 0 || proj.contractTva) ? +proj.contractTva : 20;
   const ht = amount ? (ttc ? amount / (1 + rate / 100) : amount) : 0, ttcAmt = amount ? (ttc ? amount : amount * (1 + rate / 100)) : 0;
@@ -10454,6 +10477,19 @@ function workerCalc(w, att, extras, monthlyFactor, requireActivity){
   const extraDaysAmt = extraDays * dayRate;
   const otAmt = otHours * (dayRate / DAY_HOURS) * OT_RATE;
   return {days, extraDays, otHours, base, extraDaysAmt, otAmt, total: Math.round((base + extraDaysAmt + otAmt)*100)/100};
+}
+// تكلفة الأجير من أول تسجيل حتى اليوم (حضور + أيام/ساعات إضافية)، مقسّمة على نفس الفترات ديال الأداء (1–15 و16–آخر الشهر).
+// هادي هي المرجع الوحيد لأجور الأجراء فالمحاسبة العامة، المشاريع، التصدير وملخص يونس — باش الأرقام تبقى متطابقة.
+function workerCostAllTime(w, attAll, extAll){
+  const att = (attAll || loadAttendance()).filter(a=> a.workerId === w.id && a.date);
+  const ext = (extAll || loadExtras()).filter(x=> x.workerId === w.id && x.date);
+  const buckets = {};
+  const put = (d, k, v)=>{ const key = periodOf(d).from; (buckets[key] = buckets[key] || {a:[], e:[]})[k].push(v); };
+  att.forEach(a=> put(a.date, 'a', a));
+  ext.forEach(x=> put(x.date, 'e', x));
+  let total = 0, days = 0;
+  Object.keys(buckets).forEach(k=>{ const c = workerCalc(w, buckets[k].a, buckets[k].e, 0.5, true); total += c.total; days += c.days; });
+  return {total: Math.round(total*100)/100, days};
 }
 const _inR = (d, rs)=> rs.some(r=> d >= r[0] && d <= r[1]);
 function paidRanges(wid){ return loadWPayments().filter(x=>x.workerId===wid && !x.extrasOnly).map(x=>[x.from, x.to]); }
