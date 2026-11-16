@@ -823,7 +823,7 @@ input, select, textarea{ min-width:0; }
 .inv-card .inv-pay button{ background:none; border:none; cursor:pointer; font-size:13px; }
 .inv-card .inv-payform{ margin-top:8px; display:grid; gap:6px; }
 .inv-card .inv-payform .pf-btns{ display:flex; gap:6px; }
-.client-inv-item-row .qrow{ display:grid; grid-template-columns:1fr 1fr 1.3fr 36px; gap:6px; margin-top:6px; }
+.client-inv-item-row .qrow{ display:grid; grid-template-columns:1fr 1fr 1.3fr 1fr 36px; gap:6px; margin-top:6px; }
 .client-inv-item-row .qrow input{ width:100%; }
 .mat-qty-controls{ display:flex; align-items:center; gap:8px; }
 .mat-qty-btn{
@@ -1323,7 +1323,7 @@ input, select, textarea{ min-width:0; }
   #clientList, #supplierList{ grid-template-columns:repeat(auto-fill, minmax(380px, 1fr)); }
   #clientList > .list-card:has(.lc-invoice-form:not(:empty)),
   #supplierList > .list-card:has(.lc-invoice-form:not(:empty)){ grid-column:1 / -1; }
-  .client-inv-item-row{ display:grid; grid-template-columns:minmax(200px, 3fr) 80px 90px 130px 40px; gap:8px; align-items:center; }
+  .client-inv-item-row{ display:grid; grid-template-columns:minmax(200px, 3fr) 80px 90px 130px 90px 40px; gap:8px; align-items:center; }
   .client-inv-item-row .qrow{ display:contents; }
   .client-inv-item-row .q-total{ grid-column:1 / -1; text-align:right; }
   .client-inv-item-row input{ margin:0; }
@@ -8812,10 +8812,22 @@ let editInvoiceId = null;
 function loadClients(){ try{ return JSON.parse(LS.getItem(CLIENTS_KEY)||'[]'); }catch(e){ return []; } }
 function saveClients(l){ safeSetItem(CLIENTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
 function loadInvoices(){ try{ return JSON.parse(LS.getItem(INVOICES_KEY)||'[]'); }catch(e){ return []; } }
-function invoiceTotal(inv){ return inv.items.reduce((s,it)=> s + (it.qty*it.price), 0); }
+/* بند الفاتورة: avancement % (الافتراضي 100، الفواتير القديمة ما كتتأثرش) */
+function invItemProg(it){ const p = (it && it.prog != null && it.prog !== '') ? +it.prog : 100; return isFinite(p) ? Math.max(0, Math.min(100, p)) : 100; }
+function invItemAmt(it){ const p = invItemProg(it); return p === 100 ? it.qty * it.price : it.qty * it.price * p / 100; }
+function invoiceTotal(inv){ return inv.items.reduce((s,it)=> s + invItemAmt(it), 0); }
+/* الاقتطاعات (retenues): inv.retenues = [{key: garantie|decoffrage|prorata|autre, label, pct, amount}] — النسبة على مجموع الأشغال، وإلا المبلغ الثابت.
+   compte prorata نهائي (ما كيتسترجعش) فكيتنقص من المتبقي؛ الباقي (garantie/décoffrage/autre) محتجز كيبقى مستحق حتى يتفرج عنه. */
+function invRetList(inv){
+  const A = invoiceTotal(inv);
+  return (Array.isArray(inv.retenues) ? inv.retenues : []).map(r=> ({key: r.key || 'autre', label: r.label || '', pct: +r.pct || 0, amount: (+r.pct > 0) ? round2(A * (+r.pct) / 100) : round2(+r.amount || 0)})).filter(r=> r.amount > 0);
+}
+function invRetTotal(inv){ return round2(invRetList(inv).reduce((s, r)=> s + r.amount, 0)); }
+function invRetFinal(inv){ return round2(invRetList(inv).filter(r=> r.key === 'prorata').reduce((s, r)=> s + r.amount, 0)); }
+function invNetDue(inv){ return Math.max(0, round2(invoiceTotal(inv) - invRetTotal(inv) - invoicePaid(inv))); }
 /* دفعات بالتقسيط: payments = [{id,date,amount,note}] — الفواتير القديمة (status فقط) كتبقى شغالة */
 function invoicePaid(inv){ if(Array.isArray(inv.payments) && inv.payments.length) return round2(inv.payments.reduce((s,p)=> s + (+p.amount || 0), 0)); return inv.status === 'paid' ? invoiceTotal(inv) : 0; }
-function invoiceRemaining(inv){ return Math.max(0, round2(invoiceTotal(inv) - invoicePaid(inv))); }
+function invoiceRemaining(inv){ return Math.max(0, round2(invoiceTotal(inv) - invRetFinal(inv) - invoicePaid(inv))); }
 function syncInvoiceStatus(inv){ inv.status = invoiceRemaining(inv) <= 0.005 ? 'paid' : 'pending'; }
 let payInvId = null;
 function addInvoicePayment(invId, amount, date, note){
@@ -8855,14 +8867,17 @@ function _provInvList(clientId, invs){
 function _provStatusFr(inv){ const r = invoiceRemaining(inv), p = invoicePaid(inv); return r <= 0.005 ? 'Payée' : (p > 0 ? 'Partiellement payée' : 'Non payée'); }
 function buildProviderReport(clientIds){
   const N = round2, invs = loadInvoices();
+  const net = i=> N(invoiceTotal(i) - invRetFinal(i));   // المستحق لمقدم الخدمة بعد الاقتطاع النهائي (compte prorata)
   const data = loadClients().filter(c=> !clientIds || clientIds.includes(c.id)).map(c=>{
     const l = _provInvList(c.id, invs);
-    return {c, l, total: N(l.reduce((s, i)=> s + invoiceTotal(i), 0)), paid: N(l.reduce((s, i)=> s + invoicePaid(i), 0)), rem: N(l.reduce((s, i)=> s + invoiceRemaining(i), 0))};
+    return {c, l, total: N(l.reduce((s, i)=> s + net(i), 0)), gross: N(l.reduce((s, i)=> s + invoiceTotal(i), 0)), paid: N(l.reduce((s, i)=> s + invoicePaid(i), 0)), rem: N(l.reduce((s, i)=> s + invoiceRemaining(i), 0))};
   }).filter(d=> d.l.length);
   if(!data.length) return null;
   const sum = k=> N(data.reduce((s, d)=> s + d[k], 0));
+  const anyFinal = data.some(d=> d.l.some(i=> invRetFinal(i) > 0));
   const iref = (i, k)=> 'n°' + (k + 1) + ' — ' + frDate(i.date);
-  const itemRow = (it, j)=> [String(j + 1), String(it.desc || ''), +it.qty || 0, String(it.unit || ''), N(+it.price || 0), N((+it.qty || 0) * (+it.price || 0))];
+  const pg = it=> String(invItemProg(it)).replace('.', ',') + ' %';
+  const itemRow = (it, j)=> [String(j + 1), String(it.desc || ''), String(it.unit || ''), +it.qty || 0, N(+it.price || 0), pg(it), N(invItemAmt(it))];
   const sheets = [], one = data.length === 1;
   if(one){
     const d = data[0], pj = projectNameById(d.c.projectId), syn = [['Prestataire', d.c.name || '']];
@@ -8871,13 +8886,16 @@ function buildProviderReport(clientIds){
     syn.push(['Nombre de factures', String(d.l.length)], ['Total des factures (MAD)', d.total], ['Total payé (MAD)', d.paid], ['RESTE À PAYER (MAD)', d.rem]);
     sheets.push({name: 'Synthèse', columns: ['Rubrique', 'Détail'], numCols: [1], rows: syn});
     sheets.push({name: 'Récapitulatif des factures', columns: ['N°', 'Date', 'Total (MAD)', 'Payé (MAD)', 'Reste à payer (MAD)', 'Statut'], numCols: [2, 3, 4],
-      rows: d.l.map((i, k)=> [String(k + 1), frDate(i.date), N(invoiceTotal(i)), N(invoicePaid(i)), N(invoiceRemaining(i)), _provStatusFr(i)]),
+      rows: d.l.map((i, k)=> [String(k + 1), frDate(i.date), net(i), N(invoicePaid(i)), N(invoiceRemaining(i)), _provStatusFr(i)]),
       totals: ['TOTAL', '', d.total, d.paid, d.rem, '']});
     d.l.forEach((i, k)=>{
+      const fin = invRetFinal(i), tmp = N(invRetTotal(i) - fin), tt = [['', 'TOTAL FACTURE', '', '', '', '', N(invoiceTotal(i))]];
+      invRetList(i).forEach(r=> tt.push(['', ({garantie: 'RETENUE DE GARANTIE', decoffrage: 'RETENUE DE DÉCOFFRAGE', prorata: 'COMPTE PRORATA (retenue définitive)', autre: 'AUTRE RETENUE'}[r.key] || 'RETENUE') + (r.pct ? ' ' + String(r.pct).replace('.', ',') + ' %' : ''), '', '', '', '', N(-r.amount)]));
+      tt.push(['', 'DÉJÀ PAYÉ', '', '', '', '', N(invoicePaid(i))], ['', 'RESTE À PAYER', '', '', '', '', N(invoiceRemaining(i))]);
+      if(tmp > 0.005) tt.push(['', 'DONT RETENUES À LIBÉRER', '', '', '', '', tmp]);
       sheets.push({name: 'Facture ' + iref(i, k) + ' — ' + _provStatusFr(i), tab: 'Facture ' + (k + 1),
-        columns: ['N°', 'Désignation des travaux', 'Qté', 'Unité', 'P.U (MAD)', 'Total (MAD)'], numCols: [2, 4, 5],
-        rows: i.items.map(itemRow),
-        totals: [['', 'TOTAL FACTURE', '', '', '', N(invoiceTotal(i))], ['', 'DÉJÀ PAYÉ', '', '', '', N(invoicePaid(i))], ['', 'RESTE À PAYER', '', '', '', N(invoiceRemaining(i))]]});
+        columns: ['N°', 'Désignation des travaux', 'Unité', 'Qté', 'P.U (MAD)', 'Avancement', 'Total (MAD)'], numCols: [3, 4, 5, 6],
+        rows: i.items.map(itemRow), totals: tt});
     });
     const prow = [];
     d.l.forEach((i, k)=>{
@@ -8891,18 +8909,18 @@ function buildProviderReport(clientIds){
       totals: ['TOTAL', '', String(data.reduce((s, d)=> s + d.l.length, 0)), sum('total'), sum('paid'), sum('rem')]});
     const ir = [], wk = [];
     data.forEach(d=> d.l.forEach((i, k)=>{
-      ir.push([d.c.name || '', iref(i, k), N(invoiceTotal(i)), N(invoicePaid(i)), N(invoiceRemaining(i)), _provStatusFr(i)]);
-      i.items.forEach((it, j)=> wk.push([j ? '' : (d.c.name || ''), j ? '' : iref(i, k), String(it.desc || ''), +it.qty || 0, String(it.unit || ''), N(+it.price || 0), N((+it.qty || 0) * (+it.price || 0))]));
+      ir.push([d.c.name || '', iref(i, k), net(i), N(invoicePaid(i)), N(invoiceRemaining(i)), _provStatusFr(i)]);
+      i.items.forEach((it, j)=> wk.push([j ? '' : (d.c.name || ''), j ? '' : iref(i, k), String(it.desc || ''), (+it.qty || 0) + (it.unit ? ' ' + it.unit : ''), N(+it.price || 0), pg(it), N(invItemAmt(it))]));
     }));
     sheets.push({name: 'Factures - payé et reste', columns: ['Prestataire', 'Facture', 'Total (MAD)', 'Payé (MAD)', 'Reste (MAD)', 'Statut'], numCols: [2, 3, 4],
       rows: ir, totals: ['TOTAL', '', sum('total'), sum('paid'), sum('rem'), '']});
-    sheets.push({name: 'Détail des travaux par facture', columns: ['Prestataire', 'Facture', 'Désignation des travaux', 'Qté', 'Unité', 'P.U (MAD)', 'Total (MAD)'], numCols: [3, 5, 6],
-      rows: wk, totals: ['TOTAL', '', '', '', '', '', sum('total')]});
+    sheets.push({name: 'Détail des travaux par facture', columns: ['Prestataire', 'Facture', 'Désignation des travaux', 'Qté (unité)', 'P.U (MAD)', 'Avancement', 'Total (MAD)'], numCols: [3, 4, 5, 6],
+      rows: wk, totals: ['TOTAL', '', '', '', '', '', sum('gross')]});
   }
   const slug = s=> String(s || '').replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 40);
   return {title: one ? 'RELEVÉ PRESTATAIRE DE SERVICES' : 'RELEVÉ DES PRESTATAIRES DE SERVICES',
     fileBase: 'Releve-prestataire-' + (one ? slug(data[0].c.name) : 'tous') + '-' + todayStr(), subtitle: 'ALIOUA BTP — Édité le ' + frDate(todayStr()), sheets,
-    summary: "Montants en dirhams (MAD). Ce relevé reprend chaque facture avec le détail des travaux, les règlements enregistrés et le reste à payer.",
+    summary: "Montants en dirhams (MAD). Ce relevé reprend chaque facture avec le détail des travaux, les règlements enregistrés et le reste à payer." + (anyFinal ? " Le total des factures est net de la retenue de compte prorata (définitive)." : ''),
     formats: ['pdf', 'excel'], noEdit: true};
 }
 function printProviderReport(ids){
@@ -8940,8 +8958,11 @@ function paymentReceiptContext(invId, payId){
   every.sort((a, b)=> String(a.p.key).localeCompare(String(b.p.key)) || String(a.i.date || '').localeCompare(String(b.i.date || '')) || (a.p._i - b.p._i));
   const seq = every.findIndex(e=> e.i.id === inv.id && e.p.id === pay.id) + 1;
   const invRank = _provInvList(inv.clientId, invs).findIndex(i=> i.id === inv.id) + 1;
-  const A = round2(invoiceTotal(inv)), B = round2(prev.reduce((s, p)=> s + p.amount, 0)), P = pay.amount, C = round2(A - B), R = Math.max(0, round2(C - P));
-  return {client, inv, pay, prev, seq, invRank, A, B, P, C, R, project: client.projectId ? projectNameById(client.projectId) : '', co: loadCompanyInfo()};
+  const A = round2(invoiceTotal(inv)), B = round2(prev.reduce((s, p)=> s + p.amount, 0)), P = pay.amount, C = round2(A - B);
+  const ret = invRetList(inv), retTotal = invRetTotal(inv), retFinal = invRetFinal(inv);
+  const NET = Math.max(0, round2(C - retTotal)), RN = Math.max(0, round2(NET - P)), R = Math.max(0, round2(C - retFinal - P));
+  const held = Math.max(0, round2(R - RN)), release = Math.max(0, round2(P - NET));
+  return {client, inv, pay, prev, seq, invRank, A, B, P, C, ret, retTotal, retFinal, NET, RN, R, held, release, project: client.projectId ? projectNameById(client.projectId) : '', co: loadCompanyInfo()};
 }
 function buildPaymentDecompteDoc(x){
   if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش بعد، تأكد من الإنترنت.');
@@ -8954,6 +8975,7 @@ function buildPaymentDecompteDoc(x){
   const invRef = 'n°' + x.invRank + ' du ' + frDate(x.inv.date);
   const pct = x.A ? (Math.round((x.B + x.P) / x.A * 1000) / 10).toLocaleString('fr-FR') + ' %' : '';
   const ord = n => (n === 1 ? '1ère' : n + 'ème');
+  const pf = v => (Math.round((+v || 0) * 100) / 100).toString().replace('.', ',');
   const txt = (s, xx, yy, o)=>{
     o = o || {}; s = String(s == null ? '' : s); if(!s) return; const size = o.size || 9, col = o.color || [0, 0, 0];
     if(containsArabic(s)){ drawArabicLine(doc, s, xx, yy - size * MM * 0.3, {fontMM: size * MM, bold: !!o.bold, color: col, align: o.align || 'left', maxW: o.maxW}); return; }
@@ -8965,7 +8987,6 @@ function buildPaymentDecompteDoc(x){
     let logo = false;
     if(co.logoDataUrl){ try{ const pr = doc.getImageProperties(co.logoDataUrl), w = 50, h = Math.min(18, w * pr.height / pr.width); doc.addImage(co.logoDataUrl, pr.fileType || 'PNG', ML, 9, w, h); logo = true; }catch(e){} }
     if(!logo){ txt(co.name || 'ALIOUA BTP', ML, 17, {size: 17, bold: true, color: [20, 40, 90]}); txt(co.tagline || 'SOCIETE DE BATIMENT ET TRAVAUX PUBLICS', ML, 22, {size: 7, color: [70, 70, 70]}); }
-    [co.addr, co.phone ? 'Tel : ' + co.phone : '', co.ice ? 'ICE : ' + co.ice : ''].filter(Boolean).forEach((s, i)=> txt(s, RIGHT, 12 + i * 4, {size: 7.5, color: [70, 70, 70], align: 'right', maxW: 90}));
   };
   const bar = (yy, left, right)=>{ doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]); doc.rect(ML, yy, W, 8.5, 'F'); txt(left, ML + 3, yy + 5.9, {size: 11, bold: true, color: [255, 255, 255]}); if(right) txt(right, RIGHT - 3, yy + 5.9, {size: 9.5, bold: true, color: [255, 255, 255], align: 'right'}); };
   const base = {theme: 'grid', styles: {font: 'helvetica', fontSize: 8, cellPadding: 1.3, lineColor: [110, 110, 110], lineWidth: 0.2, textColor: [0, 0, 0], valign: 'middle'}, margin: {left: ML, right: MR, top: 10, bottom: 14}};
@@ -8973,7 +8994,11 @@ function buildPaymentDecompteDoc(x){
   const Bd = (s, st)=> ({content: s, styles: Object.assign({fontStyle: 'bold'}, st || {})});
   const secHead = s=> [{content: s, styles: {fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold'}}].concat(['CUMUL ACTUEL', 'CUMUL PRÉCÉDENT', 'MENSUEL RÉALISÉ'].map(t=> ({content: t, styles: {fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center'}})));
   const fin = ()=> doc.lastAutoTable.finalY;
-  const nums3 = {1: {halign: 'right'}, 2: {halign: 'right'}, 3: {halign: 'right'}};
+  const hasRet = x.ret.length > 0;
+  const rAmt = k => round2(x.ret.filter(r=> r.key === k).reduce((s, r)=> s + r.amount, 0));
+  const rLbl = (t, k)=> { const r = x.ret.find(q=> q.key === k); return t + (r && r.pct ? ' ' + pf(r.pct) + ' %' : ''); };
+  const autres = x.ret.filter(r=> r.key === 'autre'), autresLbl = 'AUTRES' + (autres.length && autres[0].label ? ' (' + autres.map(r=> r.label).filter(Boolean).join(', ') + ')' : '');
+  const retRow = (t, v)=> [t, money(v), '-', money(v)];
 
   // ===================== الصفحة 1: DÉCOMPTE PROVISOIRE =====================
   head(); bar(28, 'DÉCOMPTE PROVISOIRE N° ' + x.seq, 'DATE : ' + dFill);
@@ -8999,17 +9024,19 @@ function buildPaymentDecompteDoc(x){
     ['1-3 AVENANTS', '-', '-', '-'],
     [Bd('TOTAL (1)', {fillColor: GREY}), Bd(money(x.A), {fillColor: GREY}), Bd(money(x.B), {fillColor: GREY}), Bd(money(x.C), {fillColor: GREY})],
     secHead('2- RETENUES (Hors Approvisionnement)'),
-    ['RETENUE DE GARANTIE', '-', '-', '-'], ['RETENUE DE DÉCOFFRAGE', '-', '-', '-'], ['COMPTE PRORATA', '-', '-', '-'], ['FOURNITURE', '-', '-', '-'],
-    ['LOCATION DE MATÉRIEL', '-', '-', '-'], ["RÉCUPÉRATION D'AVANCE", '-', '-', '-'], ['AUTRES', '-', '-', '-'],
-    [Bd('TOTAL (2)', {fillColor: GREY}), Bd('-', {fillColor: GREY}), Bd('-', {fillColor: GREY}), Bd('-', {fillColor: GREY})],
-    [Bd('TOTAL (1) - (2)'), Bd(money(x.A)), Bd(money(x.B)), Bd(money(x.C))],
+    retRow(rLbl('RETENUE DE GARANTIE', 'garantie'), rAmt('garantie')), retRow(rLbl('RETENUE DE DÉCOFFRAGE', 'decoffrage'), rAmt('decoffrage')), retRow(rLbl('COMPTE PRORATA', 'prorata'), rAmt('prorata')), ['FOURNITURE', '-', '-', '-'],
+    ['LOCATION DE MATÉRIEL', '-', '-', '-'], ["RÉCUPÉRATION D'AVANCE", '-', '-', '-'], retRow(autresLbl, rAmt('autre')),
+    [Bd('TOTAL (2)', {fillColor: GREY}), Bd(money(x.retTotal), {fillColor: GREY}), Bd('-', {fillColor: GREY}), Bd(money(x.retTotal), {fillColor: GREY})],
+    [Bd('TOTAL (1) - (2)'), Bd(money(round2(x.A - x.retTotal))), Bd(money(x.B)), Bd(money(x.NET))],
     ['TVA', '-', '-', '-'],
-    [Bd("RESTE DÛ À L'ENTREPRISE T T C", {fillColor: BLUE}), Bd(money(x.A), {fillColor: BLUE}), Bd(money(x.B), {fillColor: BLUE}), Bd(money(x.C), {fillColor: BLUE})]
+    [Bd("RESTE DÛ À L'ENTREPRISE T T C", {fillColor: BLUE}), Bd(money(round2(x.A - x.retTotal)), {fillColor: BLUE}), Bd(money(x.B), {fillColor: BLUE}), Bd(money(x.NET), {fillColor: BLUE})]
   ]}));
-  arabicAwareAutoTable(doc, Object.assign({}, base, {startY: fin() + 3, columnStyles: {0: {cellWidth: 138}, 1: {cellWidth: 48, halign: 'right'}}, body: [
+  const paidRows = [
     [Bd('MONTANT RÉGLÉ CE JOUR (Règlement N° ' + x.seq + ')', {fillColor: BLUE}), Bd(fmtNum(x.P) + ' Dhs', {fillColor: BLUE})],
-    [Bd('RESTE À PAYER APRÈS CE RÈGLEMENT'), Bd(fmtNum(x.R) + ' Dhs')]
-  ]}));
+    [Bd('RESTE À PAYER APRÈS CE RÈGLEMENT' + (hasRet ? ' (hors retenues)' : '')), Bd(fmtNum(x.RN) + ' Dhs')]
+  ];
+  if(x.held > 0.005) paidRows.push([Bd('RETENUES À LIBÉRER ULTÉRIEUREMENT'), Bd(fmtNum(x.held) + ' Dhs')]);
+  arabicAwareAutoTable(doc, Object.assign({}, base, {startY: fin() + 3, columnStyles: {0: {cellWidth: 138}, 1: {cellWidth: 48, halign: 'right'}}, body: paidRows}));
   let y = fin() + 5;
   txt('Arrêté le présent règlement à la somme de :', ML, y, {size: 8.5, bold: true});
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
@@ -9024,18 +9051,23 @@ function buildPaymentDecompteDoc(x){
   lab('Chantier : ', x.project || '', ML, 30, {maxW: 120}); lab('Identité Sous-traitant : ', c.name || '', ML, 35.5, {maxW: 110});
   txt('Date : ' + dFill, RIGHT, 30, {size: 9, bold: true, align: 'right'});
   bar(39, 'SITUATION N° ' + x.seq, 'Facture ' + invRef);
-  const items = (x.inv.items || []).map(it=> [String(it.desc || ''), String(it.unit || ''), qtyF(it.qty), fmtNum(+it.price || 0), '100 %', fmtNum((+it.qty || 0) * (+it.price || 0))]);
+  const items = (x.inv.items || []).map(it=> [String(it.desc || ''), String(it.unit || ''), qtyF(it.qty), fmtNum(+it.price || 0), pf(invItemProg(it)) + ' %', fmtNum(invItemAmt(it))]);
   arabicAwareAutoTable(doc, Object.assign({}, base, {startY: 50, columnStyles: {0: {cellWidth: 72}, 1: {cellWidth: 16}, 2: {cellWidth: 22, halign: 'right'}, 3: {cellWidth: 26, halign: 'right'}, 4: {cellWidth: 20, halign: 'center'}, 5: {cellWidth: 30, halign: 'right'}},
     head: [['Désignation', 'Unité', 'Qté à réaliser', 'P.U (Dhs)', 'Avancement', 'Montant (Dhs)']], headStyles: {fillColor: NAVY, textColor: [255, 255, 255], halign: 'center', fontStyle: 'bold'},
     body: items.concat([[{content: 'MONTANT PARTIEL', colSpan: 5, styles: {halign: 'right', fontStyle: 'bold', fillColor: GREY}}, Bd(fmtNum(x.A), {fillColor: GREY})]])}));
   const sum = [[Bd('* CUMUL TRAVAUX RÉALISÉS (A)'), '', Bd(fmtNum(x.A))], [{content: 'Avances précédentes :', styles: {fontStyle: 'italic'}}, 'Observation', '']];
   if(x.prev.length) x.prev.forEach((p, i)=> sum.push([ord(i + 1) + ' AVANCE DU ' + (p.date ? frDate(p.date) : '__/__/____'), String(p.note || ''), fmtNum(p.amount)]));
   else sum.push(['Aucune avance précédente', '', '-']);
-  sum.push([Bd('Total des avances (B)'), '', Bd(money(x.B))], [Bd('Relicat des travaux ( C = A - B )'), '', Bd(fmtNum(x.C))],
-    ['( 1 ) Retenue de décoffrage', '', '-'], ['( 2 ) Retenue de compte prorata', '', '-'],
-    [Bd('NET théorique à payer : ( C - (1+2) )', {fillColor: GREY}), Bd('', {fillColor: GREY}), Bd(fmtNum(x.C), {fillColor: GREY})],
-    [Bd('MONTANT RÉGLÉ CE JOUR (Règlement N° ' + x.seq + ')', {fillColor: BLUE}), Bd('', {fillColor: BLUE}), Bd(fmtNum(x.P), {fillColor: BLUE})],
-    [Bd('RESTE À PAYER APRÈS CE RÈGLEMENT'), '', Bd(fmtNum(x.R))]);
+  sum.push([Bd('Total des avances (B)'), '', Bd(money(x.B))], [Bd('Relicat des travaux ( C = A - B )'), '', Bd(fmtNum(x.C))]);
+  if(hasRet){
+    const rn = {garantie: 'Retenue de garantie', decoffrage: 'Retenue de décoffrage', prorata: 'Retenue de compte prorata', autre: 'Autre retenue'};
+    x.ret.forEach((r, i)=> sum.push(['( ' + (i + 1) + ' ) ' + rn[r.key] + (r.pct ? ' ' + pf(r.pct) + ' %' : ''), String(r.label || ''), fmtNum(r.amount)]));
+  } else sum.push(['( 1 ) Retenue de décoffrage', '', '-'], ['( 2 ) Retenue de compte prorata', '', '-']);
+  sum.push([Bd(hasRet ? 'NET théorique à payer : ( C - retenues )' : 'NET théorique à payer : ( C - (1+2) )', {fillColor: GREY}), Bd('', {fillColor: GREY}), Bd(fmtNum(x.NET), {fillColor: GREY})]);
+  if(x.release > 0.005) sum.push([{content: 'Dont libération de retenue incluse dans ce règlement', styles: {fontStyle: 'italic'}}, '', fmtNum(x.release)]);
+  sum.push([Bd('MONTANT RÉGLÉ CE JOUR (Règlement N° ' + x.seq + ')', {fillColor: BLUE}), Bd('', {fillColor: BLUE}), Bd(fmtNum(x.P), {fillColor: BLUE})],
+    [Bd('RESTE À PAYER APRÈS CE RÈGLEMENT' + (hasRet ? ' (hors retenues)' : '')), '', Bd(fmtNum(x.RN))]);
+  if(x.held > 0.005) sum.push([Bd('RETENUES À LIBÉRER ULTÉRIEUREMENT'), '', Bd(fmtNum(x.held))]);
   arabicAwareAutoTable(doc, Object.assign({}, base, {startY: fin() + 4, columnStyles: {0: {cellWidth: 100}, 1: {cellWidth: 52}, 2: {cellWidth: 34, halign: 'right'}}, body: sum}));
   y = fin() + 6;
   if(y + 58 > PH - 12){ doc.addPage(); head(); y = 30; }
@@ -9136,14 +9168,15 @@ function renderClients(){
         const row = document.createElement('div');
         row.className = 'lc-invoice-item inv-card';
         row.setAttribute('dir', 'auto');
-        const _tot = invoiceTotal(inv), _paid = invoicePaid(inv), _rem = invoiceRemaining(inv), _pays = Array.isArray(inv.payments) ? inv.payments : [];
+        const _tot = invoiceTotal(inv), _paid = invoicePaid(inv), _rem = invoiceRemaining(inv), _pays = Array.isArray(inv.payments) ? inv.payments : [], _ret = invRetTotal(inv), _net = invNetDue(inv), _held = Math.max(0, round2(_rem - _net));
         const _st = _rem <= 0.005 ? 'paid' : (_paid > 0 ? 'partial' : 'pending');
         row.innerHTML = `
           <div class="inv-head"><span>${escapeHtml(inv.date)} — ${fmtMAD(_tot)} درهم</span><span class="lc-badge ${_st}">${_st==='paid'?'مدفوعة':(_st==='partial'?'مدفوعة جزئيًا':'معلّقة')}</span></div>
           ${(_paid > 0 && _rem > 0.005) ? `<div class="inv-sub">المدفوع: ${fmtMAD(_paid)} · المتبقي: <b>${fmtMAD(_rem)}</b> درهم</div>` : ''}
+          ${_ret > 0 ? `<div class="inv-sub">✂️ اقتطاعات: ${fmtMAD(_ret)} درهم · ${_net > 0.005 ? 'الصافي المستحق الآن: <b>' + fmtMAD(_net) + '</b>' : 'محتجز للإفراج لاحقًا: <b>' + fmtMAD(_held) + '</b>'}</div>` : ''}
           <div class="inv-acts">
             ${_rem > 0.005
-              ? `<button class="lc-btn" data-pay-inv="${inv.id}">💵 دفعة</button><button class="lc-btn" data-full-inv="${inv.id}">✔ تسديد الباقي</button>`
+              ? `<button class="lc-btn" data-pay-inv="${inv.id}">💵 دفعة</button><button class="lc-btn" data-full-inv="${inv.id}">${(_held > 0.005 && _net > 0.005) ? '✔ تسديد الصافي' : '✔ تسديد الباقي'}</button>`
               : `<button class="lc-btn" data-toggle-inv="${inv.id}">↩️ إلغاء الدفع</button>${_pays.length ? '' : `<button class="lc-btn" data-print-pay="${inv.id}|__full">🖨 وصل التسديد</button>`}`}
             <button class="lc-btn" data-edit-inv="${inv.id}">✏️</button>
             <button class="lc-btn" data-del-inv="${inv.id}">🗑</button>
@@ -9154,7 +9187,7 @@ function renderClients(){
         invListEl.appendChild(row);
         if(payInvId === inv.id && _rem > 0.005){
           const host = row.querySelector('.inv-payform');
-          host.innerHTML = `<input type="number" inputmode="decimal" class="pf-amt" placeholder="المبلغ" value="${_rem}"><input type="date" class="pf-date"><input type="text" class="pf-note" dir="auto" placeholder="ملاحظة (نقدًا / شيك / تحويل...)"><div class="pf-btns"><button class="btn-primary pf-ok">💾 حفظ الدفعة</button><button class="btn-ghost pf-ok-print">💾🖨 حفظ وطباعة</button><button class="btn-ghost pf-cancel">✖</button></div>`;
+          host.innerHTML = `<input type="number" inputmode="decimal" class="pf-amt" placeholder="المبلغ" value="${(_ret > 0 && _net > 0.005) ? _net : _rem}"><input type="date" class="pf-date"><input type="text" class="pf-note" dir="auto" placeholder="ملاحظة (نقدًا / شيك / تحويل...)"><div class="pf-btns"><button class="btn-primary pf-ok">💾 حفظ الدفعة</button><button class="btn-ghost pf-ok-print">💾🖨 حفظ وطباعة</button><button class="btn-ghost pf-cancel">✖</button></div>`;
           host.querySelector('.pf-date').value = todayStr();
           host.querySelector('.pf-ok').addEventListener('click', ()=> addInvoicePayment(inv.id, parseFloat(host.querySelector('.pf-amt').value), host.querySelector('.pf-date').value, host.querySelector('.pf-note').value.trim()));
           host.querySelector('.pf-ok-print').addEventListener('click', ()=>{ const nid = addInvoicePayment(inv.id, parseFloat(host.querySelector('.pf-amt').value), host.querySelector('.pf-date').value, host.querySelector('.pf-note').value.trim()); if(nid) printPaymentReceipt(inv.id, nid); });
@@ -9171,61 +9204,122 @@ function renderClients(){
       formHost.innerHTML = `
         <div id="invRows_${client.id}"></div>
         <button class="lc-btn" id="invAddRow_${client.id}" style="margin-bottom:8px;">➕ بند جديد</button>
+        <div class="mini-title" style="margin:6px 0 4px;">✂️ الاقتطاعات (Retenues) — اختياري</div>
+        <div style="font-size:11px; color:var(--ink-soft); margin-bottom:6px; line-height:1.7;">اكتب نسبة % من مجموع الأشغال أو مبلغ ثابت. Compte prorata نهائي (ما كيتسترجعش)، والباقي محتجز كيتفرج عليه من بعد.</div>
+        <div id="invRet_${client.id}" style="display:grid; gap:6px;"></div>
+        ${editingInv ? '' : `<div class="mini-title" style="margin:10px 0 4px;">💵 Avances précédentes (دفعات سابقة بتاريخها)</div><div id="invAdv_${client.id}" style="display:grid; gap:6px;"></div><button class="lc-btn" id="invAddAdv_${client.id}" style="margin:6px 0;">➕ avance précédente</button>`}
+        <div id="invSum_${client.id}" style="font-size:12px; line-height:1.9; background:var(--stone); border-radius:10px; padding:8px 10px; margin:8px 0;"></div>
         <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">تاريخ الفاتورة</label>
         <input type="date" id="invDate_${client.id}" style="margin-bottom:10px;">
         <button class="btn-primary" id="invSave_${client.id}">💾 ${editingInv ? 'حفظ التعديل' : 'حفظ الفاتورة'}</button>
       `;
-      const rowsHost = formHost.querySelector('#invRows_'+client.id);
-      function addInvRow(desc, qty, unit, price){
-        const row = document.createElement('div');
-        row.className = 'client-inv-item-row';
-        row.style.cssText = 'border:1px solid var(--line); border-radius:10px; padding:8px; margin-top:6px;';
-        row.innerHTML = `
-          <input type="text" class="q-desc" dir="ltr" placeholder="Désignation" value="${desc?escapeHtml(desc):''}" style="font-size:14px; padding:12px;">
-          <div class="qrow">
-            <input type="text" class="q-qty" dir="ltr" placeholder="Quantité" value="${qty||1}" style="flex:1;">
-            <input type="text" class="q-unit" dir="ltr" placeholder="Unité" value="${unit?escapeHtml(unit):''}" style="flex:1;">
-            <input type="text" class="q-price" dir="ltr" placeholder="Prix unitaire" value="${price||''}" style="flex:1;">
-            <button class="q-del" style="flex:0 0 36px;">✕</button>
-          </div>
-          <div class="q-total" style="margin-top:5px; font-size:11.5px; color:var(--ink-soft);">Prix total: ${((qty||1)*(price||0)).toLocaleString('ar')} درهم</div>
-        `;
-        rowsHost.appendChild(row);
-        row.querySelector('.q-del').addEventListener('click', ()=> row.remove());
-        function updateTotal(){
-          const q = parseFloat(row.querySelector('.q-qty').value) || 0;
-          const p = parseFloat(row.querySelector('.q-price').value) || 0;
-          row.querySelector('.q-total').textContent = 'Prix total: ' + (q*p).toLocaleString('ar') + ' درهم';
-        }
-        row.querySelector('.q-qty').addEventListener('input', updateTotal);
-        row.querySelector('.q-price').addEventListener('input', updateTotal);
-      }
-      if(editingInv){
-        editingInv.items.forEach(it=> addInvRow(it.desc, it.qty, it.unit, it.price));
-        formHost.querySelector('#invDate_'+client.id).value = editingInv.date;
-      }else{
-        addInvRow();
-        formHost.querySelector('#invDate_'+client.id).valueAsDate = new Date();
-      }
-      formHost.querySelector('#invAddRow_'+client.id).addEventListener('click', ()=>addInvRow());
-      formHost.querySelector('#invSave_'+client.id).addEventListener('click', ()=>{
+      const rowsHost = formHost.querySelector('#invRows_'+client.id), retHost = formHost.querySelector('#invRet_'+client.id), advHost = formHost.querySelector('#invAdv_'+client.id), sumHost = formHost.querySelector('#invSum_'+client.id);
+      const numOf = v => { const x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : 0; };
+      function readItems(){
         const items = [];
         rowsHost.querySelectorAll('.client-inv-item-row').forEach(row=>{
           const desc = row.querySelector('.q-desc').value.trim();
           const qty = parseFloat(row.querySelector('.q-qty').value) || 0;
           const unit = row.querySelector('.q-unit').value.trim();
           const price = parseFloat(row.querySelector('.q-price').value) || 0;
-          if(desc && qty && price) items.push({desc, qty, unit, price});
+          let prog = parseFloat(String(row.querySelector('.q-prog').value).replace(',', '.')); if(!(prog >= 0)) prog = 100; prog = Math.min(100, prog);
+          if(desc && qty && price) items.push({desc, qty, unit, price, prog});
         });
+        return items;
+      }
+      function readRet(){
+        const out = [];
+        retHost.querySelectorAll('.ret-row').forEach(r=>{
+          const pct = numOf(r.querySelector('.r-pct').value), amt = numOf(r.querySelector('.r-amt').value);
+          if(!(pct > 0 || amt > 0)) return;
+          out.push({key: r.dataset.k, label: r.querySelector('.r-lbl') ? r.querySelector('.r-lbl').value.trim() : '', pct: pct > 0 ? pct : 0, amount: pct > 0 ? 0 : round2(amt)});
+        });
+        return out;
+      }
+      function readAdv(){
+        const out = [];
+        if(!advHost) return out;
+        advHost.querySelectorAll('.adv-row').forEach(r=>{ const amount = round2(numOf(r.querySelector('.a-amt').value)); if(amount > 0) out.push({amount, date: r.querySelector('.a-date').value, note: r.querySelector('.a-note').value.trim()}); });
+        return out;
+      }
+      function updateSum(){
+        const items = readItems(), fake = {items, retenues: readRet()}, A = round2(invoiceTotal(fake)), retT = invRetTotal(fake), adv = round2(readAdv().reduce((s, a)=> s + a.amount, 0));
+        sumHost.innerHTML = 'مجموع الأشغال (A): <b>' + fmtMAD(A) + '</b> درهم' + (retT ? ' · الاقتطاعات: <b>' + fmtMAD(retT) + '</b>' : '') + (adv ? ' · الدفعات السابقة: <b>' + fmtMAD(adv) + '</b>' : '')
+          + '<br>الصافي المستحق الآن: <b>' + fmtMAD(Math.max(0, round2(A - retT - adv))) + '</b> درهم';
+      }
+      [['garantie', 'Retenue de garantie'], ['decoffrage', 'Retenue de décoffrage'], ['prorata', 'Compte prorata'], ['autre', 'Autre retenue']].forEach(([k, lbl])=>{
+        const ex = editingInv && (editingInv.retenues || []).find(r=> r.key === k);
+        const r = document.createElement('div'); r.className = 'ret-row'; r.dataset.k = k; r.style.cssText = 'display:grid; grid-template-columns:1.5fr .8fr 1fr; gap:6px; align-items:center;';
+        r.innerHTML = (k === 'autre' ? '<input type="text" class="r-lbl" dir="auto" placeholder="Autre retenue (الوصف)">' : '<span style="font-size:12px;" dir="ltr">' + lbl + '</span>')
+          + '<input type="text" inputmode="decimal" dir="ltr" class="r-pct" placeholder="%"><input type="text" inputmode="decimal" dir="ltr" class="r-amt" placeholder="Montant">';
+        if(ex){ r.querySelector('.r-pct').value = ex.pct || ''; r.querySelector('.r-amt').value = ex.pct ? '' : (ex.amount || ''); if(r.querySelector('.r-lbl')) r.querySelector('.r-lbl').value = ex.label || ''; }
+        retHost.appendChild(r);
+      });
+      function addAdvRow(amount, date, note){
+        const r = document.createElement('div'); r.className = 'adv-row'; r.style.cssText = 'display:grid; grid-template-columns:1fr 1.2fr 1fr 36px; gap:6px; align-items:center;';
+        r.innerHTML = '<input type="text" inputmode="decimal" dir="ltr" class="a-amt" placeholder="Montant"><input type="date" class="a-date"><input type="text" class="a-note" dir="auto" placeholder="ملاحظة"><button class="q-del">✕</button>';
+        r.querySelector('.a-amt').value = amount || ''; r.querySelector('.a-date').value = date || ''; r.querySelector('.a-note').value = note || '';
+        r.querySelector('.q-del').addEventListener('click', ()=>{ r.remove(); updateSum(); });
+        advHost.appendChild(r);
+      }
+      function addInvRow(desc, qty, unit, price, prog){
+        const row = document.createElement('div');
+        row.className = 'client-inv-item-row';
+        row.style.cssText = 'border:1px solid var(--line); border-radius:10px; padding:8px; margin-top:6px;';
+        const pg = (prog == null || prog === '') ? 100 : prog;
+        row.innerHTML = `
+          <input type="text" class="q-desc" dir="ltr" placeholder="Désignation" value="${desc?escapeHtml(desc):''}" style="font-size:14px; padding:12px;">
+          <div class="qrow">
+            <input type="text" class="q-qty" dir="ltr" placeholder="Quantité" value="${qty||1}" style="flex:1;">
+            <input type="text" class="q-unit" dir="ltr" placeholder="Unité" value="${unit?escapeHtml(unit):''}" style="flex:1;">
+            <input type="text" class="q-price" dir="ltr" placeholder="Prix unitaire" value="${price||''}" style="flex:1;">
+            <input type="text" inputmode="decimal" class="q-prog" dir="ltr" placeholder="Avancement %" value="${pg}" style="flex:1;">
+            <button class="q-del" style="flex:0 0 36px;">✕</button>
+          </div>
+          <div class="q-total" style="margin-top:5px; font-size:11.5px; color:var(--ink-soft);"></div>
+        `;
+        rowsHost.appendChild(row);
+        row.querySelector('.q-del').addEventListener('click', ()=>{ row.remove(); updateSum(); });
+        function updateTotal(){
+          const q = parseFloat(row.querySelector('.q-qty').value) || 0, p = parseFloat(row.querySelector('.q-price').value) || 0;
+          let g = parseFloat(String(row.querySelector('.q-prog').value).replace(',', '.')); if(!(g >= 0)) g = 100; g = Math.min(100, g);
+          row.querySelector('.q-total').textContent = 'Prix total: ' + (q * p * g / 100).toLocaleString('ar') + ' درهم' + (g !== 100 ? ' (avancement ' + g + '%)' : '');
+          updateSum();
+        }
+        ['.q-qty', '.q-price', '.q-prog'].forEach(s=> row.querySelector(s).addEventListener('input', updateTotal));
+        updateTotal();
+      }
+      if(editingInv){
+        editingInv.items.forEach(it=> addInvRow(it.desc, it.qty, it.unit, it.price, it.prog));
+        formHost.querySelector('#invDate_'+client.id).value = editingInv.date;
+      }else{
+        addInvRow();
+        formHost.querySelector('#invDate_'+client.id).valueAsDate = new Date();
+      }
+      formHost.querySelector('#invAddRow_'+client.id).addEventListener('click', ()=>addInvRow());
+      if(advHost) formHost.querySelector('#invAddAdv_'+client.id).addEventListener('click', ()=>{ addAdvRow('', '', ''); });
+      formHost.addEventListener('input', updateSum);
+      updateSum();
+      formHost.querySelector('#invSave_'+client.id).addEventListener('click', ()=>{
+        const items = readItems();
         if(items.length === 0) return;
+        const retenues = readRet(), advs = readAdv();
+        if(retenues.some(r=> r.pct > 100)){ alert('نسبة الاقتطاع ما يمكنش تفوت 100%.'); return; }
         const date = formHost.querySelector('#invDate_'+client.id).value || new Date().toISOString().slice(0,10);
+        const probe = {items, retenues}, A = round2(invoiceTotal(probe)), retF = invRetFinal(probe);
+        if(invRetTotal(probe) > A + 0.005){ alert('مجموع الاقتطاعات (' + fmtMAD(invRetTotal(probe)) + ') كيفوت مجموع الأشغال (' + fmtMAD(A) + ').'); return; }
         const invs = loadInvoices();
         if(editingInv){
           const target = invs.find(i=>i.id === editingInv.id);
-          if(target){ if(target.status === 'paid' && !Array.isArray(target.payments)) target.payments = [{id:'p' + Date.now() + 'a', date: target.date, amount: invoiceTotal(target), note:'دفعة سابقة'}]; target.items = items; target.date = date; syncInvoiceStatus(target); }
+          if(target){ if(target.status === 'paid' && !Array.isArray(target.payments)) target.payments = [{id:'p' + Date.now() + 'a', date: target.date, amount: invoiceTotal(target), note:'دفعة سابقة'}]; target.items = items; target.date = date; if(retenues.length) target.retenues = retenues; else delete target.retenues; syncInvoiceStatus(target); }
           editInvoiceId = null;
         }else{
-          invs.push({id:'i'+Date.now(), clientId: client.id, items, status:'pending', date});
+          const advSum = round2(advs.reduce((s, a)=> s + a.amount, 0));
+          if(advSum > round2(A - retF) + 0.005){ alert('مجموع الدفعات السابقة (' + fmtMAD(advSum) + ') كيفوت المبلغ المستحق (' + fmtMAD(round2(A - retF)) + ' درهم).'); return; }
+          const inv = {id:'i'+Date.now(), clientId: client.id, items, status:'pending', date};
+          if(retenues.length) inv.retenues = retenues;
+          if(advs.length) inv.payments = advs.map((a, i)=> ({id:'p' + Date.now() + 'x' + i, date: a.date || date, amount: a.amount, note: a.note || 'avance'}));
+          syncInvoiceStatus(inv); invs.push(inv);
         }
         saveInvoices(invs);
         openClientId = null;
@@ -9301,7 +9395,7 @@ function renderClients(){
     b.addEventListener('click', ()=>{ payInvId = (payInvId === b.dataset.payInv) ? null : b.dataset.payInv; renderClients(); });
   });
   el.querySelectorAll('[data-full-inv]').forEach(b=>{
-    b.addEventListener('click', ()=>{ const inv = loadInvoices().find(i=>i.id === b.dataset.fullInv); if(inv) addInvoicePayment(inv.id, invoiceRemaining(inv), todayStr(), 'تسديد الباقي'); });
+    b.addEventListener('click', ()=>{ const inv = loadInvoices().find(i=>i.id === b.dataset.fullInv); if(!inv) return; const rem = invoiceRemaining(inv), net = invNetDue(inv), amt = (net > 0.005 && rem - net > 0.005) ? net : rem; addInvoicePayment(inv.id, amt, todayStr(), amt === rem ? 'تسديد الباقي' : 'تسديد الصافي (بعد الاقتطاعات)'); });
   });
   el.querySelectorAll('[data-del-pay]').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -12296,7 +12390,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 16-11-2026'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 16-11-2026 (ب)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -12304,7 +12398,7 @@ if('serviceWorker' in navigator){
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='intro-2026-11-16a';
+    const BUILD='intro-2026-11-16b';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
