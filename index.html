@@ -779,6 +779,9 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 .list-card .lc-balance.due{ color:var(--maroon); }
 .list-card .lc-balance.clear{ color:#1C7C3F; }
 .list-card .lc-actions{ display:flex; gap:8px; margin-top:9px; flex-wrap:wrap; }
+.py-head,.py-mhead{ width:100%; display:flex; justify-content:space-between; align-items:center; gap:8px; font-family:inherit; cursor:pointer; text-align:right; }
+.py-head{ margin-top:8px; padding:11px 12px; background:var(--stone); border:1.5px solid var(--line); border-radius:11px; font-size:13.5px; font-weight:800; color:var(--navy-deep); }
+.py-mhead{ margin-top:6px; padding:8px 11px; background:#fff; border:1px solid var(--line); border-radius:10px; font-size:12.5px; font-weight:700; color:var(--ink); }
 .lc-btn{
   flex:1;
   padding:8px;
@@ -9442,6 +9445,40 @@ function savePurchaseOrders(list){
   if(typeof scheduleCloudSync === 'function') scheduleCloudSync();
 }
 
+/* كل شراء ليه طلب شراء (Bon de Commande) محفوظ ومربوط بيه: كيتخلق/كيتحدّث مع الشراء، وكيتعاود يتكمّل تلقائيًا للمشتريات القديمة */
+function _poFromPurchase(purchase, sup, existing){
+  const items = (purchase.items || []).map(it=> ({ref: '', desc: it.desc, qty: it.qty, unit: it.unit || '', price: it.price, remise: 0}));
+  const base = existing || {};
+  let num = base.poNumber || ((purchase.items || []).find(it=> it.bonNumber) || {}).bonNumber || '';
+  if(!num) num = 'BC-' + String(purchase.date || '').replace(/-/g, '').slice(2) + '-' + String(purchase.id || '').slice(-4);
+  return Object.assign({}, base, {
+    id: base.id || ('po' + Date.now() + Math.floor(Math.random() * 1000)), linkedPurchaseId: purchase.id, supplierId: sup.id, supplierName: sup.name,
+    createdAt: base.createdAt || Date.now(), poNumber: num, poDate: purchase.date || base.poDate || new Date().toISOString().slice(0, 10),
+    creator: base.creator || '', deliveryDate: base.deliveryDate || '', deliveryAddr: base.deliveryAddr || '',
+    items, tvaRate: +purchase.tvaRate || 0, escompte: base.escompte || 0, acompte: base.acompte || 0});
+}
+function reconcilePurchaseOrders(){
+  const purchases = loadPurchases(), sups = loadSuppliers(), pos = loadPurchaseOrders();
+  const linked = new Set(pos.map(p=> p.linkedPurchaseId).filter(Boolean)); let changed = false;
+  purchases.forEach(p=>{
+    if(linked.has(p.id) || !Array.isArray(p.items) || !p.items.length) return;
+    const sup = sups.find(s=> s.id === p.supplierId); if(!sup) return;
+    const bons = p.items.map(it=> it.bonNumber).filter(Boolean);
+    const orphan = pos.find(o=> !o.linkedPurchaseId && o.supplierId === p.supplierId && bons.includes(o.poNumber));   // طلب شراء تعدّل يدويًا وضاع الربط ديالو: كنربطوه بلا ما نكرروه
+    if(orphan){ orphan.linkedPurchaseId = p.id; linked.add(p.id); changed = true; return; }
+    pos.push(_poFromPurchase(p, sup, null)); linked.add(p.id); changed = true;
+  });
+  if(changed) savePurchaseOrders(pos);
+  return changed;
+}
+function openPurchaseOrderPreview(poId){
+  const po = loadPurchaseOrders().find(p=> p.id === poId);
+  if(!po){ alert('طلب الشراء ما لقيتوش.'); return; }
+  openFilePreview({title: 'Bon de commande ' + po.poNumber, first: 'pdf', noEdit: true,
+    variants: [{key: 'pdf', label: 'PDF', filename: 'bon-commande-' + po.poNumber + '.pdf',
+      render: async ()=>{ const d = buildPurchaseOrderPdf(po); if(!d) throw new Error('تعذّر توليد PDF'); const w = document.createElement('div'); await renderPdfPreview(w, d); return w; },
+      blob: async ()=>{ const d = buildPurchaseOrderPdf(po); if(!d) throw new Error('تعذّر توليد PDF'); return d.output('blob'); }}]});
+}
 function computePoTotals(po){
   const totalTTC = po.items.reduce((s,it)=> s + (it.qty*it.price - (it.remise||0)), 0);
   const tvaRate = po.tvaRate || 0;
@@ -9690,7 +9727,51 @@ function generateSupplierStatementPdf(sup){
   doc.save('كشف-حساب-' + sup.name.replace(/\s+/g,'-') + '-' + new Date().toISOString().slice(0,10) + '.pdf');
 }
 
+const _pyOpen = {};
+const MONTHS_MA = ['', 'يناير', 'فبراير', 'مارس', 'أبريل', 'ماي', 'يونيو', 'يوليوز', 'غشت', 'شتنبر', 'أكتوبر', 'نونبر', 'دجنبر'];
+function _purchOpenFor(supId, date){ const d = String(date || ''); if(/^\d{4}-\d{2}/.test(d)){ _pyOpen[supId + '|' + d.slice(0, 4)] = true; _pyOpen[supId + '|' + d.slice(0, 7)] = true; } }
+/* سجل المشتريات تراكمي: سنة ← شهور ← مشتريات الشهر (كتبدا سنة جديدة تلقائيًا من تاريخ الشراء) */
+function renderPurchaseYears(listEl, supId, purchases, poMap){
+  const fmt = n => Math.round(n * 100) / 100, money = n => fmt(n).toLocaleString('ar') + ' درهم';
+  const byYear = {};
+  purchases.forEach(p=>{
+    const d = String(p.date || ''), y = /^\d{4}/.test(d) ? d.slice(0, 4) : '----', m = /^\d{4}-\d{2}/.test(d) ? d.slice(5, 7) : '00';
+    byYear[y] = byYear[y] || {}; (byYear[y][m] = byYear[y][m] || []).push(p);
+  });
+  const mkHead = (cls, key, text, count, total, body)=>{
+    const h = document.createElement('button'); h.type = 'button'; h.className = cls;
+    const draw = ()=>{ h.innerHTML = '<span>' + (_pyOpen[key] ? '▾' : '▸') + ' ' + text + '</span><span>' + count + ' · ' + money(total) + '</span>'; body.style.display = _pyOpen[key] ? '' : 'none'; };
+    h.addEventListener('click', ()=>{ _pyOpen[key] = !_pyOpen[key]; draw(); });
+    draw(); return h;
+  };
+  Object.keys(byYear).sort().reverse().forEach(y=>{
+    const months = byYear[y], yList = [].concat.apply([], Object.keys(months).map(m=> months[m]));
+    const yBody = document.createElement('div'); yBody.style.cssText = 'padding:0 0 0 10px;';
+    listEl.appendChild(mkHead('py-head', supId + '|' + y, y === '----' ? 'بدون تاريخ' : y, yList.length + ' شراء', yList.reduce((s, p)=> s + purchaseTotal(p), 0), yBody));
+    Object.keys(months).sort().reverse().forEach(m=>{
+      const list = months[m].slice().sort((a, b)=> String(b.date || '').localeCompare(String(a.date || '')) || String(b.id).localeCompare(String(a.id)));
+      const mBody = document.createElement('div'); mBody.style.cssText = 'padding:2px 0 4px;';
+      yBody.appendChild(mkHead('py-mhead', supId + '|' + y + '-' + m, (+m ? MONTHS_MA[+m] : 'بدون شهر') + ' ' + y, list.length + ' شراء', list.reduce((s, p)=> s + purchaseTotal(p), 0), mBody));
+      list.forEach(p=>{
+        const row = document.createElement('div'); row.className = 'lc-invoice-item';
+        const itemsSummary = (p.items || []).map(it=> it.desc).filter(Boolean).join('، ') || 'شراء', po = poMap && poMap[p.id];
+        row.innerHTML = `
+          <span dir="ltr" style="text-align:right;">${escapeHtml(p.date || '')} — ${escapeHtml(itemsSummary)}</span>
+          <span style="display:flex; align-items:center; gap:6px;">
+            <span>${purchaseTotal(p).toLocaleString('ar')} درهم</span>
+            <button class="lc-btn" data-po-of="${p.id}" style="padding:3px 8px; font-size:10px;" title="طلب الشراء${po ? ' ' + escapeHtml(po.poNumber || '') : ''}: معاينة / طباعة">🧾</button>
+            <button class="lc-btn" data-edit-purchase="${p.id}" style="padding:3px 8px; font-size:10px;">✏️</button>
+            <button class="lc-btn" data-del-purchase="${p.id}" style="padding:3px 8px; font-size:10px;">🗑</button>
+          </span>`;
+        mBody.appendChild(row);
+      });
+      yBody.appendChild(mBody);
+    });
+    listEl.appendChild(yBody);
+  });
+}
 function renderSuppliers(){
+  try{ reconcilePurchaseOrders(); }catch(e){ console.error('تعذّر تكميل طلبات الشراء:', e); }
   const list = loadSuppliers();
   const purchases = loadPurchases();
   const el = document.getElementById('supplierList');
@@ -9753,21 +9834,10 @@ function renderSuppliers(){
       listEl.style.marginTop = '8px';
       if(supPurchases.length === 0){
         listEl.innerHTML = '<div class="empty-hint" style="padding:14px 6px;">ما فيه مشتريات مسجّلة بعد لهاد المورد.</div>';
+      }else{
+        const poMap = {}; supPOs.forEach(o=>{ if(o.linkedPurchaseId) poMap[o.linkedPurchaseId] = o; });
+        renderPurchaseYears(listEl, sup.id, supPurchases, poMap);
       }
-      supPurchases.slice().reverse().forEach(p=>{
-        const row = document.createElement('div');
-        row.className = 'lc-invoice-item';
-        const itemsSummary = p.items.map(it=>it.desc).filter(Boolean).join('، ') || 'شراء';
-        row.innerHTML = `
-          <span dir="ltr" style="text-align:right;">${p.date} — ${escapeHtml(itemsSummary)}</span>
-          <span style="display:flex; align-items:center; gap:6px;">
-            <span>${purchaseTotal(p).toLocaleString('ar')} درهم</span>
-            <button class="lc-btn" data-edit-purchase="${p.id}" style="padding:3px 8px; font-size:10px;">✏️</button>
-            <button class="lc-btn" data-del-purchase="${p.id}" style="padding:3px 8px; font-size:10px;">🗑</button>
-          </span>
-        `;
-        listEl.appendChild(row);
-      });
     }
 
     if(poHistorySupplierId === sup.id){
@@ -9785,7 +9855,7 @@ function renderSuppliers(){
           <span style="display:flex; align-items:center; gap:6px;">
             <span>${fmtMAD(totals.netAPayer)} درهم</span>
             <button class="lc-btn" data-edit-po="${po.id}" style="padding:3px 8px; font-size:10px;">✏️</button>
-            <button class="lc-btn" data-print-po="${po.id}" style="padding:3px 8px; font-size:10px;">⬇️</button>
+            <button class="lc-btn" data-print-po="${po.id}" style="padding:3px 8px; font-size:10px;" title="معاينة / طباعة">🖨</button>
             <button class="lc-btn" data-del-po="${po.id}" style="padding:3px 8px; font-size:10px;">🗑</button>
           </span>
         `;
@@ -9891,28 +9961,12 @@ function renderSuppliers(){
         }
         savePurchases(all);
 
-        // إنشاء/تحديث طلب شراء (Bon de Commande) تلقائيًا بنفس بيانات هاد الشراء
-        const poList = loadPurchaseOrders();
-        let linkedPo = poList.find(p=>p.linkedPurchaseId === purchase.id);
-        const poData = {
-          id: linkedPo ? linkedPo.id : ('po'+Date.now()),
-          linkedPurchaseId: purchase.id,
-          supplierId: sup.id,
-          supplierName: sup.name,
-          createdAt: linkedPo ? linkedPo.createdAt : Date.now(),
-          poNumber: items[0]?.bonNumber || ('BC'+Date.now()),
-          poDate: date,
-          creator: '',
-          deliveryDate: '',
-          deliveryAddr: '',
-          items: items.map(it=>({ref:'', desc:it.desc, qty:it.qty, unit:it.unit, price:it.price, remise:0})),
-          tvaRate: 0,
-          escompte: 0,
-          acompte: 0
-        };
-        const poIdx = poList.findIndex(p=>p.id === poData.id);
+        // إنشاء/تحديث طلب الشراء (Bon de Commande) ديال هاد الشراء: كيبقى محفوظ، ومربوط، وفيه معاينة وطباعة
+        const poList = loadPurchaseOrders(), linkedPo = poList.find(p=> p.linkedPurchaseId === purchase.id), poData = _poFromPurchase(purchase, sup, linkedPo);
+        const poIdx = poList.findIndex(p=> p.id === poData.id);
         if(poIdx >= 0) poList[poIdx] = poData; else poList.push(poData);
         savePurchaseOrders(poList);
+        historySupplierId = sup.id; poHistorySupplierId = sup.id; _purchOpenFor(sup.id, purchase.date);
         purchaseSupplierId = null;
         renderSuppliers();
       });
@@ -9949,7 +10003,7 @@ function renderSuppliers(){
           </div>
         </div>
         <div id="poTotalsPreview_${sup.id}" style="margin-top:10px; font-size:12.5px; color:var(--ink); line-height:1.8;"></div>
-        <button class="btn-primary" id="poSave_${sup.id}" style="margin-top:10px;">💾 ${editingPo ? 'حفظ التعديل وتنزيل PDF' : 'حفظ طلب الشراء وتنزيل PDF'}</button>
+        <button class="btn-primary" id="poSave_${sup.id}" style="margin-top:10px;">💾 ${editingPo ? 'حفظ التعديل ومعاينة / طباعة' : 'حفظ طلب الشراء ومعاينة / طباعة'}</button>
       `;
       const poRowsHost = poHost.querySelector('#poRows_'+sup.id);
       function addPoRow(ref, desc, qty, unit, price, remise){
@@ -10020,6 +10074,7 @@ function renderSuppliers(){
           supplierId: sup.id,
           supplierName: sup.name,
           createdAt: editingPo ? editingPo.createdAt : Date.now(),
+          linkedPurchaseId: editingPo ? editingPo.linkedPurchaseId : undefined,
           poNumber: poHost.querySelector('#poNumber_'+sup.id).value.trim() || ('BC'+Date.now()),
           poDate: poHost.querySelector('#poDate_'+sup.id).value || new Date().toISOString().slice(0,10),
           creator: poHost.querySelector('#poCreator_'+sup.id).value.trim(),
@@ -10034,12 +10089,11 @@ function renderSuppliers(){
         const idx = list.findIndex(p=>p.id === poData.id);
         if(idx >= 0) list[idx] = poData; else list.push(poData);
         savePurchaseOrders(list);
-        const doc = buildPurchaseOrderPdf(poData);
-        if(doc) doc.save('bon-commande-' + poData.poNumber + '.pdf');
         poSupplierId = null;
         editPoId = null;
         poHistorySupplierId = sup.id;
         renderSuppliers();
+        openPurchaseOrderPreview(poData.id);
       });
     }
 
@@ -10199,8 +10253,14 @@ function renderSuppliers(){
     b.addEventListener('click', ()=>{
       const po = loadPurchaseOrders().find(p=>p.id === b.dataset.printPo);
       if(!po) return;
-      const doc = buildPurchaseOrderPdf(po);
-      if(doc) doc.save('bon-commande-' + po.poNumber + '.pdf');
+      openPurchaseOrderPreview(po.id);
+    });
+  });
+  el.querySelectorAll('[data-po-of]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      reconcilePurchaseOrders();
+      const po = loadPurchaseOrders().find(p=> p.linkedPurchaseId === b.dataset.poOf);
+      if(po) openPurchaseOrderPreview(po.id); else alert('تعذّر إيجاد طلب الشراء ديال هاد الشراء.');
     });
   });
   el.querySelectorAll('[data-del-po]').forEach(b=>{
@@ -10345,12 +10405,17 @@ function projectFinancials(proj, ctx){
   if(!rgPct){ const lr = live.filter(i=> +i.retGarPct > 0).sort((a, b)=> String(a.invDate || '').localeCompare(String(b.invDate || ''))).pop(); if(lr){ rgPct = +lr.retGarPct; rgSrc = 'invoices'; } }
   const rgDone = round2(live.reduce((s, i)=> s + pdfInvBreakdown(i).rg, 0)), avDone = round2(live.reduce((s, i)=> s + pdfInvBreakdown(i).av, 0));
   const tb = ttcAmt ? round2(ttcAmt - income) : null;
-  const rgRest = (tb !== null && tb > 0 && rgPct) ? round2(tb * rgPct / 100) : 0;
+  // الضمان كيتحسب على ثمن الصفقة TTC كامل (ماشي على الباقي للفوترة): المتبقي للاقتطاع = الإجمالي − المقتطع فعلًا فالفواتير
+  const rgTotal = (ttcAmt && rgPct) ? round2(ttcAmt * rgPct / 100) : 0;
+  const rgRest = rgTotal ? Math.max(0, round2(rgTotal - rgDone)) : 0;
+  const rgExpected = rgPct ? round2(income * rgPct / 100) : 0;
   const avTotal = (ttcAmt && +_pt.advPct) ? round2(ttcAmt * (+_pt.advPct) / 100) : 0, avRest = avTotal ? Math.max(0, round2(avTotal - avDone)) : 0;
-  const toBillNet = (tb !== null && tb >= 0 && rgPct) ? round2(tb - rgRest) : null;
-  const billing = {rgPct, rgSrc, rgDone, rgRest, rgTotal: (ttcAmt && rgPct) ? round2(ttcAmt * rgPct / 100) : 0, toBillNet,
+  const toBillNet = (tb !== null && tb >= 0 && rgPct) ? round2(tb - Math.min(rgRest, tb)) : null;
+  const sched = (_pt.schedule || []).map(r=> ({label: r.label || '', pct: +r.pct || 0, due: r.due || '', amount: ttcAmt ? round2(ttcAmt * (+r.pct || 0) / 100) : 0}));
+  let _cum = 0; sched.forEach(r=>{ _cum = round2(_cum + r.amount); r.cum = _cum; r.covered = !!ttcAmt && income >= _cum - 0.005; r.overdue = !r.covered && !!r.due && r.due < todayStr(); });
+  const billing = {rgPct, rgSrc, rgDone, rgRest, rgTotal, rgExpected, rgGap: round2(rgExpected - rgDone), rgOver: tb !== null && tb >= 0 && rgRest > tb + 0.005, toBillNet,
     avPct: +_pt.advPct || 0, avTotal, avDone, avRest, netAfterAv: (toBillNet !== null && avTotal) ? round2(toBillNet - avRest) : null,
-    guarMonths: +_pt.guarMonths || 0, tva: ttcAmt ? round2(ttcAmt - ht) : 0};
+    sched, guarMonths: +_pt.guarMonths || 0, tva: ttcAmt ? round2(ttcAmt - ht) : 0};
   return {
     income, clientsExpense, caisseExpense, purchaseExpense, workerExpense, workerDays, totalExpense, net,
     invoiceCount: pdfs.length + sInv.length, expenseCount: bons.length + purch.length, workerCount: pw.length,
@@ -10377,34 +10442,35 @@ function _projRow(label, val, o){
 function _projCmpHtml(f){
   const c = f.contract, b = f.budget, bl = f.billing, parts = [];
   const dh = n => _pf(n) + ' د';
+  const sub = inner => '<div style="margin-top:2px; border-top:1px dashed var(--line); padding-top:6px; display:flex; flex-direction:column; gap:3px;">' + inner + '</div>';
   if(c.has){
     let h = '<div style="font-weight:700;">📑 الصفقة والفوترة</div>';
     h += _projRow('ثمن الصفقة HT', dh(c.ht)) + _projRow('TVA ' + c.rate + '%', dh(bl.tva)) + _projRow('ثمن الصفقة TTC' + (c.ref ? ' · ' + escapeHtml(c.ref) : ''), dh(c.ttcAmt), {bold: true, top: true});
     h += _projBar(f.billedPct, f.billedPct > 100 ? '#b91c1c' : '#1C6FA5');
     h += _projRow('المفوتر TTC (' + _pp(f.billedPct) + ' من الصفقة)', dh(f.income));
-    if(f.toBill >= 0){
-      h += _projRow('الباقي للفوترة (TTC)', dh(f.toBill), {bold: true, top: true});
-      if(bl.rgPct){
-        h += _projRow('اقتطاع الضمان ' + _pp(bl.rgPct) + ' على الباقي' + (bl.rgSrc === 'invoices' ? ' (حسب آخر فاتورة)' : ''), '− ' + dh(bl.rgRest));
+    if(f.toBill >= 0) h += _projRow('الباقي للفوترة (TTC)', dh(f.toBill), {bold: true, top: true});
+    else h += '<div style="color:#b91c1c; font-weight:700;">⚠️ تفوتر أكثر من الصفقة بـ ' + dh(-f.toBill) + ' (واش كاين ملحق ما تسجّلش؟)</div>';
+    if(bl.rgPct){
+      let g = _projRow('🛡️ الضمان ' + _pp(bl.rgPct) + ' من الصفقة TTC' + (bl.rgSrc === 'invoices' ? ' (حسب آخر فاتورة)' : ''), dh(bl.rgTotal)) + _projRow('المقتطع فالفواتير لحد الآن', dh(bl.rgDone)) + _projRow('المتبقي للاقتطاع', dh(bl.rgRest));
+      if(bl.guarMonths) g += _projRow('مدة الضمان', bl.guarMonths + ' شهر');
+      if(bl.rgGap > 1) g += '<div style="color:#b45309; font-size:11px; line-height:1.7;">ℹ️ الفواتير المصدرة اقتطعت ' + dh(bl.rgDone) + ' فقط، و' + _pp(bl.rgPct) + ' من المفوتر = ' + dh(bl.rgExpected) + ' (فرق ' + dh(bl.rgGap) + ').</div>';
+      h += sub(g);
+      if(f.toBill >= 0){
         h += _projRow('الباقي للفوترة بعد اقتطاع الضمان', dh(bl.toBillNet), {bold: true, color: '#2e7d32', top: true});
-      } else {
-        h += '<div style="color:#b45309; font-size:11px;">⚠️ نسبة اقتطاع الضمان غير محددة. سجّلها فـ "💳 تفاصيل الدفع" باش يبان الباقي للفوترة بعد الضمان.</div>';
+        if(bl.rgOver) h += '<div style="color:#b45309; font-size:11px;">⚠️ الضمان المتبقي للاقتطاع (' + dh(bl.rgRest) + ') يفوق الباقي للفوترة.</div>';
       }
-    } else {
-      h += '<div style="color:#b91c1c; font-weight:700;">⚠️ تفوتر أكثر من الصفقة بـ ' + dh(-f.toBill) + ' (واش كاين ملحق ما تسجّلش؟)</div>';
-    }
-    if(bl.rgDone || bl.rgTotal){
-      h += '<div style="margin-top:2px; border-top:1px dashed var(--line); padding-top:6px; display:flex; flex-direction:column; gap:3px;">';
-      if(bl.rgTotal) h += _projRow('إجمالي الضمان المتوقع على الصفقة', dh(bl.rgTotal));
-      h += _projRow('الضمان المقتطع فالفواتير لحد الآن', dh(bl.rgDone));
-      if(bl.guarMonths) h += _projRow('مدة الضمان', bl.guarMonths + ' شهر');
-      h += '</div>';
+    } else if(f.toBill >= 0){
+      h += '<div style="color:#b45309; font-size:11px;">⚠️ نسبة اقتطاع الضمان غير محددة. سجّلها فـ "💳 تفاصيل الدفع" باش يبان الباقي للفوترة بعد الضمان.</div>';
     }
     if(bl.avTotal){
-      h += '<div style="margin-top:2px; border-top:1px dashed var(--line); padding-top:6px; display:flex; flex-direction:column; gap:3px;">'
-        + _projRow('التسبيق ' + _pp(bl.avPct) + ' (تقديري)', dh(bl.avTotal)) + _projRow('المسترجع من الفواتير', dh(bl.avDone)) + _projRow('التسبيق المتبقي للاسترجاع', dh(bl.avRest));
-      if(bl.netAfterAv !== null) h += _projRow('الصافي المتوقع تحصيله بعد الضمان والتسبيق', dh(bl.netAfterAv), {bold: true});
-      h += '</div>';
+      let a = _projRow('التسبيق ' + _pp(bl.avPct) + ' (تقديري)', dh(bl.avTotal)) + _projRow('المسترجع من الفواتير', dh(bl.avDone)) + _projRow('التسبيق المتبقي للاسترجاع', dh(bl.avRest));
+      if(bl.netAfterAv !== null) a += _projRow('الصافي المتوقع تحصيله بعد الضمان والتسبيق', dh(bl.netAfterAv), {bold: true});
+      h += sub(a);
+    }
+    if(bl.sched.length){
+      let s = '<div style="font-weight:700; font-size:11.5px;">🗓 جدول الدفعات <span style="font-weight:400; color:var(--ink-soft);">(✅ مغطّاة بالمفوتر)</span></div>';
+      bl.sched.forEach(r=>{ s += _projRow((r.covered ? '✅' : (r.overdue ? '⚠️' : '⏳')) + ' <span dir="auto">' + escapeHtml(r.label || '—') + '</span> · ' + _pp(r.pct) + (r.due ? ' · ' + frDate(r.due) : ''), r.amount ? dh(r.amount) : ''); });
+      h += sub(s);
     }
     parts.push(h);
   } else if(f.income){
@@ -10431,7 +10497,7 @@ function _projSnapshotText(){
     L.push(`- ${proj.name}: الدخل (المفوتر TTC) ${R(f.income)} درهم، المصاريف ${R(f.totalExpense)} درهم (مقدمو الخدمات ${R(f.clientsExpense)} + مشتريات الموردين ${R(f.purchaseExpense)} + السيولة ${R(f.caisseExpense)} + أجور الأجراء ${R(f.workerExpense)})، الصافي ${R(f.net)} درهم`);
     if(c.has) L.push(`  · الصفقة: ثمن ${R(c.amount)} درهم (${c.ttc ? 'TTC' : 'HT'}${c.ref ? '، مرجع ' + c.ref : ''}) = HT ${R(c.ht)} / TTC ${R(c.ttcAmt)} — المفوتر ${P(f.billedPct)} من الصفقة، ${f.toBill >= 0 ? 'باقي للفوترة ' + R(f.toBill) : 'تفوتر أكثر من الصفقة بـ ' + R(-f.toBill)} درهم`);
     else L.push('  · ثمن الصفقة: ماكاينش مسجل فقسم المشاريع');
-    if(c.has && f.toBill >= 0){ const bl = f.billing; L.push(`  · الباقي للفوترة (TTC) ${R(f.toBill)} درهم` + (bl.rgPct ? ` — اقتطاع الضمان ${bl.rgPct}% = ${R(bl.rgRest)} درهم، الباقي للفوترة بعد اقتطاع الضمان ${R(bl.toBillNet)} درهم` : ' — نسبة اقتطاع الضمان غير محددة') + (bl.rgDone ? `، الضمان المقتطع لحد الآن ${R(bl.rgDone)} درهم` : '')); }
+    if(c.has && f.toBill >= 0){ const bl = f.billing; L.push(`  · الباقي للفوترة (TTC) ${R(f.toBill)} درهم` + (bl.rgPct ? ` — الضمان ${bl.rgPct}% من ثمن الصفقة TTC = ${R(bl.rgTotal)} درهم (المقتطع لحد الآن ${R(bl.rgDone)}، المتبقي للاقتطاع ${R(bl.rgRest)})، الباقي للفوترة بعد اقتطاع الضمان ${R(bl.toBillNet)} درهم` : ' — نسبة اقتطاع الضمان غير محددة')); }
     if(b.has) L.push(`  · الميزانية المخصصة: ${R(b.amount)} درهم — المصروف ${P(f.budgetPct)}، ${f.budgetLeft >= 0 ? 'المتبقي ' + R(f.budgetLeft) : 'تجاوز الميزانية بـ ' + R(-f.budgetLeft)} درهم${f.budgetPct > 100 ? ' ⚠️ تجاوز' : (f.budgetPct >= 90 ? ' ⚠️ قريبة تسالي' : '')}`);
     else L.push('  · الميزانية المخصصة: ماكاينش مسجلة فقسم المشاريع');
     if(c.has) L.push(`  · الهامش المتوقع (ثمن الصفقة HT − المصاريف): ${R(f.margin)} درهم (${P(f.marginPct)})`);
@@ -10464,11 +10530,12 @@ function buildProjectReport(proj){
     rec.push(['Facturé à ce jour (TTC)', N(f.income), pc(f.income, C.ttcAmt), 'Factures de vente liées au projet']);
     rec.push([f.toBill >= 0 ? 'Reste à facturer (TTC)' : 'Facturation au-delà du marché (TTC)', N(Math.abs(f.toBill)), pc(Math.abs(f.toBill), C.ttcAmt), f.toBill < 0 ? 'Vérifier : avenant non enregistré ?' : '']);
     const BL = f.billing;
-    if(f.toBill >= 0 && BL.rgPct){
-      rec.push(['Retenue de garantie (' + BL.rgPct + ' %) sur le reste à facturer', N(-BL.rgRest), pc(BL.rgRest, C.ttcAmt), BL.rgSrc === 'invoices' ? 'Taux repris de la dernière facture (non défini dans les modalités de paiement)' : 'Taux selon les modalités de paiement du projet']);
-      rec.push(['Reste à facturer après retenue de garantie (TTC)', N(BL.toBillNet), pc(BL.toBillNet, C.ttcAmt), '']);
+    if(BL.rgPct){
+      rec.push(['Retenue de garantie (' + BL.rgPct + ' % du marché TTC)', N(BL.rgTotal), pc(BL.rgTotal, C.ttcAmt), BL.rgSrc === 'invoices' ? 'Taux repris de la dernière facture (non défini dans les modalités de paiement)' : 'Taux selon les modalités de paiement du projet']);
+      rec.push(['Retenue de garantie déjà opérée sur les factures émises', N(BL.rgDone), pc(BL.rgDone, C.ttcAmt), BL.rgGap > 1 ? 'Écart avec ' + BL.rgPct + ' % du facturé : ' + fmtNum(BL.rgGap) + ' MAD' : '']);
+      rec.push(['Retenue de garantie restant à opérer', N(BL.rgRest), pc(BL.rgRest, C.ttcAmt), '']);
+      if(f.toBill >= 0) rec.push(['Reste à facturer après retenue de garantie (TTC)', N(BL.toBillNet), pc(BL.toBillNet, C.ttcAmt), BL.rgOver ? 'La retenue restante dépasse le reste à facturer' : '']);
     } else if(f.toBill >= 0) rec.push(['Reste à facturer après retenue de garantie', '', '', 'Taux de retenue non défini : à renseigner dans « Modalités de paiement »']);
-    if(BL.rgDone) rec.push(['Retenue de garantie déjà opérée sur les factures émises', N(BL.rgDone), pc(BL.rgDone, C.ttcAmt), BL.rgTotal ? 'Retenue totale prévue : ' + fmtNum(BL.rgTotal) + ' MAD' : '']);
     if(BL.avTotal){
       rec.push(['Avance de démarrage prévue (' + BL.avPct + ' %)', N(BL.avTotal), pc(BL.avTotal, C.ttcAmt), 'Estimation sur le marché TTC']);
       rec.push(['Avance déjà déduite des factures', N(BL.avDone), '', '']);
@@ -12390,7 +12457,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 16-11-2026 (ب)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 16-11-2026 (ج)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -12398,7 +12465,7 @@ if('serviceWorker' in navigator){
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='intro-2026-11-16b';
+    const BUILD='intro-2026-11-16c';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
