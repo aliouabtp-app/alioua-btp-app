@@ -3924,13 +3924,26 @@ async function renderPdfPreview(container, doc){
   try{
     await loadScriptOnce(PDFJS_URL); pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
     const pdf = await pdfjsLib.getDocument({data: new Uint8Array(buf)}).promise;
-    const cssW = Math.max(280, (container.parentNode && container.parentNode.clientWidth ? container.parentNode.clientWidth : window.innerWidth) - 24), dpr = Math.min(2.5, window.devicePixelRatio || 1);
-    for(let i = 1; i <= pdf.numPages; i++){
-      const page = await pdf.getPage(i), v0 = page.getViewport({scale:1}), vp = page.getViewport({scale: cssW * dpr / v0.width});
-      const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
-      cv.style.cssText = 'width:100%; display:block; margin:0 0 10px; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.25);';
-      container.appendChild(cv); await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+    const baseW = Math.max(280, (container.parentNode && container.parentNode.clientWidth ? container.parentNode.clientWidth : window.innerWidth) - 24), dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    const first = await pdf.getPage(1), fv = first.getViewport({scale: 1}), ratio = fv.height / fv.width;
+    const maxW = Math.max(900, Math.min(4096, Math.floor(Math.sqrt(28e6 / pdf.numPages / ratio))));   // سقف الذاكرة: ~28 مليون بكسل لكل المستند
+    const cvs = []; let token = 0;
+    async function paint(z, my){
+      for(let i = 1; i <= pdf.numPages; i++){
+        if(my !== token) return;
+        const page = i === 1 ? first : await pdf.getPage(i), v0 = page.getViewport({scale: 1});
+        const vp = page.getViewport({scale: Math.min(baseW * Math.max(z, 1) * dpr, maxW) / v0.width});
+        const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+        cv.style.cssText = 'width:100%; display:block; margin:0 0 10px; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.25);';
+        await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+        if(my !== token) return;
+        if(cvs[i - 1]) container.replaceChild(cv, cvs[i - 1]); else container.appendChild(cv);
+        cvs[i - 1] = cv;
+      }
     }
+    await paint(1, token);
+    // الزوم: كنكبّرو عرض الصفحات ثم كنعاودو رسمها بدقة أعلى باش النص يبقى واضح (مدة قصيرة بعد آخر حركة)
+    container.__setZoom = z=>{ container.style.width = (z * 100) + '%'; clearTimeout(container.__zt); ++token; if(z <= 1.01) return; container.__zt = setTimeout(()=>{ paint(z, ++token); }, 300); };
   }catch(e){
     const url = URL.createObjectURL(new Blob([buf], {type:'application/pdf'}));
     container.innerHTML = '<div style="padding:8px; font-size:12px; color:#92400e;">⚠️ تعذّر عرض المعاينة داخل التطبيق، هادي معاينة بديلة (قد لا تظهر فبعض الهواتف):</div><iframe src="' + url + '" style="width:100%; height:70vh; border:0; background:#fff;"></iframe>';
@@ -3941,16 +3954,53 @@ function openFilePreview(cfg){
   const old = document.getElementById('filePreviewModal'); if(old) old.remove();
   const m = document.createElement('div'); m.id = 'filePreviewModal';
   m.style.cssText = 'position:fixed; inset:0; z-index:100000; background:#e5e7eb; display:flex; flex-direction:column;';
-  m.innerHTML = '<div style="background:#fff; padding:10px 12px; border-bottom:1px solid #d1d5db; display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding-top:max(10px, env(safe-area-inset-top));"><b id="fpTitle" dir="auto" style="flex:1; min-width:120px; font-size:13.5px;"></b><div id="fpTabs" style="display:flex; gap:6px;"></div></div><div id="fpBody" style="flex:1; overflow:auto; padding:10px;"></div><div style="background:#fff; padding:10px 12px; border-top:1px solid #d1d5db; display:flex; gap:8px; padding-bottom:max(10px, env(safe-area-inset-bottom));"><button class="btn-primary" id="fpDl" style="flex:2;">⬇️ تحميل</button><button class="btn-ghost" id="fpEdit" style="flex:1.4;">✏️ طلب تعديل</button><button class="btn-ghost" id="fpClose" style="flex:1;">✖ إغلاق</button></div>';
+  m.innerHTML = '<div style="background:#fff; padding:10px 12px; border-bottom:1px solid #d1d5db; display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding-top:max(10px, env(safe-area-inset-top));"><b id="fpTitle" dir="auto" style="flex:1; min-width:120px; font-size:13.5px;"></b><div id="fpTabs" style="display:flex; gap:6px;"></div></div><div id="fpZoomBar" style="background:#f9fafb; border-bottom:1px solid #e5e7eb; padding:5px 10px; display:flex; gap:6px; align-items:center; justify-content:center;"><span style="font-size:11.5px; color:#6b7280;">🔍 زوم (قرّب بصبعين أو دوس مرتين)</span><button class="btn-ghost" id="fpZout" style="flex:0 0 44px; padding:4px 0; font-size:19px; line-height:1.1;">−</button><button class="btn-ghost" id="fpZlbl" style="flex:0 0 66px; padding:6px 0; font-weight:700; font-size:12.5px;">100%</button><button class="btn-ghost" id="fpZin" style="flex:0 0 44px; padding:4px 0; font-size:19px; line-height:1.1;">+</button></div><div id="fpBody" style="flex:1; overflow:auto; padding:10px; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y;"></div><div style="background:#fff; padding:10px 12px; border-top:1px solid #d1d5db; display:flex; gap:8px; padding-bottom:max(10px, env(safe-area-inset-bottom));"><button class="btn-primary" id="fpDl" style="flex:2;">⬇️ تحميل</button><button class="btn-ghost" id="fpEdit" style="flex:1.4;">✏️ طلب تعديل</button><button class="btn-ghost" id="fpClose" style="flex:1;">✖ إغلاق</button></div>';
   document.body.appendChild(m);
   m.querySelector('#fpTitle').textContent = '👁 معاينة: ' + (cfg.title || '');
   const body = m.querySelector('#fpBody'), tabs = m.querySelector('#fpTabs'), dl = m.querySelector('#fpDl');
   let cur = null, token = 0;
+  // ===== الزوم (أزرار + قرص بصبعين + دوبل تاب + Ctrl+عجلة) لمراجعة الملف بدقة قبل الطباعة =====
+  let zoom = 1; const ZSTOPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5], zLbl = m.querySelector('#fpZlbl');
+  function applyZoomNode(){ const n = cur && cur._node; if(!n) return; if(typeof n.__setZoom === 'function') n.__setZoom(zoom); else n.style.zoom = (zoom === 1 ? '' : zoom); }
+  function setZoom(z, px, py){
+    z = Math.max(0.5, Math.min(5, z)); const old = zoom; if(Math.abs(z - old) < 0.001) return;
+    const rtl = getComputedStyle(body).direction === 'rtl', rect = body.getBoundingClientRect();
+    const cx = (px == null) ? body.clientWidth / 2 : px - rect.left, cy = (py == null) ? body.clientHeight / 2 : py - rect.top;
+    const cxs = rtl ? body.clientWidth - cx : cx, posX = Math.abs(body.scrollLeft) + cxs, posY = body.scrollTop + cy;
+    zoom = z; zLbl.textContent = Math.round(z * 100) + '%'; applyZoomNode();
+    const f = z / old, nx = Math.max(0, posX * f - cxs), ny = Math.max(0, posY * f - cy);
+    body.scrollLeft = rtl ? -nx : nx; body.scrollTop = ny;   // نخلّيو النقطة اللي كنقرّبو عليها فمكانها
+  }
+  m.querySelector('#fpZin').addEventListener('click', ()=> setZoom(ZSTOPS.find(s=> s > zoom + 0.01) || 5));
+  m.querySelector('#fpZout').addEventListener('click', ()=> setZoom(ZSTOPS.slice().reverse().find(s=> s < zoom - 0.01) || 0.5));
+  zLbl.addEventListener('click', ()=> setZoom(1));
+  const _d2 = t=> Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  let pinch = null, tap = null, lastTap = 0, lastTouch = 0;
+  body.addEventListener('touchstart', e=>{
+    lastTouch = Date.now();
+    if(e.touches.length === 2){ pinch = {d: _d2(e.touches), z: zoom}; tap = null; }
+    else if(e.touches.length === 1) tap = {x: e.touches[0].clientX, y: e.touches[0].clientY, moved: false};
+    else tap = null;
+  }, {passive: true});
+  body.addEventListener('touchmove', e=>{
+    if(pinch && e.touches.length === 2){ e.preventDefault(); setZoom(pinch.z * _d2(e.touches) / pinch.d, (e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2); }
+    else if(tap && e.touches.length === 1 && (Math.abs(e.touches[0].clientX - tap.x) > 10 || Math.abs(e.touches[0].clientY - tap.y) > 10)) tap.moved = true;
+  }, {passive: false});
+  body.addEventListener('touchend', e=>{
+    lastTouch = Date.now();
+    if(e.touches.length < 2) pinch = null;
+    if(tap && !tap.moved && e.touches.length === 0){
+      const now = Date.now();
+      if(now - lastTap < 320){ setZoom(zoom < 1.5 ? 2 : 1, tap.x, tap.y); lastTap = 0; } else lastTap = now;
+    }
+  }, {passive: true});
+  body.addEventListener('dblclick', e=>{ if(Date.now() - lastTouch < 800) return; setZoom(zoom < 1.5 ? 2 : 1, e.clientX, e.clientY); });
+  body.addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX, e.clientY); } }, {passive: false});
   async function show(v){
     cur = v; const my = ++token;
     tabs.querySelectorAll('button').forEach(b=>{ b.className = b.dataset.k === v.key ? 'btn-primary' : 'btn-ghost'; });
     body.innerHTML = '<div style="padding:30px; text-align:center; color:#555;">⏳ كنجهز المعاينة...</div>'; dl.disabled = true;
-    try{ if(!v._node) v._node = await v.render(); if(my !== token) return; body.innerHTML = ''; body.appendChild(v._node); dl.disabled = false; }
+    try{ if(!v._node) v._node = await v.render(); if(my !== token) return; body.innerHTML = ''; body.appendChild(v._node); applyZoomNode(); dl.disabled = false; }
     catch(e){ if(my !== token) return; body.innerHTML = ''; const er = document.createElement('div'); er.style.cssText = 'padding:20px; color:#b91c1c;'; er.textContent = '❌ تعذّرت المعاينة: ' + (e && e.message ? e.message : e); body.appendChild(er); }
   }
   if((cfg.variants || []).length > 1) cfg.variants.forEach(v=>{ const b = document.createElement('button'); b.dataset.k = v.key; b.textContent = v.label; b.style.cssText = 'padding:6px 12px; font-size:12.5px;'; b.addEventListener('click', ()=> show(v)); tabs.appendChild(b); });
@@ -8769,13 +8819,14 @@ function invoiceRemaining(inv){ return Math.max(0, round2(invoiceTotal(inv) - in
 function syncInvoiceStatus(inv){ inv.status = invoiceRemaining(inv) <= 0.005 ? 'paid' : 'pending'; }
 let payInvId = null;
 function addInvoicePayment(invId, amount, date, note){
-  const invs = loadInvoices(), t = invs.find(i=> i.id === invId); if(!t) return;
+  const invs = loadInvoices(), t = invs.find(i=> i.id === invId); if(!t) return null;
   const rem = invoiceRemaining(t);
-  if(!(amount > 0)){ alert('اكتب مبلغ الدفعة.'); return; }
-  if(amount > rem + 0.005){ alert('المبلغ (' + fmtMAD(amount) + ') كيفوت المتبقي (' + fmtMAD(rem) + ' درهم).'); return; }
+  if(!(amount > 0)){ alert('اكتب مبلغ الدفعة.'); return null; }
+  if(amount > rem + 0.005){ alert('المبلغ (' + fmtMAD(amount) + ') كيفوت المتبقي (' + fmtMAD(rem) + ' درهم).'); return null; }
   if(!Array.isArray(t.payments)) t.payments = (t.status === 'paid') ? [{id:'p' + Date.now() + 'a', date: t.date, amount: invoiceTotal(t), note:'دفعة سابقة'}] : [];
-  t.payments.push({id:'p' + Date.now(), date: date || todayStr(), amount: round2(amount), note: note || ''});
-  syncInvoiceStatus(t); saveInvoices(invs); payInvId = null; renderClients();
+  const nid = 'p' + Date.now();
+  t.payments.push({id: nid, date: date || todayStr(), amount: round2(amount), note: note || ''});
+  syncInvoiceStatus(t); saveInvoices(invs); payInvId = null; renderClients(); return nid;
 }
 function saveInvoices(l){
   safeSetItem(INVOICES_KEY, JSON.stringify(l));
@@ -8863,6 +8914,160 @@ function printProviderReport(ids){
 }
 document.getElementById('clientPrintAllBtn')?.addEventListener('click', ()=> printProviderReport(null));
 
+/* ---------- ورقة الدفعة لتوقيع مقدِّم الخدمة عند استلام المبلغ: DÉCOMPTE PROVISOIRE (ص1) + SITUATION (ص2) ---------- */
+var _PROV_FIELDS = [['lot', 'نوع الأشغال / Lot (مثال: GROS ŒUVRE)'], ['cin', 'CIN'], ['address', 'العنوان / Adresse'], ['patente', 'N° Patente'], ['rc', 'N° Registre du Commerce'], ['cnss', 'N° Affiliation CNSS'], ['ifisc', 'N° Identifiant Fiscal (IF)']];
+function _payListOf(inv){
+  const real = Array.isArray(inv.payments) ? inv.payments : [];
+  const list = real.length ? real.map((p, i)=> ({id: p.id, date: p.date || '', amount: round2(+p.amount || 0), note: p.note || '', _i: i}))
+    : (inv.status === 'paid' ? [{id: '__full', date: '', amount: round2(invoiceTotal(inv)), note: '', _i: 0}] : []);   // فاتورة قديمة مسددة بلا دفعات مسجلة
+  list.forEach(p=> { p.key = p.date || inv.date || ''; });
+  return list.sort((a, b)=> String(a.key).localeCompare(String(b.key)) || (a._i - b._i));
+}
+function _payModeFr(note){
+  const n = String(note || '').trim(); if(!n) return '';
+  if(/نقد|كاش|cash|esp[eè]ce/i.test(n)) return 'ESPÈCES';
+  if(/شيك|ch[eè]que/i.test(n)) return 'CHÈQUE';
+  if(/تحويل|virement/i.test(n)) return 'VIREMENT';
+  if(/كمبيال|effet/i.test(n)) return 'EFFET DE COMMERCE';
+  return n;
+}
+function paymentReceiptContext(invId, payId){
+  const invs = loadInvoices(), inv = invs.find(i=> i.id === invId); if(!inv) return null;
+  const client = loadClients().find(c=> c.id === inv.clientId) || {name: ''};
+  const list = _payListOf(inv), idx = list.findIndex(p=> p.id === payId); if(idx < 0) return null;
+  const pay = list[idx], prev = list.slice(0, idx), mine = invs.filter(i=> i.clientId === inv.clientId), every = [];
+  mine.forEach(i=> _payListOf(i).forEach(p=> every.push({i, p})));
+  every.sort((a, b)=> String(a.p.key).localeCompare(String(b.p.key)) || String(a.i.date || '').localeCompare(String(b.i.date || '')) || (a.p._i - b.p._i));
+  const seq = every.findIndex(e=> e.i.id === inv.id && e.p.id === pay.id) + 1;
+  const invRank = _provInvList(inv.clientId, invs).findIndex(i=> i.id === inv.id) + 1;
+  const A = round2(invoiceTotal(inv)), B = round2(prev.reduce((s, p)=> s + p.amount, 0)), P = pay.amount, C = round2(A - B), R = Math.max(0, round2(C - P));
+  return {client, inv, pay, prev, seq, invRank, A, B, P, C, R, project: client.projectId ? projectNameById(client.projectId) : '', co: loadCompanyInfo()};
+}
+function buildPaymentDecompteDoc(x){
+  if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش بعد، تأكد من الإنترنت.');
+  const { jsPDF } = window.jspdf, doc = new jsPDF({unit: 'mm', format: 'a4'});
+  const co = x.co || {}, c = x.client, PW = 210, PH = 297, ML = 12, MR = 12, RIGHT = PW - MR, W = PW - ML - MR, MM = 0.352778;
+  const NAVY = [31, 56, 100], GREY = [236, 239, 244], BLUE = [214, 226, 242];
+  const money = n => (Math.abs(+n || 0) < 0.005 ? '-' : fmtNum(n));
+  const qtyF = n => (Number.isInteger(+n) ? String(+n) : String(round2(+n)).replace('.', ','));
+  const dstr = x.pay.date ? frDate(x.pay.date) : '', dFill = dstr || '____ / ____ / ________';
+  const invRef = 'n°' + x.invRank + ' du ' + frDate(x.inv.date);
+  const pct = x.A ? (Math.round((x.B + x.P) / x.A * 1000) / 10).toLocaleString('fr-FR') + ' %' : '';
+  const ord = n => (n === 1 ? '1ère' : n + 'ème');
+  const txt = (s, xx, yy, o)=>{
+    o = o || {}; s = String(s == null ? '' : s); if(!s) return; const size = o.size || 9, col = o.color || [0, 0, 0];
+    if(containsArabic(s)){ drawArabicLine(doc, s, xx, yy - size * MM * 0.3, {fontMM: size * MM, bold: !!o.bold, color: col, align: o.align || 'left', maxW: o.maxW}); return; }
+    doc.setFont('helvetica', o.bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(col[0], col[1], col[2]);
+    doc.text(s, xx, yy, {align: o.align || 'left'});
+  };
+  const lab = (label, value, xx, yy, o)=>{ o = o || {}; const size = o.size || 9; doc.setFont('helvetica', 'bold'); doc.setFontSize(size); const w = doc.getTextWidth(label); txt(label, xx, yy, {size, bold: true}); txt(value, xx + w + 2, yy, {size, maxW: o.maxW}); };
+  const head = ()=>{
+    let logo = false;
+    if(co.logoDataUrl){ try{ const pr = doc.getImageProperties(co.logoDataUrl), w = 50, h = Math.min(18, w * pr.height / pr.width); doc.addImage(co.logoDataUrl, pr.fileType || 'PNG', ML, 9, w, h); logo = true; }catch(e){} }
+    if(!logo){ txt(co.name || 'ALIOUA BTP', ML, 17, {size: 17, bold: true, color: [20, 40, 90]}); txt(co.tagline || 'SOCIETE DE BATIMENT ET TRAVAUX PUBLICS', ML, 22, {size: 7, color: [70, 70, 70]}); }
+    [co.addr, co.phone ? 'Tel : ' + co.phone : '', co.ice ? 'ICE : ' + co.ice : ''].filter(Boolean).forEach((s, i)=> txt(s, RIGHT, 12 + i * 4, {size: 7.5, color: [70, 70, 70], align: 'right', maxW: 90}));
+  };
+  const bar = (yy, left, right)=>{ doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]); doc.rect(ML, yy, W, 8.5, 'F'); txt(left, ML + 3, yy + 5.9, {size: 11, bold: true, color: [255, 255, 255]}); if(right) txt(right, RIGHT - 3, yy + 5.9, {size: 9.5, bold: true, color: [255, 255, 255], align: 'right'}); };
+  const base = {theme: 'grid', styles: {font: 'helvetica', fontSize: 8, cellPadding: 1.3, lineColor: [110, 110, 110], lineWidth: 0.2, textColor: [0, 0, 0], valign: 'middle'}, margin: {left: ML, right: MR, top: 10, bottom: 14}};
+  const L = s=> ({content: s, styles: {fillColor: GREY, fontStyle: 'bold'}});
+  const Bd = (s, st)=> ({content: s, styles: Object.assign({fontStyle: 'bold'}, st || {})});
+  const secHead = s=> [{content: s, styles: {fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold'}}].concat(['CUMUL ACTUEL', 'CUMUL PRÉCÉDENT', 'MENSUEL RÉALISÉ'].map(t=> ({content: t, styles: {fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center'}})));
+  const fin = ()=> doc.lastAutoTable.finalY;
+  const nums3 = {1: {halign: 'right'}, 2: {halign: 'right'}, 3: {halign: 'right'}};
+
+  // ===================== الصفحة 1: DÉCOMPTE PROVISOIRE =====================
+  head(); bar(28, 'DÉCOMPTE PROVISOIRE N° ' + x.seq, 'DATE : ' + dFill);
+  const vw = (W - 68) / 2;
+  arabicAwareAutoTable(doc, Object.assign({}, base, {startY: 39, columnStyles: {0: {cellWidth: 34}, 1: {cellWidth: vw}, 2: {cellWidth: 34}, 3: {cellWidth: vw}}, body: [
+    [L('PROJET'), x.project || '', L("MAÎTRE D'OUVRAGE"), co.name || 'ALIOUA BTP'],
+    [L('LOT'), c.lot || '', L('SOUS-TRAITANT'), c.name || ''],
+    [L('ADRESSE'), c.address || '', L('N° PATENTE'), c.patente || ''],
+    [L('N° REGISTRE DU COMMERCE'), c.rc || '', L('N° AFFILIATION CNSS'), c.cnss || ''],
+    [L('N° IDENTIFIANT FISCAL'), c.ifisc || '', L('N° CIN'), c.cin || '']
+  ]}));
+  arabicAwareAutoTable(doc, Object.assign({}, base, {startY: fin() + 3, columnStyles: {0: {cellWidth: 52}, 1: {cellWidth: 41, halign: 'right'}, 2: {cellWidth: 52}, 3: {cellWidth: 41, halign: 'right'}}, body: [
+    [L('MONTANT CONTRAT en Dhs'), fmtNum(x.A), L('AVANCE EN Dhs'), fmtNum(x.B + x.P)],
+    [L('AVENANTS en Dhs'), '-', L('AVANCE EN %'), pct],
+    [L('TOTAL MARCHÉ Y C. AVENANT en Dhs'), fmtNum(x.A), L('FACTURE DE RÉFÉRENCE'), invRef]
+  ]}));
+  arabicAwareAutoTable(doc, Object.assign({}, base, {startY: fin() + 3, columnStyles: Object.assign({0: {cellWidth: 78}}, {1: {cellWidth: 36, halign: 'right'}, 2: {cellWidth: 36, halign: 'right'}, 3: {cellWidth: 36, halign: 'right'}}),
+    head: [secHead('1-DÉTAIL DES TRAVAUX RÉALISÉS')], headStyles: {fillColor: NAVY, textColor: [255, 255, 255]}, body: [
+    [Bd('1-1 TRAVAUX AU CONTRAT'), '', '', ''],
+    ['   * AU MÈTRE (facture)', money(x.A), money(x.B), money(x.C)],
+    ['   * AU FORFAIT', '-', '-', '-'],
+    ['1-2 RÉVISION DE PRIX', '-', '-', '-'],
+    ['1-3 AVENANTS', '-', '-', '-'],
+    [Bd('TOTAL (1)', {fillColor: GREY}), Bd(money(x.A), {fillColor: GREY}), Bd(money(x.B), {fillColor: GREY}), Bd(money(x.C), {fillColor: GREY})],
+    secHead('2- RETENUES (Hors Approvisionnement)'),
+    ['RETENUE DE GARANTIE', '-', '-', '-'], ['RETENUE DE DÉCOFFRAGE', '-', '-', '-'], ['COMPTE PRORATA', '-', '-', '-'], ['FOURNITURE', '-', '-', '-'],
+    ['LOCATION DE MATÉRIEL', '-', '-', '-'], ["RÉCUPÉRATION D'AVANCE", '-', '-', '-'], ['AUTRES', '-', '-', '-'],
+    [Bd('TOTAL (2)', {fillColor: GREY}), Bd('-', {fillColor: GREY}), Bd('-', {fillColor: GREY}), Bd('-', {fillColor: GREY})],
+    [Bd('TOTAL (1) - (2)'), Bd(money(x.A)), Bd(money(x.B)), Bd(money(x.C))],
+    ['TVA', '-', '-', '-'],
+    [Bd("RESTE DÛ À L'ENTREPRISE T T C", {fillColor: BLUE}), Bd(money(x.A), {fillColor: BLUE}), Bd(money(x.B), {fillColor: BLUE}), Bd(money(x.C), {fillColor: BLUE})]
+  ]}));
+  arabicAwareAutoTable(doc, Object.assign({}, base, {startY: fin() + 3, columnStyles: {0: {cellWidth: 138}, 1: {cellWidth: 48, halign: 'right'}}, body: [
+    [Bd('MONTANT RÉGLÉ CE JOUR (Règlement N° ' + x.seq + ')', {fillColor: BLUE}), Bd(fmtNum(x.P) + ' Dhs', {fillColor: BLUE})],
+    [Bd('RESTE À PAYER APRÈS CE RÈGLEMENT'), Bd(fmtNum(x.R) + ' Dhs')]
+  ]}));
+  let y = fin() + 5;
+  txt('Arrêté le présent règlement à la somme de :', ML, y, {size: 8.5, bold: true});
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
+  const wl = doc.splitTextToSize(amountWordsFr(x.P), W); wl.forEach((ln, i)=> doc.text(ln, ML, y + 4.6 + i * 4.2)); y += 4.6 + wl.length * 4.2 + 3;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); const mw = doc.getTextWidth('MODALITÉS DE PAIEMENT : ');
+  txt('MODALITÉS DE PAIEMENT : ', ML, y, {size: 8.5, bold: true}); txt(_payModeFr(x.pay.note) || '..............................', ML + mw, y, {size: 8.5, bold: true, maxW: 100});
+  const sy = Math.min(Math.max(y + 7, 232), PH - 48), bw = (W - 6) / 2;
+  [['Responsable du chantier', ML], ['Directeur de projet', ML + bw + 6]].forEach(([t, bx])=>{ doc.setDrawColor(110, 110, 110); doc.setLineWidth(0.2); doc.rect(bx, sy, bw, 34); txt(t, bx + bw / 2, sy + 5, {size: 9, bold: true, align: 'center'}); });
+
+  // ===================== الصفحة 2: SITUATION =====================
+  doc.addPage(); head();
+  lab('Chantier : ', x.project || '', ML, 30, {maxW: 120}); lab('Identité Sous-traitant : ', c.name || '', ML, 35.5, {maxW: 110});
+  txt('Date : ' + dFill, RIGHT, 30, {size: 9, bold: true, align: 'right'});
+  bar(39, 'SITUATION N° ' + x.seq, 'Facture ' + invRef);
+  const items = (x.inv.items || []).map(it=> [String(it.desc || ''), String(it.unit || ''), qtyF(it.qty), fmtNum(+it.price || 0), '100 %', fmtNum((+it.qty || 0) * (+it.price || 0))]);
+  arabicAwareAutoTable(doc, Object.assign({}, base, {startY: 50, columnStyles: {0: {cellWidth: 72}, 1: {cellWidth: 16}, 2: {cellWidth: 22, halign: 'right'}, 3: {cellWidth: 26, halign: 'right'}, 4: {cellWidth: 20, halign: 'center'}, 5: {cellWidth: 30, halign: 'right'}},
+    head: [['Désignation', 'Unité', 'Qté à réaliser', 'P.U (Dhs)', 'Avancement', 'Montant (Dhs)']], headStyles: {fillColor: NAVY, textColor: [255, 255, 255], halign: 'center', fontStyle: 'bold'},
+    body: items.concat([[{content: 'MONTANT PARTIEL', colSpan: 5, styles: {halign: 'right', fontStyle: 'bold', fillColor: GREY}}, Bd(fmtNum(x.A), {fillColor: GREY})]])}));
+  const sum = [[Bd('* CUMUL TRAVAUX RÉALISÉS (A)'), '', Bd(fmtNum(x.A))], [{content: 'Avances précédentes :', styles: {fontStyle: 'italic'}}, 'Observation', '']];
+  if(x.prev.length) x.prev.forEach((p, i)=> sum.push([ord(i + 1) + ' AVANCE DU ' + (p.date ? frDate(p.date) : '__/__/____'), String(p.note || ''), fmtNum(p.amount)]));
+  else sum.push(['Aucune avance précédente', '', '-']);
+  sum.push([Bd('Total des avances (B)'), '', Bd(money(x.B))], [Bd('Relicat des travaux ( C = A - B )'), '', Bd(fmtNum(x.C))],
+    ['( 1 ) Retenue de décoffrage', '', '-'], ['( 2 ) Retenue de compte prorata', '', '-'],
+    [Bd('NET théorique à payer : ( C - (1+2) )', {fillColor: GREY}), Bd('', {fillColor: GREY}), Bd(fmtNum(x.C), {fillColor: GREY})],
+    [Bd('MONTANT RÉGLÉ CE JOUR (Règlement N° ' + x.seq + ')', {fillColor: BLUE}), Bd('', {fillColor: BLUE}), Bd(fmtNum(x.P), {fillColor: BLUE})],
+    [Bd('RESTE À PAYER APRÈS CE RÈGLEMENT'), '', Bd(fmtNum(x.R))]);
+  arabicAwareAutoTable(doc, Object.assign({}, base, {startY: fin() + 4, columnStyles: {0: {cellWidth: 100}, 1: {cellWidth: 52}, 2: {cellWidth: 34, halign: 'right'}}, body: sum}));
+  y = fin() + 6;
+  if(y + 58 > PH - 12){ doc.addPage(); head(); y = 30; }
+  const lw = 112, rw = W - lw - 4, bh = 56;
+  doc.setDrawColor(110, 110, 110); doc.setLineWidth(0.25); doc.rect(ML, y, lw, bh); doc.rect(ML + lw + 4, y, rw, bh);
+  txt('SOUS-TRAITANT', ML + 3, y + 5.5, {size: 9.5, bold: true});
+  lab('Nom et Prénom : ', c.name || '', ML + 3, y + 11.5, {size: 8.5, maxW: lw - 40}); lab('CIN : ', c.cin || '', ML + 3, y + 16.5, {size: 8.5}); lab('Adresse : ', c.address || '', ML + 3, y + 21.5, {size: 8.5, maxW: lw - 28});
+  txt('Bon pour réception de la somme de :', ML + 3, y + 29, {size: 8.5, bold: true});
+  txt(fmtNum(x.P) + ' Dhs', ML + 3, y + 34.5, {size: 10.5, bold: true});
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(60, 60, 60); doc.splitTextToSize(amountWordsFr(x.P), lw - 6).slice(0, 2).forEach((ln, i)=> doc.text(ln, ML + 3, y + 39 + i * 3.6));
+  txt('Date et signature :', ML + 3, y + 51, {size: 8.5, bold: true}); txt(dFill, ML + 36, y + 51, {size: 8.5});
+  txt('POUR ' + (co.name || 'ALIOUA BTP'), ML + lw + 4 + rw / 2, y + 5.5, {size: 9, bold: true, align: 'center', maxW: rw - 4});
+  txt('Cachet et signature', ML + lw + 4 + rw / 2, y + 11.5, {size: 8, align: 'center', color: [90, 90, 90]});
+
+  const n = doc.getNumberOfPages();
+  for(let i = 1; i <= n; i++){ doc.setPage(i); txt('Décompte provisoire N° ' + x.seq + '  -  Page ' + i + '/' + n, PW / 2, 290, {size: 7, align: 'center', color: [120, 120, 120]}); }
+  return doc;
+}
+function printPaymentReceipt(invId, payId){
+  if(currentRole === 'employee'){ alert('هاد الملف غير متاح للموظف.'); return; }
+  try{
+    const x = paymentReceiptContext(invId, payId);
+    if(!x){ alert('تعذّر إيجاد هاد الدفعة.'); return; }
+    const slug = s=> String(s || '').replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 30);
+    const base = 'Decompte-N' + x.seq + '-' + slug(x.client.name) + '-' + (x.pay.date || x.inv.date || '');
+    openFilePreview({title: 'Décompte N° ' + x.seq + ' — ' + (x.client.name || ''), first: 'pdf', noEdit: true,
+      variants: [{key: 'pdf', label: 'PDF', filename: base + '.pdf',
+        render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, buildPaymentDecompteDoc(x)); return w; },
+        blob: async ()=> buildPaymentDecompteDoc(x).output('blob')}]});
+  }catch(e){ alert('تعذّر تجهيز ورقة الدفعة: ' + ((e && e.message) || e)); }
+}
+
 function renderClients(){
   const clients = loadClients();
   const invoices = loadInvoices();
@@ -8907,6 +9112,8 @@ function renderClients(){
         <select id="editProject_${client.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:8px;">
           <option value="">بلا مشروع محدد</option>
         </select>
+        <div style="font-size:11.5px; color:var(--ink-soft); margin:2px 0 6px;">📄 بيانات تظهر فورقة الدفعة (اختيارية)</div>
+        ${_PROV_FIELDS.map(([k, ph])=> `<input type="text" id="editF_${k}_${client.id}" dir="auto" value="${escapeHtml(client[k] || '')}" placeholder="${ph}" style="margin-bottom:8px;">`).join('')}
         <button class="btn-primary" id="editSave_${client.id}">💾 حفظ التعديل</button>
       `;
       fillProjectSelect(editHost.querySelector('#editProject_'+client.id), client.projectId);
@@ -8917,7 +9124,7 @@ function renderClients(){
         if(!newName) return;
         const list = loadClients();
         const c = list.find(x=>x.id === client.id);
-        if(c){ c.name = newName; c.phone = newPhone; c.projectId = newProjectId; saveClients(list); }
+        if(c){ c.name = newName; c.phone = newPhone; c.projectId = newProjectId; _PROV_FIELDS.forEach(([k])=>{ const el2 = document.getElementById('editF_' + k + '_' + client.id); if(el2) c[k] = el2.value.trim(); }); saveClients(list); }
         editClientId = null;
         renderClients();
       });
@@ -8937,19 +9144,20 @@ function renderClients(){
           <div class="inv-acts">
             ${_rem > 0.005
               ? `<button class="lc-btn" data-pay-inv="${inv.id}">💵 دفعة</button><button class="lc-btn" data-full-inv="${inv.id}">✔ تسديد الباقي</button>`
-              : `<button class="lc-btn" data-toggle-inv="${inv.id}">↩️ إلغاء الدفع</button>`}
+              : `<button class="lc-btn" data-toggle-inv="${inv.id}">↩️ إلغاء الدفع</button>${_pays.length ? '' : `<button class="lc-btn" data-print-pay="${inv.id}|__full">🖨 وصل التسديد</button>`}`}
             <button class="lc-btn" data-edit-inv="${inv.id}">✏️</button>
             <button class="lc-btn" data-del-inv="${inv.id}">🗑</button>
           </div>
-          ${_pays.length ? `<div class="inv-pays">${_pays.map(p=> `<div class="inv-pay"><span dir="auto">${escapeHtml(p.date || '')} — ${fmtMAD(p.amount)} درهم${p.note ? ' · ' + escapeHtml(p.note) : ''}</span><button data-del-pay="${inv.id}|${p.id}" title="حذف الدفعة">🗑</button></div>`).join('')}</div>` : ''}
+          ${_pays.length ? `<div class="inv-pays">${_pays.map(p=> `<div class="inv-pay"><span dir="auto">${escapeHtml(p.date || '')} — ${fmtMAD(p.amount)} درهم${p.note ? ' · ' + escapeHtml(p.note) : ''}</span><span style="display:flex; gap:6px;"><button data-print-pay="${inv.id}|${p.id}" title="طباعة الدفعة للتوقيع">🖨</button><button data-del-pay="${inv.id}|${p.id}" title="حذف الدفعة">🗑</button></span></div>`).join('')}</div>` : ''}
           <div class="inv-payform"></div>
         `;
         invListEl.appendChild(row);
         if(payInvId === inv.id && _rem > 0.005){
           const host = row.querySelector('.inv-payform');
-          host.innerHTML = `<input type="number" inputmode="decimal" class="pf-amt" placeholder="المبلغ" value="${_rem}"><input type="date" class="pf-date"><input type="text" class="pf-note" dir="auto" placeholder="ملاحظة (نقدًا / شيك / تحويل...)"><div class="pf-btns"><button class="btn-primary pf-ok">💾 حفظ الدفعة</button><button class="btn-ghost pf-cancel">✖</button></div>`;
+          host.innerHTML = `<input type="number" inputmode="decimal" class="pf-amt" placeholder="المبلغ" value="${_rem}"><input type="date" class="pf-date"><input type="text" class="pf-note" dir="auto" placeholder="ملاحظة (نقدًا / شيك / تحويل...)"><div class="pf-btns"><button class="btn-primary pf-ok">💾 حفظ الدفعة</button><button class="btn-ghost pf-ok-print">💾🖨 حفظ وطباعة</button><button class="btn-ghost pf-cancel">✖</button></div>`;
           host.querySelector('.pf-date').value = todayStr();
           host.querySelector('.pf-ok').addEventListener('click', ()=> addInvoicePayment(inv.id, parseFloat(host.querySelector('.pf-amt').value), host.querySelector('.pf-date').value, host.querySelector('.pf-note').value.trim()));
+          host.querySelector('.pf-ok-print').addEventListener('click', ()=>{ const nid = addInvoicePayment(inv.id, parseFloat(host.querySelector('.pf-amt').value), host.querySelector('.pf-date').value, host.querySelector('.pf-note').value.trim()); if(nid) printPaymentReceipt(inv.id, nid); });
           host.querySelector('.pf-cancel').addEventListener('click', ()=>{ payInvId = null; renderClients(); });
         }
       });
@@ -9070,6 +9278,9 @@ function renderClients(){
   });
   el.querySelectorAll('[data-print-client]').forEach(b=>{
     b.addEventListener('click', ()=> printProviderReport([b.dataset.printClient]));
+  });
+  el.querySelectorAll('[data-print-pay]').forEach(b=>{
+    b.addEventListener('click', ()=>{ const ps = b.dataset.printPay.split('|'); printPaymentReceipt(ps[0], ps[1]); });
   });
   el.querySelectorAll('.lc-del').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -10034,6 +10245,18 @@ function projectFinancials(proj, ctx){
   const amount = +proj.contractAmount || 0, ttc = proj.contractTtc !== false, rate = (proj.contractTva === 0 || proj.contractTva) ? +proj.contractTva : 20;
   const ht = amount ? (ttc ? amount / (1 + rate / 100) : amount) : 0, ttcAmt = amount ? (ttc ? amount : amount * (1 + rate / 100)) : 0;
   const budget = +proj.budget || 0;
+  // الفوترة: الباقي للفوترة، اقتطاع الضمان (على TTC)، التسبيق. نسبة الضمان: من شروط الدفع للمشروع، وإلا من آخر فاتورة فيها نسبة
+  const _pt = proj.payTerms || {}, live = pdfs.filter(i=> !i.cancelled);
+  let rgPct = +_pt.retPct || 0, rgSrc = rgPct ? 'terms' : '';
+  if(!rgPct){ const lr = live.filter(i=> +i.retGarPct > 0).sort((a, b)=> String(a.invDate || '').localeCompare(String(b.invDate || ''))).pop(); if(lr){ rgPct = +lr.retGarPct; rgSrc = 'invoices'; } }
+  const rgDone = round2(live.reduce((s, i)=> s + pdfInvBreakdown(i).rg, 0)), avDone = round2(live.reduce((s, i)=> s + pdfInvBreakdown(i).av, 0));
+  const tb = ttcAmt ? round2(ttcAmt - income) : null;
+  const rgRest = (tb !== null && tb > 0 && rgPct) ? round2(tb * rgPct / 100) : 0;
+  const avTotal = (ttcAmt && +_pt.advPct) ? round2(ttcAmt * (+_pt.advPct) / 100) : 0, avRest = avTotal ? Math.max(0, round2(avTotal - avDone)) : 0;
+  const toBillNet = (tb !== null && tb >= 0 && rgPct) ? round2(tb - rgRest) : null;
+  const billing = {rgPct, rgSrc, rgDone, rgRest, rgTotal: (ttcAmt && rgPct) ? round2(ttcAmt * rgPct / 100) : 0, toBillNet,
+    avPct: +_pt.advPct || 0, avTotal, avDone, avRest, netAfterAv: (toBillNet !== null && avTotal) ? round2(toBillNet - avRest) : null,
+    guarMonths: +_pt.guarMonths || 0, tva: ttcAmt ? round2(ttcAmt - ht) : 0};
   return {
     income, clientsExpense, caisseExpense, purchaseExpense, workerExpense, workerDays, totalExpense, net,
     invoiceCount: pdfs.length + sInv.length, expenseCount: bons.length + purch.length, workerCount: pw.length,
@@ -10042,7 +10265,7 @@ function projectFinancials(proj, ctx){
     budget: {has: budget > 0, amount: budget},
     billedPct: ttcAmt ? income / ttcAmt * 100 : null, toBill: ttcAmt ? ttcAmt - income : null,
     budgetPct: budget ? totalExpense / budget * 100 : null, budgetLeft: budget ? budget - totalExpense : null,
-    margin: ht ? ht - totalExpense : null, marginPct: ht ? (ht - totalExpense) / ht * 100 : null
+    margin: ht ? ht - totalExpense : null, marginPct: ht ? (ht - totalExpense) / ht * 100 : null, billing
   };
 }
 const _pf = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('ar');
@@ -10051,12 +10274,47 @@ function _projBar(pct, color){
   const w = Math.max(0, Math.min(100, +pct || 0));
   return '<div style="height:7px; background:var(--stone-deep); border-radius:6px; overflow:hidden; margin:3px 0 2px;"><div style="height:100%; width:' + w + '%; background:' + color + ';"></div></div>';
 }
+function _projRow(label, val, o){
+  o = o || {};
+  return '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;' + (o.top ? ' border-top:1px dashed var(--line); padding-top:6px; margin-top:2px;' : '') + '">'
+    + '<span style="' + (o.bold ? 'font-weight:700; color:var(--ink);' : 'color:var(--ink-soft);') + '">' + label + '</span>'
+    + '<span dir="ltr" style="white-space:nowrap; font-weight:' + (o.bold ? 800 : 600) + ';' + (o.color ? ' color:' + o.color + ';' : '') + '">' + val + '</span></div>';
+}
 function _projCmpHtml(f){
-  const c = f.contract, b = f.budget, parts = [];
+  const c = f.contract, b = f.budget, bl = f.billing, parts = [];
+  const dh = n => _pf(n) + ' د';
   if(c.has){
-    parts.push('<div>📑 <b>ثمن الصفقة:</b> ' + _pf(c.amount) + ' درهم <span style="color:var(--ink-soft);">(' + (c.ttc ? 'TTC' : 'HT') + (c.ref ? ' · ' + escapeHtml(c.ref) : '') + ')</span></div>'
-      + _projBar(f.billedPct, f.billedPct > 100 ? '#b91c1c' : '#1C6FA5')
-      + '<div style="color:var(--ink-soft);">المفوتر (TTC): ' + _pf(f.income) + ' = <b>' + _pp(f.billedPct) + '</b> من الصفقة · ' + (f.toBill >= 0 ? 'باقي للفوترة: ' + _pf(f.toBill) : 'تفوتر أكثر من الصفقة بـ ' + _pf(-f.toBill)) + ' درهم</div>');
+    let h = '<div style="font-weight:700;">📑 الصفقة والفوترة</div>';
+    h += _projRow('ثمن الصفقة HT', dh(c.ht)) + _projRow('TVA ' + c.rate + '%', dh(bl.tva)) + _projRow('ثمن الصفقة TTC' + (c.ref ? ' · ' + escapeHtml(c.ref) : ''), dh(c.ttcAmt), {bold: true, top: true});
+    h += _projBar(f.billedPct, f.billedPct > 100 ? '#b91c1c' : '#1C6FA5');
+    h += _projRow('المفوتر TTC (' + _pp(f.billedPct) + ' من الصفقة)', dh(f.income));
+    if(f.toBill >= 0){
+      h += _projRow('الباقي للفوترة (TTC)', dh(f.toBill), {bold: true, top: true});
+      if(bl.rgPct){
+        h += _projRow('اقتطاع الضمان ' + _pp(bl.rgPct) + ' على الباقي' + (bl.rgSrc === 'invoices' ? ' (حسب آخر فاتورة)' : ''), '− ' + dh(bl.rgRest));
+        h += _projRow('الباقي للفوترة بعد اقتطاع الضمان', dh(bl.toBillNet), {bold: true, color: '#2e7d32', top: true});
+      } else {
+        h += '<div style="color:#b45309; font-size:11px;">⚠️ نسبة اقتطاع الضمان غير محددة. سجّلها فـ "💳 تفاصيل الدفع" باش يبان الباقي للفوترة بعد الضمان.</div>';
+      }
+    } else {
+      h += '<div style="color:#b91c1c; font-weight:700;">⚠️ تفوتر أكثر من الصفقة بـ ' + dh(-f.toBill) + ' (واش كاين ملحق ما تسجّلش؟)</div>';
+    }
+    if(bl.rgDone || bl.rgTotal){
+      h += '<div style="margin-top:2px; border-top:1px dashed var(--line); padding-top:6px; display:flex; flex-direction:column; gap:3px;">';
+      if(bl.rgTotal) h += _projRow('إجمالي الضمان المتوقع على الصفقة', dh(bl.rgTotal));
+      h += _projRow('الضمان المقتطع فالفواتير لحد الآن', dh(bl.rgDone));
+      if(bl.guarMonths) h += _projRow('مدة الضمان', bl.guarMonths + ' شهر');
+      h += '</div>';
+    }
+    if(bl.avTotal){
+      h += '<div style="margin-top:2px; border-top:1px dashed var(--line); padding-top:6px; display:flex; flex-direction:column; gap:3px;">'
+        + _projRow('التسبيق ' + _pp(bl.avPct) + ' (تقديري)', dh(bl.avTotal)) + _projRow('المسترجع من الفواتير', dh(bl.avDone)) + _projRow('التسبيق المتبقي للاسترجاع', dh(bl.avRest));
+      if(bl.netAfterAv !== null) h += _projRow('الصافي المتوقع تحصيله بعد الضمان والتسبيق', dh(bl.netAfterAv), {bold: true});
+      h += '</div>';
+    }
+    parts.push(h);
+  } else if(f.income){
+    parts.push('<div>🧾 المفوتر TTC: <b>' + _pf(f.income) + '</b> درهم <span style="color:var(--ink-soft);">(ثمن الصفقة غير مسجل)</span></div>');
   }
   if(b.has){
     const over = f.budgetPct > 100, warn = !over && f.budgetPct >= 90, col = over ? '#b91c1c' : (warn ? '#ef8a17' : '#2e9e57');
@@ -10079,6 +10337,7 @@ function _projSnapshotText(){
     L.push(`- ${proj.name}: الدخل (المفوتر TTC) ${R(f.income)} درهم، المصاريف ${R(f.totalExpense)} درهم (مقدمو الخدمات ${R(f.clientsExpense)} + مشتريات الموردين ${R(f.purchaseExpense)} + السيولة ${R(f.caisseExpense)} + أجور الأجراء ${R(f.workerExpense)})، الصافي ${R(f.net)} درهم`);
     if(c.has) L.push(`  · الصفقة: ثمن ${R(c.amount)} درهم (${c.ttc ? 'TTC' : 'HT'}${c.ref ? '، مرجع ' + c.ref : ''}) = HT ${R(c.ht)} / TTC ${R(c.ttcAmt)} — المفوتر ${P(f.billedPct)} من الصفقة، ${f.toBill >= 0 ? 'باقي للفوترة ' + R(f.toBill) : 'تفوتر أكثر من الصفقة بـ ' + R(-f.toBill)} درهم`);
     else L.push('  · ثمن الصفقة: ماكاينش مسجل فقسم المشاريع');
+    if(c.has && f.toBill >= 0){ const bl = f.billing; L.push(`  · الباقي للفوترة (TTC) ${R(f.toBill)} درهم` + (bl.rgPct ? ` — اقتطاع الضمان ${bl.rgPct}% = ${R(bl.rgRest)} درهم، الباقي للفوترة بعد اقتطاع الضمان ${R(bl.toBillNet)} درهم` : ' — نسبة اقتطاع الضمان غير محددة') + (bl.rgDone ? `، الضمان المقتطع لحد الآن ${R(bl.rgDone)} درهم` : '')); }
     if(b.has) L.push(`  · الميزانية المخصصة: ${R(b.amount)} درهم — المصروف ${P(f.budgetPct)}، ${f.budgetLeft >= 0 ? 'المتبقي ' + R(f.budgetLeft) : 'تجاوز الميزانية بـ ' + R(-f.budgetLeft)} درهم${f.budgetPct > 100 ? ' ⚠️ تجاوز' : (f.budgetPct >= 90 ? ' ⚠️ قريبة تسالي' : '')}`);
     else L.push('  · الميزانية المخصصة: ماكاينش مسجلة فقسم المشاريع');
     if(c.has) L.push(`  · الهامش المتوقع (ثمن الصفقة HT − المصاريف): ${R(f.margin)} درهم (${P(f.marginPct)})`);
@@ -10110,6 +10369,17 @@ function buildProjectReport(proj){
     rec.push(['Montant du marché TTC', N(C.ttcAmt), '100 %', C.ttc ? 'Montant saisi TTC' : 'TVA ' + C.rate + ' %']);
     rec.push(['Facturé à ce jour (TTC)', N(f.income), pc(f.income, C.ttcAmt), 'Factures de vente liées au projet']);
     rec.push([f.toBill >= 0 ? 'Reste à facturer (TTC)' : 'Facturation au-delà du marché (TTC)', N(Math.abs(f.toBill)), pc(Math.abs(f.toBill), C.ttcAmt), f.toBill < 0 ? 'Vérifier : avenant non enregistré ?' : '']);
+    const BL = f.billing;
+    if(f.toBill >= 0 && BL.rgPct){
+      rec.push(['Retenue de garantie (' + BL.rgPct + ' %) sur le reste à facturer', N(-BL.rgRest), pc(BL.rgRest, C.ttcAmt), BL.rgSrc === 'invoices' ? 'Taux repris de la dernière facture (non défini dans les modalités de paiement)' : 'Taux selon les modalités de paiement du projet']);
+      rec.push(['Reste à facturer après retenue de garantie (TTC)', N(BL.toBillNet), pc(BL.toBillNet, C.ttcAmt), '']);
+    } else if(f.toBill >= 0) rec.push(['Reste à facturer après retenue de garantie', '', '', 'Taux de retenue non défini : à renseigner dans « Modalités de paiement »']);
+    if(BL.rgDone) rec.push(['Retenue de garantie déjà opérée sur les factures émises', N(BL.rgDone), pc(BL.rgDone, C.ttcAmt), BL.rgTotal ? 'Retenue totale prévue : ' + fmtNum(BL.rgTotal) + ' MAD' : '']);
+    if(BL.avTotal){
+      rec.push(['Avance de démarrage prévue (' + BL.avPct + ' %)', N(BL.avTotal), pc(BL.avTotal, C.ttcAmt), 'Estimation sur le marché TTC']);
+      rec.push(['Avance déjà déduite des factures', N(BL.avDone), '', '']);
+      rec.push(['Avance restant à récupérer', N(BL.avRest), '', '']);
+    }
   } else rec.push(['Facturé à ce jour (TTC)', N(f.income), '', 'Montant du marché non renseigné']);
   if(B.has){
     rec.push(['Budget alloué (dépenses)', N(B.amount), '100 %', '']);
