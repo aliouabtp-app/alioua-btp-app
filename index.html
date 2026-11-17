@@ -1803,6 +1803,8 @@ input, select, textarea{ min-width:0; }
           <select id="workerProject" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-top:8px;">
             <option value="">بلا مشروع محدد</option>
           </select>
+          <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin:10px 0 4px;">📅 تاريخ بداية العمل (كيبان فأوراق الأداء من هاد التاريخ)</label>
+          <input type="date" id="workerStart">
           <button class="btn-primary" id="workerAddBtn" style="margin-top:10px;">➕ إضافة أجير</button>
         </div>
         <div class="card-form" id="pointageCard" style="margin-top:12px;">
@@ -8912,7 +8914,7 @@ document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
     if(btn.dataset.sub === 'subCustomers') renderCustomers();
     if(btn.dataset.sub === 'subSuppliers') renderSuppliers();
     if(btn.dataset.sub === 'subCaisse'){ renderCaisse(); }
-    if(btn.dataset.sub === 'subWorkers'){ fillProjectSelect(document.getElementById('workerProject')); renderWorkers(); }
+    if(btn.dataset.sub === 'subWorkers'){ wProjSel = null; fillProjectSelect(document.getElementById('workerProject')); try{ const _ws = document.getElementById('workerStart'); if(_ws && !_ws.value) _ws.value = todayStr(); }catch(e){} renderWorkers(); }
     if(btn.dataset.sub === 'subProjects'){ renderProjects(); }
   });
 });
@@ -10958,16 +10960,76 @@ document.getElementById('workerAddBtn')?.addEventListener('click', ()=>{
   const projectId = document.getElementById('workerProject').value;
   if(!name || !wage) return;
   const list = loadWorkers();
-  list.push({id:'w'+Date.now(), name, type, wage, phone, projectId, cin: (document.getElementById('workerCin')?.value || '').trim(), fonction: (document.getElementById('workerFonction')?.value || '').trim()});
+  list.push({id:'w'+Date.now(), name, type, wage, phone, projectId, cin: (document.getElementById('workerCin')?.value || '').trim(), fonction: (document.getElementById('workerFonction')?.value || '').trim(), startDate: (document.getElementById('workerStart')?.value || todayStr())});
+  wProjSel = projectId || '__none__';
   saveWorkers(list);
   document.getElementById('workerName').value = '';
   document.getElementById('workerWage').value = '';
   document.getElementById('workerPhone').value = '';
-  try{ document.getElementById('workerCin').value = ''; document.getElementById('workerFonction').value = ''; }catch(e){}
+  try{ document.getElementById('workerCin').value = ''; document.getElementById('workerFonction').value = ''; document.getElementById('workerStart').value = todayStr(); }catch(e){}
   renderWorkers();
 });
 
 let attHistoryWorkerId = null;
+let wProjSel = null; // null = لائحة المشاريع | معرّف المشروع | '__none__' = بلا مشروع
+const wProjKey = w=> w.projectId || '__none__';
+function wStartDate(w, att, ex){
+  if(w.startDate) return w.startDate;
+  let m = '';
+  const cr = /^w(\d{10,})$/.exec(w.id || ''); if(cr){ const d = new Date(+cr[1]); m = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
+  (att || []).concat(ex || []).forEach(x=>{ if(x.workerId === w.id && x.date && (!m || x.date < m)) m = x.date; });
+  return m;
+}
+function wEndDate(w){ return w.endDate || (w.status === 'stopped' ? (w.stoppedAt || '') : ''); }
+function wProjHeader(n){
+  const d = document.createElement('div'); d.className = 'list-card';
+  const nm = wProjSel === '__none__' ? 'بلا مشروع محدد' : (projectNameById(wProjSel) || 'مشروع غير معروف');
+  d.innerHTML = '<div class="lc-row"><div class="lc-body"><div class="lc-title" dir="auto" style="text-align:right;">🏗 ' + escapeHtml(nm) + '</div><div class="lc-meta">' + n + ' أجراء فهاد المشروع</div></div><button class="lc-btn" id="wProjBack">◀ كل المشاريع</button></div>';
+  d.querySelector('#wProjBack').onclick = ()=>{ wProjSel = null; renderWorkers(); };
+  return d;
+}
+function renderWorkersProjects(el, workers, attendance, today){
+  const groups = new Map();
+  loadProjects().forEach(pj=> groups.set(pj.id, {key: pj.id, name: pj.name, ws: []}));
+  workers.forEach(w=>{
+    const k = wProjKey(w);
+    if(!groups.has(k)) groups.set(k, {key: k, name: k === '__none__' ? 'بلا مشروع محدد' : (projectNameById(k) || 'مشروع غير معروف'), ws: []});
+    groups.get(k).ws.push(w);
+  });
+  el.innerHTML = '<p class="mini-title" style="margin:0 0 8px;">🏗 اختار المشروع باش تشوف أجراءه</p>';
+  groups.forEach(g=>{
+    const active = g.ws.filter(w=> w.status !== 'stopped').length, stopped = g.ws.length - active;
+    const ids = new Set(g.ws.map(w=> w.id));
+    const present = attendance.filter(a=> a.date === today && ids.has(a.workerId) && (a.status === 'present' || a.status === 'half')).length;
+    const card = document.createElement('div'); card.className = 'list-card'; card.style.cursor = 'pointer'; card.setAttribute('role', 'button');
+    card.innerHTML = '<div class="lc-row"><div class="lc-body"><div class="lc-title" dir="auto" style="text-align:right;">🏗 ' + escapeHtml(g.name) + '</div><div class="lc-meta">' +
+      (g.ws.length ? ('👷 ' + active + ' أجراء نشيطين' + (stopped ? ' · 🏁 ' + stopped + ' موقوف' : '') + ' · ✅ ' + present + ' حاضر اليوم') : 'ماكاين حتى أجير فهاد المشروع') +
+      '</div></div><span style="font-size:18px; color:var(--ink-soft);">◀</span></div>';
+    card.onclick = ()=>{ wProjSel = g.key; const sel = document.getElementById('workerProject'); if(sel) sel.value = g.key === '__none__' ? '' : g.key; renderWorkers(); };
+    el.appendChild(card);
+  });
+}
+function renderLeaveForm(host, w){
+  const today = todayStr();
+  if(w.endDate){
+    host.innerHTML = '<div style="font-size:12.5px; margin-bottom:8px;">🚪 غادر العمل يوم <b>' + frDate(w.endDate) + '</b> — ما كيبانش فأوراق الأداء الجماعية للفترات اللي من بعد هاد التاريخ.</div><button class="lc-btn" id="lvCancel_' + w.id + '">↩ إلغاء المغادرة (رجع للعمل)</button>';
+    host.querySelector('#lvCancel_' + w.id).onclick = ()=>{
+      if(!confirm('إلغاء مغادرة ' + w.name + ' ؟')) return;
+      const ws = loadWorkers(), t = ws.find(x=> x.id === w.id); if(t){ delete t.endDate; saveWorkers(ws); } renderWorkers();
+    };
+    return;
+  }
+  host.innerHTML = '<div style="font-size:12px; font-weight:700; margin-bottom:6px;">🚪 مغادرة ' + escapeHtml(w.name) + ' العمل</div>' +
+    '<label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">آخر يوم عمل</label>' +
+    '<input type="date" id="lvDate_' + w.id + '" value="' + today + '" style="margin-bottom:6px;">' +
+    '<div style="font-size:11.5px; color:var(--ink-soft);">من بعد هاد التاريخ ما غاديش يبان فأوراق الأداء الجماعية. الكشوف والأداءات السابقة كتبقى محفوظة، وتقدر تأدي ليه ما بقى ليه.</div>' +
+    '<button class="btn-primary" id="lvSave_' + w.id + '" style="margin-top:8px;">🚪 تأكيد المغادرة</button>';
+  host.querySelector('#lvSave_' + w.id).onclick = ()=>{
+    const d = host.querySelector('#lvDate_' + w.id).value || today;
+    if(!confirm('تسجيل مغادرة ' + w.name + ' (آخر يوم عمل ' + frDate(d) + ') ؟')) return;
+    const ws = loadWorkers(), t = ws.find(x=> x.id === w.id); if(t){ t.endDate = d; saveWorkers(ws); } renderWorkers();
+  };
+}
 // (دوال الأداء كل 15 يوم تأتي بعد renderWorkersBase)
 let editAttId = null;
 let payslipWorkerId = null;
@@ -10984,12 +11046,16 @@ function markAttendance(workerId, status, dateOverride){
 }
 
 function renderWorkersBase(){
-  const workers = loadWorkers();
+  const allWorkers = loadWorkers();
   const attendance = loadAttendance();
   const el = document.getElementById('workersList');
-  if(!workers.length){ el.innerHTML = '<div class="empty-hint">ماكاينش أجراء مسجلين بعد. ضيفي أول أجير فوق ⬆️</div>'; return; }
+  if(!allWorkers.length){ el.innerHTML = '<div class="empty-hint">ماكاينش أجراء مسجلين بعد. ضيفي أول أجير فوق ⬆️</div>'; return; }
   const today = new Date().toISOString().slice(0,10);
+  if(wProjSel === null){ renderWorkersProjects(el, allWorkers, attendance, todayStr()); return; }
+  const workers = allWorkers.filter(w=> wProjKey(w) === wProjSel);
   el.innerHTML = '';
+  el.appendChild(wProjHeader(workers.length));
+  if(!workers.length){ const h = document.createElement('div'); h.className = 'empty-hint'; h.textContent = 'ماكاين حتى أجير فهاد المشروع بعد. ضيف أول أجير من الفورم لفوق ⬆️'; el.appendChild(h); }
   workers.forEach(w=>{
     const wAtt = attendance.filter(a=>a.workerId===w.id).sort((a,b)=> new Date(b.date)-new Date(a.date));
     const todayRec = wAtt.find(a=>a.date===today);
@@ -11123,6 +11189,8 @@ function renderWorkersBase(){
         <select id="editWProject_${w.id}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:13px; font-family:inherit; background:var(--stone); color:var(--ink); margin-bottom:8px;">
           <option value="">بلا مشروع محدد</option>
         </select>
+        <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">📅 تاريخ بداية العمل</label>
+        <input type="date" id="editWStart_${w.id}" value="${wStartDate(w, wAtt, loadExtras())}" style="margin-bottom:8px;">
         <button class="btn-primary" id="editWSave_${w.id}">💾 حفظ التعديل</button>
       `;
       fillProjectSelect(editHost.querySelector('#editWProject_'+w.id), w.projectId);
@@ -11139,6 +11207,7 @@ function renderWorkersBase(){
           target.phone = document.getElementById('editWPhone_'+w.id).value.trim();
           target.cin = document.getElementById('editWCin_'+w.id).value.trim(); target.fonction = document.getElementById('editWFon_'+w.id).value.trim();
           target.projectId = document.getElementById('editWProject_'+w.id).value;
+          target.startDate = document.getElementById('editWStart_'+w.id).value || target.startDate || '';
           saveWorkers(list);
         }
         editWorkerId = null;
@@ -11297,13 +11366,15 @@ function renderWorkers(){
     const card = btn.closest('.list-card'); if(!card) return;
     const bar = document.createElement('div'); bar.className = 'lc-actions'; bar.style.marginTop = '6px';
     const mk = (k, label)=> `<button class="lc-btn" data-wui="${k}" style="${wUi[w.id]===k?'background:#d1fae5;':''}">${label}</button>`;
-    const _du = calcAllUnpaid(w); bar.innerHTML = mk('pay','💸 أداء 15 يوم' + (_du ? ' (' + _du.rows.length + ')' : '')) + mk('extrapay','💰 أداء الإضافي' + (unpaidExtras(w).length ? ' (' + unpaidExtras(w).length + ')' : '')) + mk('log','📜 سجل الأداءات') + mk('extraday','➕ يوم إضافي') + mk('extrahours','⏱ ساعات إضافية') + mk('settle', w.status === 'stopped' ? '🏁 المخالصة (موقوف)' : '🏁 مخالصة نهائية');
+    const _du = calcAllUnpaid(w); bar.innerHTML = mk('pay','💸 أداء 15 يوم' + (_du ? ' (' + _du.rows.length + ')' : '')) + mk('extrapay','💰 أداء الإضافي' + (unpaidExtras(w).length ? ' (' + unpaidExtras(w).length + ')' : '')) + mk('log','📜 سجل الأداءات') + mk('extraday','➕ يوم إضافي') + mk('extrahours','⏱ ساعات إضافية') + mk('leave', w.endDate ? '🚪 غادر ✓' : '🚪 مغادرة العمل') + mk('settle', w.status === 'stopped' ? '🏁 المخالصة (موقوف)' : '🏁 مخالصة نهائية');
     const host = document.createElement('div');
     if(w.status === 'stopped'){
       const bd = document.createElement('div'); bd.style.cssText = 'margin-top:6px; padding:6px 10px; background:#fee2e2; color:#991b1b; border-radius:10px; font-size:12px; font-weight:700;';
       bd.textContent = '🏁 موقوف منذ ' + frDate(w.stoppedAt); card.appendChild(bd);
       card.querySelectorAll('[data-att]').forEach(b=>{ b.disabled = true; b.style.opacity = '.4'; });
     }
+    if(w.status !== 'stopped' && w.endDate){ const lb = document.createElement('div'); lb.style.cssText = 'margin-top:6px; padding:6px 10px; background:#fef3c7; color:#92400e; border-radius:10px; font-size:12px; font-weight:700;'; lb.textContent = '🚪 غادر العمل يوم ' + frDate(w.endDate); card.appendChild(lb); }
+    if(w.startDate){ const sb = document.createElement('div'); sb.style.cssText = 'margin-top:6px; font-size:11.5px; color:var(--ink-soft);'; sb.textContent = '📅 بدأ العمل يوم ' + frDate(w.startDate); card.appendChild(sb); }
     card.appendChild(bar); card.appendChild(host);
     bar.querySelectorAll('[data-wui]').forEach(b=> b.onclick = ()=>{ wUi[w.id] = (wUi[w.id]===b.dataset.wui) ? null : b.dataset.wui; renderWorkers(); });
     const mode = wUi[w.id]; if(!mode) return;
@@ -11356,6 +11427,8 @@ function renderWorkers(){
         const ab = host.querySelector('#exAll_'+w.id); if(ab) ab.onclick = ()=> payExtras(ux);
         host.querySelectorAll('[data-exdel2]').forEach(b=> b.onclick = ()=> deleteExtraWithConfirm(ux[+b.dataset.exdel2], w));
       }
+    }else if(mode === 'leave'){
+      renderLeaveForm(host, w);
     }else if(mode === 'settle'){
       renderSettleForm(host, w);
     }else if(mode === 'log'){
@@ -12337,7 +12410,12 @@ function buildPointageSheet(projectId, pr){
   const y = +pr.from.slice(0, 4), m = +pr.from.slice(5, 7), d1 = +pr.from.slice(8), d2 = +pr.to.slice(8), rows = [];
   ws.forEach(w=>{
     const a = att.filter(x=> x.workerId === w.id && x.date >= pr.from && x.date <= pr.to), e = ex.filter(x=> x.workerId === w.id && x.date >= pr.from && x.date <= pr.to);
-    if(w.status === 'stopped' && !a.length && !e.length) return;
+    if(!a.length && !e.length){
+      const st0 = wStartDate(w, att, ex), en0 = wEndDate(w);
+      if(st0 && st0 > pr.to) return;
+      if(en0 && en0 < pr.from) return;
+      if(w.status === 'stopped' && !en0) return;
+    }
     const c = workerCalc(w, a, e, 0.5, false), days = [];
     for(let d = d1; d <= d2; d++){
       const ds = pr.from.slice(0, 8) + p2(d), rec = a.find(x=> x.date === ds), xs = e.filter(x=> x.date === ds);
@@ -12589,7 +12667,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 17-11-2026 (د)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 17-11-2026 (هـ)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -12597,7 +12675,7 @@ if('serviceWorker' in navigator){
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='intro-2026-11-17d';
+    const BUILD='intro-2026-11-17e';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
