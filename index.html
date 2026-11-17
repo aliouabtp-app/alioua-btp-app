@@ -391,6 +391,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 .acc-c b.inc{ color:#1C7C3F; }
 .acc-c b.exp{ color:#7C241C; }
 .acc-d{ font-size:11px; font-weight:700; }
+.acc-n{ direction:ltr; unicode-bidi:isolate; display:inline-block; }
 .acc-d.ok{ color:#1C7C3F; }
 .acc-d.bad{ color:#B3362B; }
 .chart-share-btn{
@@ -720,7 +721,7 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 .tx-item .tx-body{ flex:1; min-width:0; }
 .tx-item .tx-cat{ font-size:13px; font-weight:700; color:var(--ink); }
 .tx-item .tx-meta{ font-size:10.5px; color:var(--ink-soft); margin-top:2px; }
-.tx-item .tx-amt{ font-family:'IBM Plex Mono', monospace; font-weight:800; font-size:13px; white-space:nowrap; }
+.tx-item .tx-amt{ font-family:'IBM Plex Mono', monospace; font-weight:800; font-size:13px; white-space:nowrap; direction:ltr; unicode-bidi:isolate; }
 .tx-item.income .tx-amt{ color:#1C7C3F; }
 .tx-item.expense .tx-amt{ color:var(--maroon); }
 .tx-item .tx-del{ background:none; border:none; color:var(--ink-soft); font-size:14px; cursor:pointer; }
@@ -7961,7 +7962,9 @@ function renderAccountingBase(){
       const cInk = (css.getPropertyValue('--ink-soft') || '#5B6670').trim();
       const cLine = (css.getPropertyValue('--line') || '#D7DEE4').trim();
       const BLUE = '#1C6FA5';
-      const nfk = (n)=> Math.round(n).toLocaleString('fr-FR').replace(/[\u202f\u00a0]/g, ' ');
+      const nfk = (n)=> Math.round(n).toLocaleString('fr-FR').replace(/[\u202f\u00a0 ]/g, '\u00a0');
+      const LTR = (t)=> '\u2066' + t + '\u2069';
+      const N = (t)=> '<span class="acc-n">' + t + '</span>';
       const netM = months.map((m,i)=> incData[i] - expData[i]);
       let _run = 0;
       const cum = netM.map(v=> (_run += v));
@@ -7998,15 +8001,15 @@ function renderAccountingBase(){
         if(!(prev > 0)) return '';
         const d = Math.round((cur - prev) / prev * 100);
         if(!d) return '';
-        return '<span class="acc-d ' + ((d > 0) === goodUp ? 'ok' : 'bad') + '">' + (d > 0 ? '▲' : '▼') + ' ' + Math.abs(d) + '%</span>';
+        return '<span class="acc-d acc-n ' + ((d > 0) === goodUp ? 'ok' : 'bad') + '">' + (d > 0 ? '▲' : '▼') + ' ' + Math.abs(d) + '%</span>';
       };
       const fillInfo = ()=>{
         if(!info) return;
         const m = months[sel], pi = sel - 1;
         let h = '<div class="acc-ttl">' + m.full + ' (درهم)' + (sel === last ? ' · الشهر الحالي' : '') + '</div><div class="acc-row">';
-        if(!_emp) h += '<div class="acc-c"><span>دخل</span><b class="inc">' + nfk(incData[sel]) + '</b>' + (pi >= 0 ? chip(incData[sel], incData[pi], true) : '') + '</div>';
-        h += '<div class="acc-c"><span>مصروف</span><b class="exp">' + nfk(expData[sel]) + '</b>' + (pi >= 0 ? chip(expData[sel], expData[pi], false) : '') + '</div>';
-        if(!_emp) h += '<div class="acc-c"><span>صافي الشهر</span><b class="' + (netM[sel] >= 0 ? 'inc' : 'exp') + '">' + (netM[sel] >= 0 ? '+' : '−') + nfk(Math.abs(netM[sel])) + '</b></div>';
+        if(!_emp) h += '<div class="acc-c"><span>دخل</span><b class="inc">' + N(nfk(incData[sel])) + '</b>' + (pi >= 0 ? chip(incData[sel], incData[pi], true) : '') + '</div>';
+        h += '<div class="acc-c"><span>مصروف</span><b class="exp">' + N(nfk(expData[sel])) + '</b>' + (pi >= 0 ? chip(expData[sel], expData[pi], false) : '') + '</div>';
+        if(!_emp) h += '<div class="acc-c"><span>صافي الشهر</span><b class="' + (netM[sel] >= 0 ? 'inc' : 'exp') + '">' + N((netM[sel] >= 0 ? '+' : '-') + nfk(Math.abs(netM[sel]))) + '</b></div>';
         info.innerHTML = h + '</div>';
       };
 
@@ -8046,13 +8049,13 @@ function renderAccountingBase(){
               titleFont:{ family:FONT, size:12, weight:'600' }, bodyFont:{ family:FONT, size:12 },
               callbacks:{
                 title:(it)=> months[it[0].dataIndex].full,
-                label:(c)=> ' ' + c.dataset.label + ': ' + nfk(c.parsed.y) + ' DH'
+                label:(c)=> ' ' + c.dataset.label + ': ' + LTR(nfk(c.parsed.y) + ' DH')
               }
             }
           },
           scales:{
             y:{ beginAtZero:true, grid:{ color:cLine }, border:{ display:false },
-                ticks:{ color:cInk, maxTicksLimit:6, font:{ family:"'IBM Plex Mono'", size:10 }, callback:(v)=> Math.abs(v) >= 1000 ? (v / 1000) + 'k' : v } },
+                ticks:{ color:cInk, maxTicksLimit:6, font:{ family:"'IBM Plex Mono'", size:10 }, callback:(v)=> LTR((v < 0 ? '-' : '') + (Math.abs(v) >= 1000 ? (Math.abs(v) / 1000) + 'k' : Math.abs(v))) } },
             x:{ grid:{ display:false },
                 ticks:{ autoSkip:false, maxRotation:0, color:(c)=> c.index === sel ? '#123F5C' : cInk, font:(c)=>({ family:FONT, size:11, weight: c.index === sel ? '700' : '400' }) } }
           }
@@ -11184,12 +11187,25 @@ function renderWorkersBase(){
 /* ---------- الأداء كل 15 يوم + سجل الأداءات + الأيام/الساعات الإضافية ---------- */
 const WORKER_PAYMENTS_KEY = 'alioua_btp_worker_payments';
 const WORKER_EXTRAS_KEY = 'alioua_btp_worker_extras';
-const OT_RATE = 1.25;      // الساعة الإضافية = 125% من الساعة العادية
-const DAY_HOURS = 8;       // ساعات اليوم العادي
+const OT_RATE = 1;         // الساعة الإضافية = ثمن اليوم ÷ 9 ساعات، بلا أي زيادة
+const DAY_HOURS = 9;       // ساعات اليوم (المقسوم عليها ثمن اليوم)
 const MONTHLY_DAY_DIV = 26; // يوم عمل = الراتب الشهري ÷ 26
 function p2(n){ return String(n).padStart(2,'0'); }
 function curMonthPrefix(){ const d = new Date(); return d.getFullYear() + '-' + p2(d.getMonth()+1); }
 function loadExtras(){ try{ return JSON.parse(LS.getItem(WORKER_EXTRAS_KEY)||'[]'); }catch(e){ return []; } }
+function deleteExtraWithConfirm(x, w){
+  if(!x) return false;
+  const rs = loadWPayments().filter(k=>k.workerId===x.workerId && !k.extrasOnly).map(k=>[k.from, k.to]);
+  if(paidExtraIds().has(x.id) || rs.some(r=> x.date >= r[0] && x.date <= r[1])){
+    alert('هاد الإضافي مؤدّى. امسح الأداء ديالو من سجل الأداءات 📜 أولاً، ومن بعد امسح الإضافي.');
+    return false;
+  }
+  const what = x.kind === 'day' ? x.qty + ' يوم إضافي' : x.qty + ' ساعة إضافية';
+  if(!confirm('مسح ' + what + (w ? ' ديال ' + w.name : '') + ' بتاريخ ' + String(x.date).split('-').reverse().join('/') + ' ؟\n(ما غاديش يتحسب فالأجر ولا فالمحاسبة)')) return false;
+  saveExtras(loadExtras().filter(k=> k.id !== x.id));
+  renderWorkers();
+  return true;
+}
 function saveExtras(l){ safeSetItem(WORKER_EXTRAS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); try{ renderAccounting(); }catch(e){} }
 function loadWPayments(){ try{ return JSON.parse(LS.getItem(WORKER_PAYMENTS_KEY)||'[]'); }catch(e){ return []; } }
 function saveWPayments(l){ safeSetItem(WORKER_PAYMENTS_KEY, JSON.stringify(l)); if(typeof scheduleCloudSync === 'function') scheduleCloudSync(); }
@@ -11322,7 +11338,7 @@ function renderWorkers(){
       if(!ux.length){ host.innerHTML = '<span style="color:var(--ink-soft); font-size:12.5px;">✅ ما كاين حتى يوم أو ساعات إضافية غير مؤدّاة. سجّلهم بالأزرار ➕ يوم إضافي / ⏱ ساعات إضافية.</span>'; }
       else{
         const sumAll = ux.reduce((t,x)=> t + amt(x), 0);
-        host.innerHTML = ux.map((x,i)=>`<div class="lc-row" style="border-top:${i?'1px solid var(--line)':'0'}; padding:8px 0; align-items:center;"><div class="lc-body" style="font-size:12.5px; line-height:1.7;"><b dir="ltr" style="display:block;text-align:right;">${x.kind==='day' ? '➕ '+x.qty+' يوم إضافي' : '⏱ '+x.qty+' ساعة إضافية'} — ${dm(x.date)}</b>${x.note ? '<span style="font-size:11.5px; color:var(--ink-soft);">'+escapeHtml(x.note)+'</span>' : ''}</div><button class="btn-primary" data-payex="${i}" style="flex:0 0 auto; width:auto; padding:9px 12px; font-size:12.5px;">💸 أدّي ${money(amt(x))}</button></div>`).join('') +
+        host.innerHTML = ux.map((x,i)=>`<div class="lc-row" style="border-top:${i?'1px solid var(--line)':'0'}; padding:8px 0; align-items:center;"><div class="lc-body" style="font-size:12.5px; line-height:1.7;"><b dir="ltr" style="display:block;text-align:right;">${x.kind==='day' ? '➕ '+x.qty+' يوم إضافي' : '⏱ '+x.qty+' ساعة إضافية'} — ${dm(x.date)}</b>${x.note ? '<span style="font-size:11.5px; color:var(--ink-soft);">'+escapeHtml(x.note)+'</span>' : ''}</div><button class="btn-primary" data-payex="${i}" style="flex:0 0 auto; width:auto; padding:9px 12px; font-size:12.5px;">💸 أدّي ${money(amt(x))}</button><button class="lc-del" data-exdel2="${i}" aria-label="مسح هذا الإضافي" title="مسح (لم توافق عليه الإدارة)">🗑</button></div>`).join('') +
           (ux.length > 1 ? `<button class="btn-ghost" id="exAll_${w.id}" style="margin-top:8px; width:100%;">📆 أدّي كل الإضافي (${money(sumAll)})</button>` : '');
         const payExtras = list=>{
           const sel = list.map(x=> ({x, c: workerCalc(w, [], [x], 0, false)}));
@@ -11338,6 +11354,7 @@ function renderWorkers(){
         };
         host.querySelectorAll('[data-payex]').forEach(b=> b.onclick = ()=> payExtras([ux[+b.dataset.payex]]));
         const ab = host.querySelector('#exAll_'+w.id); if(ab) ab.onclick = ()=> payExtras(ux);
+        host.querySelectorAll('[data-exdel2]').forEach(b=> b.onclick = ()=> deleteExtraWithConfirm(ux[+b.dataset.exdel2], w));
       }
     }else if(mode === 'settle'){
       renderSettleForm(host, w);
@@ -11350,7 +11367,7 @@ function renderWorkers(){
         `<div style="font-size:12px; font-weight:700; margin:12px 0 4px;">⏱ الأيام والساعات الإضافية</div>` +
         (exs.length ? exs.map(x=>`<div class="lc-row" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><div class="lc-body"><span dir="ltr" style="display:block;text-align:right;">${dm(x.date)} — ${x.kind==='day'?x.qty+' يوم إضافي':x.qty+' ساعة إضافية'}${x.note?' — '+escapeHtml(x.note):''}${paidExtraIds().has(x.id)?' ✅ مؤدّى':''}</span></div><button class="lc-del" data-exdel="${x.id}">🗑</button></div>`).join('') : '<div class="empty-hint" style="padding:6px;">ما كاين إضافي مسجل.</div>');
       host.querySelectorAll('[data-wpdel]').forEach(b=> b.onclick = ()=>{ if(!confirm('مسح هاد الأداء من السجل؟')) return; saveWPayments(loadWPayments().filter(x=>x.id!==b.dataset.wpdel)); renderWorkers(); });
-      host.querySelectorAll('[data-exdel]').forEach(b=> b.onclick = ()=>{ saveExtras(loadExtras().filter(x=>x.id!==b.dataset.exdel)); renderWorkers(); });
+      host.querySelectorAll('[data-exdel]').forEach(b=> b.onclick = ()=> deleteExtraWithConfirm(exs.find(k=>k.id===b.dataset.exdel), w));
     }else{
       const kind = mode === 'extraday' ? 'day' : 'hours';
       host.innerHTML = `
@@ -12566,7 +12583,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 17-11-2026 (أ)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 17-11-2026 (ج)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -12574,7 +12591,7 @@ if('serviceWorker' in navigator){
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='intro-2026-11-17a';
+    const BUILD='intro-2026-11-17c';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
