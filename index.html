@@ -8915,7 +8915,7 @@ document.querySelectorAll('.sub-nav-btn').forEach(btn=>{
     if(btn.dataset.sub === 'subSuppliers') renderSuppliers();
     if(btn.dataset.sub === 'subCaisse'){ renderCaisse(); }
     if(btn.dataset.sub === 'subWorkers'){ wProjSel = null; fillProjectSelect(document.getElementById('workerProject')); try{ const _ws = document.getElementById('workerStart'); if(_ws && !_ws.value) _ws.value = todayStr(); }catch(e){} renderWorkers(); }
-    if(btn.dataset.sub === 'subProjects'){ renderProjects(); }
+    if(btn.dataset.sub === 'subProjects'){ pjSel = null; renderProjects(true); }
   });
 });
 
@@ -10799,7 +10799,7 @@ document.getElementById('projectAddBtn')?.addEventListener('click', async ()=>{
   const amount = num('projectContractAmount'), budget = num('projectBudget');
   if(amount){ proj.contractAmount = amount; proj.contractTtc = ((document.getElementById('projectContractTtc') || {}).value || '1') === '1'; proj.contractTva = 20; }
   if(budget) proj.budget = budget;
-  const list = loadProjects(); list.push(proj); saveProjects(list);
+  const list = loadProjects(); list.push(proj); saveProjects(list); pjSel = null;
   nameEl.value = '';
   ['projectContractAmount', 'projectBudget'].forEach(id=>{ const e = document.getElementById(id); if(e) e.value = ''; });
   if(fileEl) fileEl.value = '';
@@ -10876,14 +10876,31 @@ function _projPanel(proj){
   return p;
 }
 
+var pjSel = null; // null = لائحة أسماء المشاريع | معرّف مشروع = تفاصيله
+function renderProjectsOverview(el, projects, ctx){
+  el.innerHTML = '<p class="mini-title" style="margin:0 0 8px; grid-column:1 / -1;">📁 اختار المشروع باش تشوف تفاصيله</p>';
+  projects.forEach(proj=>{
+    const f = projectFinancials(proj, ctx);
+    const card = document.createElement('div'); card.className = 'list-card'; card.style.cursor = 'pointer'; card.setAttribute('role', 'button');
+    card.innerHTML = '<div class="lc-row"><div class="lc-body"><div class="lc-title" dir="auto">📁 ' + escapeHtml(proj.name) + '</div><div class="lc-meta">' + f.invoiceCount + ' فاتورة · ' + f.expenseCount + ' مصروف · ' + f.workerCount + ' أجير · الصافي <b class="acc-n" style="color:' + (f.net >= 0 ? '#2e7d32' : '#b91c1c') + ';">' + f.net.toLocaleString('ar') + '</b> درهم</div></div><span style="font-size:18px; color:var(--ink-soft);">◀</span></div>';
+    card.onclick = ()=>{ pjSel = proj.id; renderProjects(true); };
+    el.appendChild(card);
+  });
+}
 function renderProjects(force){
   const el = document.getElementById('projectsList'); if(!el) return;
   const ae = document.activeElement;
   if(!force && ae && el.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;   // ما نمسحوش شنو كيكتب المستخدم
-  const projects = loadProjects();
-  if(!projects.length){ el.innerHTML = '<div class="empty-hint">ماكاينش مشاريع مسجلة بعد. ضيفي أول مشروع فوق ⬆️</div>'; return; }
+  const allProjects = loadProjects();
+  if(!allProjects.length){ el.innerHTML = '<div class="empty-hint">ماكاينش مشاريع مسجلة بعد. ضيفي أول مشروع فوق ⬆️</div>'; return; }
+  if(pjSel && !allProjects.some(p=> p.id === pjSel)) pjSel = null;
   const ctx = _projCtx();
+  if(!pjSel){ renderProjectsOverview(el, allProjects, ctx); return; }
+  const projects = allProjects.filter(p=> p.id === pjSel);
   el.innerHTML = '';
+  const bk = document.createElement('div'); bk.style.cssText = 'margin-bottom:8px; grid-column:1 / -1;'; bk.innerHTML = '<button class="lc-btn" id="pjBack">◀ كل المشاريع</button>';
+  bk.querySelector('#pjBack').onclick = ()=>{ pjSel = null; renderProjects(true); };
+  el.appendChild(bk);
   projects.forEach(proj=>{
     const f = projectFinancials(proj, ctx);
     const card = document.createElement('div');
@@ -10899,15 +10916,15 @@ function renderProjects(force){
       <div style="display:flex; gap:6px; margin-top:8px; font-size:11px;">
         <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
           <div style="color:var(--ink-soft);">المداخيل</div>
-          <div style="font-weight:700; color:#2e7d32;">${f.income.toLocaleString('ar')} درهم</div>
+          <div style="font-weight:700; color:#2e7d32;"><span class="acc-n">${f.income.toLocaleString('ar')}</span> درهم</div>
         </div>
         <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
           <div style="color:var(--ink-soft);">المصاريف</div>
-          <div style="font-weight:700; color:#b91c1c;">${f.totalExpense.toLocaleString('ar')} درهم</div>
+          <div style="font-weight:700; color:#b91c1c;"><span class="acc-n">${f.totalExpense.toLocaleString('ar')}</span> درهم</div>
         </div>
         <div style="flex:1; background:var(--stone); border-radius:10px; padding:8px; text-align:center;">
           <div style="color:var(--ink-soft);">الصافي</div>
-          <div style="font-weight:700; color:${f.net >= 0 ? '#2e7d32' : '#b91c1c'};">${f.net.toLocaleString('ar')} درهم</div>
+          <div style="font-weight:700; color:${f.net >= 0 ? '#2e7d32' : '#b91c1c'};"><span class="acc-n">${f.net.toLocaleString('ar')}</span> درهم</div>
         </div>
       </div>
       ${_projCmpHtml(f)}
@@ -10932,6 +10949,7 @@ function renderProjects(force){
       if(!confirm('متأكدة؟ الفواتير والمصاريف المرتبطة بهاد المشروع غادي تبقى موجودة لكن بلا تصنيف.' + (nf ? '\nوغادي تتمسح ' + nf + ' ملف/ملفات ديال العقد من هاد الجهاز.' : ''))) return;
       if(nf) pr.contractFiles.forEach(f=>{ FILEVAULT.del(f.id).catch(()=>{}); });
       saveProjects(loadProjects().filter(p=> p.id !== b.dataset.delProject));
+      pjSel = null;
       renderProjects(true);
     });
   });
@@ -10996,7 +11014,7 @@ function renderWorkersProjects(el, workers, attendance, today){
     if(!groups.has(k)) groups.set(k, {key: k, name: k === '__none__' ? 'بلا مشروع محدد' : (projectNameById(k) || 'مشروع غير معروف'), ws: []});
     groups.get(k).ws.push(w);
   });
-  el.innerHTML = '<p class="mini-title" style="margin:0 0 8px;">🏗 اختار المشروع باش تشوف أجراءه</p>';
+  el.innerHTML = '<p class="mini-title" style="margin:0 0 8px; grid-column:1 / -1;">🏗 اختار المشروع باش تشوف أجراءه</p>';
   groups.forEach(g=>{
     const active = g.ws.filter(w=> w.status !== 'stopped').length, stopped = g.ws.length - active;
     const ids = new Set(g.ws.map(w=> w.id));
@@ -12667,7 +12685,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 17-11-2026 (هـ)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 17-11-2026 (و)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -12675,7 +12693,7 @@ if('serviceWorker' in navigator){
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='intro-2026-11-17e';
+    const BUILD='intro-2026-11-17f';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
