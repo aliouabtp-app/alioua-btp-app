@@ -375,6 +375,24 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   max-width:100%;
 }
 .chart-wrap canvas{ max-width:100%; }
+.acc-box{ position:relative; width:100%; height:250px; }
+.acc-box canvas{ display:block; }
+.acc-pulse{ position:absolute; width:10px; height:10px; margin:-5px 0 0 -5px; pointer-events:none; opacity:0; transition:opacity .4s; }
+.acc-pulse::after{ content:''; position:absolute; top:0; right:0; bottom:0; left:0; border-radius:50%; border:2px solid #1C6FA5; animation:accPulse 1.8s ease-out infinite; }
+@keyframes accPulse{ 0%{ transform:scale(1); opacity:.75; } 100%{ transform:scale(3.6); opacity:0; } }
+@media (prefers-reduced-motion:reduce){ .acc-pulse::after{ animation:none; opacity:.4; } }
+@media (min-width:900px){ .acc-box{ height:300px; } }
+.acc-info{ margin-top:8px; padding:8px 10px; background:var(--stone); border-radius:12px; }
+.acc-ttl{ font-size:12.5px; font-weight:700; color:var(--navy); margin-bottom:6px; }
+.acc-row{ display:flex; gap:8px; }
+.acc-c{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.acc-c span{ font-size:11px; color:var(--ink-soft); }
+.acc-c b{ font-family:'IBM Plex Mono', monospace; font-size:13.5px; font-variant-numeric:tabular-nums; }
+.acc-c b.inc{ color:#1C7C3F; }
+.acc-c b.exp{ color:#7C241C; }
+.acc-d{ font-size:11px; font-weight:700; }
+.acc-d.ok{ color:#1C7C3F; }
+.acc-d.bad{ color:#B3362B; }
 .chart-share-btn{
   display:flex; align-items:center; justify-content:center; gap:6px;
   width:100%;
@@ -1569,7 +1587,7 @@ input, select, textarea{ min-width:0; }
           <input type="text" id="txNote" dir="auto" placeholder="ملاحظة (اختياري)">
           <button class="btn-primary" id="txAddBtn">➕ إضافة عملية</button>
         </div>
-        <div class="chart-wrap" id="accountingChartWrap"><canvas id="accountingChart"></canvas></div>
+        <div class="chart-wrap" id="accountingChartWrap"><div class="acc-box" id="accChartBox"><canvas id="accountingChart" role="img" aria-label="مبيان الدخل والمصروف والصافي التراكمي لآخر ستة أشهر"></canvas></div><div class="acc-info" id="accChartInfo"></div></div>
         <button class="table-download-btn" id="exportReportBtn" style="border-radius:9px; border:1px solid var(--line); margin-bottom:12px;">⬇️ تحميل التقرير الإجمالي (CSV)</button>
         <div id="txList"></div>
       </div>
@@ -7606,6 +7624,7 @@ document.getElementById('apptGcalSyncBtn')?.addEventListener('click', async ()=>
 const TX_KEY = 'alioua_btp_transactions';
 let currentTxType = 'income';
 let accountingChartInstance = null;
+let _accLastAnim = 0;
 
 function loadTx(){ try{ return JSON.parse(LS.getItem(TX_KEY) || '[]'); }catch(e){ return []; } }
 function saveTx(list){
@@ -7901,7 +7920,7 @@ function renderAccountingBase(){
   const now = new Date();
   for(let i=5;i>=0;i--){
     const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-    months.push({key: d.getFullYear()+'-'+(d.getMonth()+1), label: d.toLocaleDateString('ar',{month:'short'})});
+    months.push({key: d.getFullYear()+'-'+(d.getMonth()+1), label: d.toLocaleDateString('ar',{month:'short'}), full: d.toLocaleDateString('ar',{month:'long'}) + ' ' + d.getFullYear()});
   }
   const monthKeyOf = (dateStr)=>{ const d=new Date(dateStr); return d.getFullYear()+'-'+(d.getMonth()+1); };
 
@@ -7934,22 +7953,112 @@ function renderAccountingBase(){
   const canvas = document.getElementById('accountingChart');
   try{
     if(accountingChartInstance){ accountingChartInstance.destroy(); accountingChartInstance = null; }
+    const _box = document.getElementById('accChartBox');
+    if(_box){ const _old = _box.querySelector('.acc-pulse'); if(_old) _old.remove(); }
     if(canvas && typeof Chart !== 'undefined'){
+      const FONT = "'IBM Plex Sans Arabic'";
+      const css = getComputedStyle(document.documentElement);
+      const cInk = (css.getPropertyValue('--ink-soft') || '#5B6670').trim();
+      const cLine = (css.getPropertyValue('--line') || '#D7DEE4').trim();
+      const BLUE = '#1C6FA5';
+      const nfk = (n)=> Math.round(n).toLocaleString('fr-FR').replace(/[\u202f\u00a0]/g, ' ');
+      const netM = months.map((m,i)=> incData[i] - expData[i]);
+      let _run = 0;
+      const cum = netM.map(v=> (_run += v));
+      const last = months.length - 1;
+      let sel = last;
+      const reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+      const animate = !reduce && canvas.clientWidth > 0 && (Date.now() - _accLastAnim > 45000);
+      if(animate) _accLastAnim = Date.now();
+      let ready = !animate;
+      const grad = (top, bottom)=> (c)=>{
+        const a = c.chart.chartArea; if(!a) return bottom;
+        const g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+        g.addColorStop(0, top); g.addColorStop(1, bottom); return g;
+      };
+
+      const ds = [];
+      if(!_emp) ds.push({ type:'bar', label:'دخل', data:incData, backgroundColor:grad('#37B36F','#1C7C3F'), borderRadius:6, borderSkipped:'bottom', maxBarThickness:22, order:2 });
+      ds.push({ type:'bar', label:'مصروف', data:expData, backgroundColor:grad('#C8473B','#7C241C'), borderRadius:6, borderSkipped:'bottom', maxBarThickness:22, order:2 });
+      const netIdx = _emp ? -1 : ds.length;
+      if(!_emp) ds.push({ type:'line', label:'الصافي التراكمي', data:cum, borderColor:BLUE, borderWidth:2.5, cubicInterpolationMode:'monotone', fill:false,
+        pointRadius:(c)=> c.dataIndex === last ? 5 : 3.5, pointHoverRadius:6, pointBorderWidth:2, pointBorderColor:BLUE,
+        pointBackgroundColor:(c)=> c.dataIndex === last ? BLUE : '#fff', order:1 });
+
+      const dot = (_emp || !_box) ? null : (()=>{ const d = document.createElement('span'); d.className = 'acc-pulse'; _box.appendChild(d); return d; })();
+      const placeDot = (ch)=>{
+        if(!dot || !ch) return;
+        const dm = ch.getDatasetMeta(netIdx), p = dm && dm.data && dm.data[last];
+        if(!ready || !p || !isFinite(p.x) || !isFinite(p.y)){ dot.style.opacity = '0'; return; }
+        dot.style.left = p.x + 'px'; dot.style.top = p.y + 'px'; dot.style.opacity = '1';
+      };
+
+      const info = document.getElementById('accChartInfo');
+      const chip = (cur, prev, goodUp)=>{
+        if(!(prev > 0)) return '';
+        const d = Math.round((cur - prev) / prev * 100);
+        if(!d) return '';
+        return '<span class="acc-d ' + ((d > 0) === goodUp ? 'ok' : 'bad') + '">' + (d > 0 ? '▲' : '▼') + ' ' + Math.abs(d) + '%</span>';
+      };
+      const fillInfo = ()=>{
+        if(!info) return;
+        const m = months[sel], pi = sel - 1;
+        let h = '<div class="acc-ttl">' + m.full + ' (درهم)' + (sel === last ? ' · الشهر الحالي' : '') + '</div><div class="acc-row">';
+        if(!_emp) h += '<div class="acc-c"><span>دخل</span><b class="inc">' + nfk(incData[sel]) + '</b>' + (pi >= 0 ? chip(incData[sel], incData[pi], true) : '') + '</div>';
+        h += '<div class="acc-c"><span>مصروف</span><b class="exp">' + nfk(expData[sel]) + '</b>' + (pi >= 0 ? chip(expData[sel], expData[pi], false) : '') + '</div>';
+        if(!_emp) h += '<div class="acc-c"><span>صافي الشهر</span><b class="' + (netM[sel] >= 0 ? 'inc' : 'exp') + '">' + (netM[sel] >= 0 ? '+' : '−') + nfk(Math.abs(netM[sel])) + '</b></div>';
+        info.innerHTML = h + '</div>';
+      };
+
+      const livePlugin = {
+        id:'accLive',
+        beforeDatasetsDraw(ch){
+          const a = ch.chartArea; if(!a || !ch.scales.x) return;
+          const w = a.width / months.length, x = ch.scales.x.getPixelForValue(sel) - w / 2, c = ch.ctx;
+          c.save(); c.fillStyle = 'rgba(18,63,92,.07)'; c.beginPath();
+          if(c.roundRect) c.roundRect(x + 2, a.top, w - 4, a.height, 10); else c.rect(x + 2, a.top, w - 4, a.height);
+          c.fill(); c.restore();
+        },
+        afterRender(ch){ placeDot(ch); }
+      };
+
       accountingChartInstance = new Chart(canvas.getContext('2d'), {
         type:'bar',
-        data:{
-          labels: months.map(m=>m.label),
-          datasets:(_emp ? [] : [{label:'دخل', data:incData, backgroundColor:'#1C7C3F'}]).concat([{label:'مصروف', data:expData, backgroundColor:'#7C241C'}])
-        },
+        data:{ labels: months.map(m=>m.label), datasets: ds },
+        plugins:[livePlugin],
         options:{
-          responsive:true,
-          plugins:{ legend:{labels:{font:{family:"'IBM Plex Sans Arabic'"}}} },
+          responsive:true, maintainAspectRatio:false,
+          interaction:{ mode:'index', intersect:false },
+          layout:{ padding:{ top:6, right:4 } },
+          animation: animate ? {
+            duration:900, easing:'easeOutQuart',
+            delay:(c)=> (c.type === 'data' && c.mode === 'default') ? c.dataIndex * 110 + c.datasetIndex * 50 : 0,
+            onComplete:()=>{ if(!ready){ ready = true; placeDot(accountingChartInstance); } }
+          } : false,
+          onClick:(e, els, ch)=>{
+            const pts = ch.getElementsAtEventForMode(e, 'index', { intersect:false }, true);
+            if(pts.length && pts[0].index !== sel){ sel = pts[0].index; fillInfo(); ch.update('none'); }
+          },
+          plugins:{
+            legend:{ position:'top', labels:{ usePointStyle:true, pointStyle:'rectRounded', boxWidth:10, boxHeight:10, padding:12, color:cInk, font:{ family:FONT, size:12 } } },
+            tooltip:{
+              rtl:true, textDirection:'rtl', backgroundColor:'rgba(10,46,69,.95)', padding:10, cornerRadius:10, boxPadding:4, usePointStyle:true,
+              titleFont:{ family:FONT, size:12, weight:'600' }, bodyFont:{ family:FONT, size:12 },
+              callbacks:{
+                title:(it)=> months[it[0].dataIndex].full,
+                label:(c)=> ' ' + c.dataset.label + ': ' + nfk(c.parsed.y) + ' DH'
+              }
+            }
+          },
           scales:{
-            y:{ beginAtZero:true, ticks:{font:{family:"'IBM Plex Mono'"}} },
-            x:{ ticks:{font:{family:"'IBM Plex Sans Arabic'"}} }
+            y:{ beginAtZero:true, grid:{ color:cLine }, border:{ display:false },
+                ticks:{ color:cInk, maxTicksLimit:6, font:{ family:"'IBM Plex Mono'", size:10 }, callback:(v)=> Math.abs(v) >= 1000 ? (v / 1000) + 'k' : v } },
+            x:{ grid:{ display:false },
+                ticks:{ autoSkip:false, maxRotation:0, color:(c)=> c.index === sel ? '#123F5C' : cInk, font:(c)=>({ family:FONT, size:11, weight: c.index === sel ? '700' : '400' }) } }
           }
         }
       });
+      fillInfo();
     }else if(canvas){
       const ctx = canvas.getContext('2d');
       if(ctx) ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -12457,7 +12566,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 16-11-2026 (ج)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 17-11-2026 (أ)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -12465,7 +12574,7 @@ if('serviceWorker' in navigator){
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='intro-2026-11-16c';
+    const BUILD='intro-2026-11-17a';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
