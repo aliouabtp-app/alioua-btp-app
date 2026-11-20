@@ -941,6 +941,15 @@ input, select, textarea{ min-width:0; }
   object-fit:cover;
   margin-bottom:0;
 }
+.attach-thumb{ cursor:pointer; }
+.attach-thumb .att-warn{ position:absolute; bottom:1px; right:3px; font-size:11px; line-height:1; }
+.attach-busy{ align-self:center; font-size:12px; color:var(--navy); padding:0 8px; }
+.msg.user .msg-file{ cursor:pointer; }
+.msg.user .msg-file .mf-nm{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.msg.user .msg-file .mf-sz{ flex-shrink:0; opacity:.7; font-size:10.5px; }
+.msg.user .msg-file .mf-pv{ flex-shrink:0; opacity:.85; }
+.msg.user .msg-file.exp{ opacity:.65; }
+.msg.user .msg-img{ cursor:zoom-in; }
 
 #micBtn.recording{
   background:linear-gradient(135deg, var(--maroon), var(--maroon-deep));
@@ -1502,8 +1511,8 @@ input, select, textarea{ min-width:0; }
     <div id="chat"></div>
     <div id="attachPreview"></div>
     <div id="inputbar">
-      <input type="file" id="fileInput" accept="image/*,application/pdf,.pdf" multiple style="display:none;">
-      <button id="attachBtn" title="إرفاق صورة أو ملف PDF">
+      <input type="file" id="fileInput" multiple style="display:none;">
+      <button id="attachBtn" title="إرفاق صورة أو ملف (PDF، Excel، Word، PowerPoint، CSV...)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
       </button>
       <textarea id="msgInput" rows="1" placeholder="اكتب رسالتك هنا..."></textarea>
@@ -2649,8 +2658,11 @@ function loadHistory(){
 function saveHistory(){
   try{
     const trimmed = messages.slice(-60).map(m=>{
-      if(m.image || m.images){ const {image, images, ...rest} = m; return rest; }
-      return m;
+      let r = m;
+      if(r.image || r.images){ const {image, images, ...rest} = r; r = rest; }
+      // الملفات (Excel/Word/...) ما كتتخزنش: كنحتافظو غير باسم الملف باش يبان فالدردشة (المحتوى كيبقى فالجلسة الحالية فقط)
+      if(r.files){ r = Object.assign({}, r, {files: r.files.map(f=> ({kind:'file', name:f.name, mime:f.mime, size:f.size, icon:f.icon, label:f.label, fmt:f.fmt, expired:true}))}); }
+      return r;
     });
     safeSetItem(HISTORY_KEY, JSON.stringify(trimmed));
   }catch(e){ console.error('تعذّر تجهيز سجل المحادثة للحفظ:', e); }
@@ -2705,17 +2717,12 @@ function renderEmptyState(){
 function renderMessages(){
   if(messages.length === 0){ renderEmptyState(); return; }
   chatEl.innerHTML = '';
-  messages.forEach(m=>{
+  messages.forEach((m, mi)=>{
     const div = document.createElement('div');
     div.className = 'msg ' + (m.role === 'user' ? 'user' : 'bot');
     div.setAttribute('dir', 'auto');
     if(m.role === 'user'){
-      let imgHtml = '';
-      if(m.images && m.images.length){
-        imgHtml = '<div class="msg-img-grid">' + m.images.map(_attHtml).join('') + '</div>';
-      }else if(m.image){
-        imgHtml = _attHtml(m.image);
-      }
+      const imgHtml = _userAttsHtml(m, mi);
       if(m.voice && window.VN){
         div.innerHTML = imgHtml;
         div.appendChild(window.VN.buildContent(m.voice, m.text));
@@ -4160,21 +4167,52 @@ function hideTyping(){
   if(t) t.remove();
 }
 
-/* ---------- إرفاق الصور وملفات PDF (بلانات، تصاميم، دفاتر شروط) ---------- */
-let pendingImages = []; // [{data(base64), mime, name?}] — صور أو PDF (mime = application/pdf)
+/* ---------- إرفاق الصور وPDF وكل أنواع الملفات (Excel, Word, PowerPoint, CSV, نصوص...) مع المعاينة ---------- */
+// مرفقات الرسالة الجاية: صور/PDF {data(base64), mime, name?} أو ملفات {kind:'file', name, mime, size, file(Blob), fmt, icon, label, text, info, parsed, readable, note}
+let pendingImages = [];
+let _attBusy = 0;
 const attachBtn = document.getElementById('attachBtn');
 const fileInput = document.getElementById('fileInput');
 const attachPreview = document.getElementById('attachPreview');
 const MAX_IMAGES = 6;
 const MAX_PDF_BYTES = 14 * 1024 * 1024;     // Gemini كيقبل ≈20MB للطلب كامل، وbase64 كيزيد ≈33%
 const MAX_TOTAL_B64 = 19 * 1024 * 1024;     // مجموع المرفقات (base64) فالرسالة الوحدة
+const MAX_FILE_BYTES = 15 * 1024 * 1024;    // ملف Excel/Word/... الواحد (كيتقرا فالهاتف، وغير نصو هو اللي كيتصيفط ليونس)
+const MAX_FILES_TOTAL_BYTES = 40 * 1024 * 1024;
+const FILE_TEXT_STORE_MAX = 200000;         // أقصى حروف كنحتافظو بيها من الملف الواحد ليونس
+const SHEET_MAX_ROWS = 20000;
 const DEFAULT_ATTACH_PROMPT = 'حلل ليا هاد المرفق، وإلا كان بلان ولا تصميم حسب ليا كميات المواد (المتري) بالخطوات والمجموع.';
+const DEFAULT_FILE_PROMPT = 'قرا هاد الملف ولخّص ليا محتواه: شنو فيه وشنو المهم فيه.';
 
 function isPdfAtt(a){ return !!a && a.mime === 'application/pdf'; }
-function _attHtml(a){
-  if(isPdfAtt(a)) return `<div class="msg-file">📄 ${escapeHtml(a.name || 'PDF')}</div>`;
-  return `<img class="msg-img" src="data:${a.mime};base64,${a.data}">`;
+function isFileAtt(a){ return !!a && a.kind === 'file'; }
+function _visAtts(){ return pendingImages.filter(a=> !isFileAtt(a)); }
+function _h(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function _L(s){ return '\u2066' + s + '\u2069'; }   // عزل LTR لأسماء الملفات والأرقام داخل النصوص العربية
+function _fmtBytes(n){ n = +n || 0; return n < 1024 ? n + ' B' : (n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB'); }
+function _b64ToBytes(b64){ const bin = atob(b64), u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+function _extFromMime(m){ return ({'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/heic':'heic','image/heif':'heif','application/pdf':'pdf'})[m] || 'bin'; }
+
+// مرفقات الرسالة فالدردشة (صور، PDF، ملفات) — كل وحدة كتتفتح بالمعاينة بالضغط عليها
+function _userAttsHtml(m, mi){
+  const imgs = (m.images && m.images.length) ? m.images : (m.image ? [m.image] : []);
+  const vis = imgs.map((a, ai)=>{
+    const at = `data-att="1" data-mi="${mi}" data-k="v" data-ai="${ai}"`;
+    if(isPdfAtt(a)) return `<div class="msg-file" ${at}><span>📄</span><span class="mf-nm">${_h(a.name || 'PDF')}</span><span class="mf-pv">👁</span></div>`;
+    return `<img class="msg-img" ${at} src="data:${a.mime};base64,${a.data}">`;
+  });
+  let out = (m.images && m.images.length) ? '<div class="msg-img-grid">' + vis.join('') + '</div>' : vis.join('');
+  out += (m.files || []).map((f, ai)=> `<div class="msg-file${f.expired ? ' exp' : ''}" data-att="1" data-mi="${mi}" data-k="f" data-ai="${ai}"><span>${_h(f.icon || '📎')}</span><span class="mf-nm">${_h(f.name || 'ملف')}</span>${f.size ? '<span class="mf-sz">' + _fmtBytes(f.size) + '</span>' : ''}<span class="mf-pv">👁</span></div>`).join('');
+  return out;
 }
+chatEl.addEventListener('click', e=>{
+  const t = e.target && e.target.closest ? e.target.closest('[data-att]') : null;
+  if(!t) return;
+  const m = messages[+t.dataset.mi]; if(!m) return;
+  const list = t.dataset.k === 'f' ? (m.files || []) : ((m.images && m.images.length) ? m.images : (m.image ? [m.image] : []));
+  const a = list[+t.dataset.ai]; if(a) openAttachmentPreview(a);
+});
+
 function _readAsBase64(blob){
   return new Promise((res, rej)=>{
     const r = new FileReader();
@@ -4184,21 +4222,500 @@ function _readAsBase64(blob){
   });
 }
 // الصور الكبيرة (>3MB) كنصغروها لـ 2400px كحد أقصى باش تدوز بسهولة من Gemini وGroq (حد 4MB للصورة فـ Groq)
+// وصيغ الصور اللي Gemini ما كيقبلهاش (gif/bmp/avif/tiff...) كنحولوها لـ JPEG؛ إلا ما تحولاتش كيرجع null (كتتعامل معاها كملف عادي)
 async function _prepareImageFile(file){
   const mime = file.type || 'image/jpeg';
-  if(file.size > 3 * 1024 * 1024 && /^image\/(jpeg|png|webp)$/.test(mime)){
+  const geminiOk = /^image\/(jpeg|png|webp|heic|heif)$/.test(mime);
+  if(!geminiOk || (file.size > 3 * 1024 * 1024 && /^image\/(jpeg|png|webp)$/.test(mime))){
     try{
       const bmp = await createImageBitmap(file);
       const k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
       const c = document.createElement('canvas');
-      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
       const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
       ctx.drawImage(bmp, 0, 0, c.width, c.height);
       const blob = await new Promise(r=> c.toBlob(r, 'image/jpeg', 0.9));
-      if(blob && blob.size < file.size) return { data: await _readAsBase64(blob), mime: 'image/jpeg' };
-    }catch(e){ /* نرجعو للصورة الأصلية */ }
+      if(blob && (!geminiOk || blob.size < file.size)) return { data: await _readAsBase64(blob), mime: 'image/jpeg' };
+    }catch(e){ /* نرجعو للصورة الأصلية (إلا كانت مدعومة) */ }
+    if(!geminiOk) return null;
   }
   return { data: await _readAsBase64(file), mime };
+}
+
+/* ===== قراءة الملفات (كلشي كيتدار فالهاتف، والنص المستخرج هو اللي كيتصيفط ليونس) ===== */
+const NS_W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+const NS_TEXT = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
+const NS_DRAW = 'urn:oasis:names:tc:opendocument:xmlns:drawing:1.0';
+const NS_TABLE = 'urn:oasis:names:tc:opendocument:xmlns:table:1.0';
+const _FILE_FMT = [
+  [/^(xlsx|xlsm|xlsb|xls|ods|fods)$/, 'sheet', '📊', 'Excel'],
+  [/^(csv|tsv)$/, 'csv', '📊', 'CSV'],
+  [/^(docx|docm|dotx|dotm)$/, 'docx', '📝', 'Word'],
+  [/^doc$/, 'doc', '📝', 'Word (.doc)'],
+  [/^(pptx|pptm|ppsx|potx)$/, 'pptx', '📽️', 'PowerPoint'],
+  [/^ppt$/, 'ppt', '📽️', 'PowerPoint (.ppt)'],
+  [/^(odt|odp)$/, 'odf', '📝', 'OpenDocument'],
+  [/^rtf$/, 'rtf', '📝', 'RTF'],
+  [/^(txt|md|markdown|json|xml|html|htm|css|js|log|ini|yaml|yml|sql|svg|conf|cfg|properties|tex|srt)$/, 'text', '📃', 'نص']
+];
+function _otherIcon(ext, type){
+  if(/^(zip|rar|7z|tar|gz)$/.test(ext)) return '🗜️';
+  if(/^(dwg|dxf|rvt|skp)$/.test(ext)) return '📐';
+  if(/^audio\//.test(type) || /^(mp3|wav|m4a|ogg|opus|aac)$/.test(ext)) return '🎵';
+  if(/^video\//.test(type) || /^(mp4|mov|avi|mkv|webm|3gp)$/.test(ext)) return '🎬';
+  return '📎';
+}
+function _decodeText(buf){
+  const u8 = new Uint8Array(buf);
+  if(u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return new TextDecoder('utf-8').decode(u8.subarray(3));
+  if(u8[0] === 0xFF && u8[1] === 0xFE) return new TextDecoder('utf-16le').decode(u8.subarray(2));
+  if(u8[0] === 0xFE && u8[1] === 0xFF) return new TextDecoder('utf-16be').decode(u8.subarray(2));
+  try{ return new TextDecoder('utf-8', {fatal: true}).decode(u8); }
+  catch(e){ try{ return new TextDecoder('windows-1256').decode(u8); }catch(e2){ return new TextDecoder('windows-1252').decode(u8); } }
+}
+function _parseCsv(text){
+  text = text.replace(/^\uFEFF/, '');
+  const sample = text.split(/\r?\n/).slice(0, 5).join('\n');
+  let best = ',', bc = -1;
+  [';', ',', '\t', '|'].forEach(d=>{ const c = sample.split(d).length - 1; if(c > bc){ bc = c; best = d; } });
+  const rows = []; let row = [], cell = '', q = false;
+  for(let i = 0; i < text.length; i++){
+    const ch = text[i];
+    if(q){ if(ch === '"'){ if(text[i + 1] === '"'){ cell += '"'; i++; } else q = false; } else cell += ch; }
+    else if(ch === '"' && cell === '') q = true;
+    else if(ch === best){ row.push(cell); cell = ''; }
+    else if(ch === '\n' || ch === '\r'){ if(ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); cell = ''; rows.push(row); row = []; if(rows.length >= SHEET_MAX_ROWS) break; }
+    else cell += ch;
+  }
+  if(cell !== '' || row.length){ row.push(cell); rows.push(row); }
+  return rows;
+}
+function _sheetsToText(sheets){
+  const out = []; let len = 0;
+  for(const s of sheets){
+    const head = `### ورقة "${s.name}"${s.hidden ? ' (مخفية)' : ''} — ${s.rows.length} سطر × ${s.cols} عمود${s.cut ? ' (الملف أطول، قريت غير أول ' + SHEET_MAX_ROWS + ' سطر)' : ''}`;
+    out.push(head); len += head.length;
+    for(const r of s.rows){
+      const line = '[' + r.n + '] ' + r.c.join(' | ');
+      out.push(line); len += line.length + 1;
+      if(len > FILE_TEXT_STORE_MAX + 2000) break;
+    }
+    out.push('');
+    if(len > FILE_TEXT_STORE_MAX + 2000) break;
+  }
+  return out.join('\n');
+}
+function _mkSheet(name, aoa, startRow, startCol, extra){
+  const rows = []; let maxC = 0;
+  aoa.forEach((r, i)=>{
+    let last = r.length; while(last > 0 && String(r[last - 1] == null ? '' : r[last - 1]).trim() === '') last--;
+    if(!last) return;
+    if(last > maxC) maxC = last;
+    rows.push({n: startRow + i + 1, c: r.slice(0, Math.min(last, 60)).map(v=> String(v == null ? '' : v).replace(/\s*[\r\n]+\s*/g, ' ').trim())});
+  });
+  return Object.assign({name, rows, cols: Math.min(maxC, 60), off: startCol || 0}, extra || {});
+}
+async function _exSheet(buf, out){
+  if(!window.XLSX) throw new Error('مكتبة Excel ماتحملاتش (تأكد من الإنترنت وعاود).');
+  const u8 = new Uint8Array(buf);
+  if(u8[0] === 0xD0 && u8[1] === 0xCF && u8[2] === 0x11 && u8[3] === 0xE0 && u8.length > 8){ /* xls قديم: SheetJS كيقراه، ولكن إلا كان محمي بكلمة سر غادي يطيح */ }
+  const wb = XLSX.read(u8, {type: 'array', cellDates: true, sheetRows: SHEET_MAX_ROWS + 1});
+  const sheets = wb.SheetNames.map((nm, si)=>{
+    const ws = wb.Sheets[nm]; const hs = wb.Workbook && wb.Workbook.Sheets && wb.Workbook.Sheets[si]; const hidden = !!(hs && hs.Hidden);
+    if(!ws || !ws['!ref']) return {name: nm, rows: [], cols: 0, off: 0, hidden};
+    const rg = XLSX.utils.decode_range(ws['!ref']);
+    const full = ws['!fullref'] ? XLSX.utils.decode_range(ws['!fullref']) : rg;
+    const aoa = XLSX.utils.sheet_to_json(ws, {header: 1, raw: false, defval: '', blankrows: true});
+    return _mkSheet(nm, aoa, rg.s.r, rg.s.c, {hidden, cut: (full.e.r - full.s.r + 1) > SHEET_MAX_ROWS});
+  });
+  out.parsed = {sheets};
+  out.text = _sheetsToText(sheets);
+  out.info = sheets.length + ' ورقة · ' + sheets.reduce((n, s)=> n + s.rows.length, 0) + ' سطر';
+}
+function _exCsv(buf, out){
+  const rows = _parseCsv(_decodeText(buf));
+  const sheet = _mkSheet('CSV', rows, 0, 0, {cut: rows.length >= SHEET_MAX_ROWS});
+  out.parsed = {sheets: [sheet]};
+  out.text = _sheetsToText([sheet]);
+  out.info = sheet.rows.length + ' سطر × ' + sheet.cols + ' عمود';
+}
+function _exText(buf, out){
+  const t = _decodeText(buf);
+  out.text = t;
+  out.info = t.split('\n').length + ' سطر';
+}
+
+// ZIP (docx/pptx/odt...) بلا مكتبات: كنقراو الفهرس وكنفكو الضغط بـ DecompressionStream
+function _zipOpen(buf){
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  if(u8.length >= 8 && u8[0] === 0xD0 && u8[1] === 0xCF && u8[2] === 0x11 && u8[3] === 0xE0) throw new Error('الملف محمي بكلمة سر (ولا تنسيق قديم)، حيّد الحماية وعاود.');
+  let e = -1;
+  for(let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--){ if(dv.getUint32(i, true) === 0x06054b50){ e = i; break; } }
+  if(e < 0) throw new Error('الملف تالف ولا ماشي بالصيغة اللي كتبين امتدادو.');
+  const n = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true);
+  const ents = new Map();
+  for(let k = 0; k < n; k++){
+    if(p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+    ents.set(new TextDecoder('utf-8').decode(u8.subarray(p + 46, p + 46 + nl)), {method, csize, off});
+    p += 46 + nl + xl + cl;
+  }
+  async function read(name){
+    const en = ents.get(name); if(!en) return null;
+    const nl = dv.getUint16(en.off + 26, true), xl = dv.getUint16(en.off + 28, true), st = en.off + 30 + nl + xl;
+    const raw = u8.subarray(st, st + en.csize);
+    if(en.method === 0) return raw;
+    if(en.method !== 8) throw new Error('نوع ضغط غير مدعوم داخل الملف.');
+    if(typeof DecompressionStream === 'undefined') throw new Error('هاد المتصفح قديم وما قادرش يفك ضغط الملف.');
+    return new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+  }
+  return {names: ()=> Array.from(ents.keys()), has: nm=> ents.has(nm), read, async text(nm){ const b = await read(nm); return b ? new TextDecoder('utf-8').decode(b) : null; }};
+}
+function _zipPath(base, t){
+  if(t[0] === '/') return t.slice(1);
+  const parts = base.split('/'); parts.pop();
+  t.split('/').forEach(s=>{ if(s === '..') parts.pop(); else if(s !== '.' && s !== '') parts.push(s); });
+  return parts.join('/');
+}
+function _xml(str){
+  const d = new DOMParser().parseFromString(str, 'application/xml');
+  if(d.getElementsByTagName('parsererror').length) throw new Error('محتوى الملف (XML) تالف.');
+  return d;
+}
+
+// Word (.docx): نص + عناوين + لوائح + جداول + صور، مع HTML للمعاينة
+async function _exDocx(buf, out){
+  const zip = _zipOpen(buf);
+  const docXml = await zip.text('word/document.xml');
+  if(!docXml) throw new Error('هاد الملف ماشي Word صالح (document.xml ناقص).');
+  const rels = {};
+  const relXml = await zip.text('word/_rels/document.xml.rels');
+  if(relXml) Array.from(_xml(relXml).getElementsByTagName('Relationship')).forEach(r=>{ rels[r.getAttribute('Id')] = {t: r.getAttribute('Target') || '', ty: r.getAttribute('Type') || '', ext: r.getAttribute('TargetMode') === 'External'}; });
+  const imgs = {}; let ni = 0;
+  for(const id of Object.keys(rels)){
+    const r = rels[id]; if(r.ext || !/\/image$/.test(r.ty) || ni >= 40) continue;
+    const ext = (r.t.match(/\.([a-z0-9]+)$/i) || [])[1]; const mt = ({png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', bmp:'image/bmp', webp:'image/webp', svg:'image/svg+xml'})[(ext || '').toLowerCase()];
+    if(!mt) continue;
+    const bytes = await zip.read(_zipPath('word/document.xml', r.t));
+    if(bytes && bytes.length < 4 * 1024 * 1024){ imgs[id] = URL.createObjectURL(new Blob([bytes], {type: mt})); ni++; }
+  }
+  const doc = _xml(docXml), body = doc.getElementsByTagNameNS(NS_W, 'body')[0];
+  if(!body) throw new Error('جسم المستند فارغ.');
+  const st = {paras: 0, tables: 0, images: 0, words: 0};
+  const child = (el, nm)=> { for(const c of el.children) if(c.localName === nm && c.namespaceURI === NS_W) return c; return null; };
+  const wv = el=> el ? el.getAttributeNS(NS_W, 'val') : null;
+  const on = el=>{ if(!el) return false; const v = wv(el); return !(v === '0' || v === 'false' || v === 'off' || v === 'none'); };
+  function run(r){
+    let t = '', h = ''; const rPr = child(r, 'rPr');
+    for(const c of r.children){
+      const ln = c.localName;
+      if(ln === 't'){ t += c.textContent; h += _h(c.textContent); }
+      else if(ln === 'tab'){ t += '\t'; h += '&emsp;'; }
+      else if(ln === 'br' || ln === 'cr'){ t += '\n'; h += '<br>'; }
+      else if(ln === 'noBreakHyphen'){ t += '-'; h += '-'; }
+      else if(ln === 'drawing'){ Array.from(c.getElementsByTagNameNS(NS_A, 'blip')).forEach(bl=>{ const id = bl.getAttributeNS(NS_R, 'embed'); if(imgs[id]){ h += '<img src="' + imgs[id] + '" style="max-width:100%; height:auto; display:block; margin:6px 0;">'; st.images++; } }); }
+    }
+    if(rPr && h && !/^<img/.test(h)){ if(on(child(rPr, 'b'))) h = '<b>' + h + '</b>'; if(on(child(rPr, 'i'))) h = '<i>' + h + '</i>'; if(on(child(rPr, 'u'))) h = '<u>' + h + '</u>'; if(on(child(rPr, 'strike'))) h = '<s>' + h + '</s>'; }
+    return {t, h};
+  }
+  function inline(node, acc){
+    for(const c of node.children){
+      const ln = c.localName;
+      if(ln === 'r'){ const r = run(c); acc.t += r.t; acc.h += r.h; }
+      else if(ln === 'hyperlink' || ln === 'ins' || ln === 'smartTag' || ln === 'fldSimple' || ln === 'sdt' || ln === 'sdtContent' || ln === 'moveTo') inline(c, acc);
+    }
+  }
+  function para(p){
+    const acc = {t: '', h: ''}; inline(p, acc);
+    const pPr = child(p, 'pPr'); let style = '', num = false, ilvl = 0, jc = '', bidi = false;
+    if(pPr){
+      style = wv(child(pPr, 'pStyle')) || '';
+      const np = child(pPr, 'numPr'); if(np){ const ni2 = child(np, 'numId'); num = !(ni2 && wv(ni2) === '0'); ilvl = parseInt(wv(child(np, 'ilvl')), 10) || 0; }
+      jc = wv(child(pPr, 'jc')) || '';
+      const bd = child(pPr, 'bidi'); bidi = !!bd && !['0', 'false', 'off'].includes(wv(bd) || '1');
+    }
+    const hm = /^(heading|titre|title|عنوان)\s*(\d)?/i.exec(style);
+    return {t: acc.t, h: acc.h, level: hm ? Math.min(6, parseInt(hm[2], 10) || 1) : 0, num, ilvl, jc, bidi};
+  }
+  const lines = [], html = [];
+  function table(tbl){
+    st.tables++;
+    const rt = [], rh = [];
+    for(const tr of tbl.children){
+      if(tr.localName !== 'tr') continue;
+      const ct = [], ch = [];
+      for(const tc of tr.children){
+        if(tc.localName !== 'tc') continue;
+        const tcPr = child(tc, 'tcPr'), gs = tcPr && child(tcPr, 'gridSpan'), span = gs ? (parseInt(wv(gs), 10) || 1) : 1;
+        const tt = [], hh = [];
+        for(const x of tc.children){
+          if(x.localName === 'p'){ const r = para(x); tt.push(r.t); hh.push(r.h); }
+          else if(x.localName === 'tbl'){ const r = table(x); tt.push(r.t.replace(/\n/g, ' ; ')); hh.push(r.h); }
+        }
+        ct.push(tt.join(' ').replace(/\s+/g, ' ').trim());
+        ch.push('<td' + (span > 1 ? ' colspan="' + span + '"' : '') + ' dir="auto" style="border:1px solid #cbd5e1; padding:4px 6px; vertical-align:top; font-size:13px;">' + hh.filter(Boolean).join('<br>') + '</td>');
+      }
+      rt.push('| ' + ct.join(' | ') + ' |'); rh.push('<tr>' + ch.join('') + '</tr>');
+    }
+    return {t: rt.join('\n'), h: '<table style="border-collapse:collapse; width:100%; margin:8px 0;">' + rh.join('') + '</table>'};
+  }
+  function block(node){
+    for(const c of node.children){
+      const ln = c.localName;
+      if(ln === 'p'){
+        const r = para(c); st.paras++;
+        const txt = r.t.replace(/[ \t]+$/g, '');
+        st.words += txt.split(/\s+/).filter(Boolean).length;
+        lines.push((r.level ? '#'.repeat(r.level) + ' ' : '') + (r.num ? '  '.repeat(r.ilvl) + '- ' : '') + txt);
+        const dir = r.bidi ? 'rtl' : 'auto', al = r.jc === 'center' ? 'center' : (r.jc === 'both' ? 'justify' : '');
+        if(r.level) html.push(`<h${r.level} dir="${dir}" style="margin:12px 0 6px; font-size:${Math.max(15, 24 - r.level * 2)}px;">${r.h}</h${r.level}>`);
+        else if(!r.h) html.push('<div style="height:8px;"></div>');
+        else html.push(`<p dir="${dir}" style="margin:4px 0;${al ? ' text-align:' + al + ';' : ''}${r.num ? ' margin-inline-start:' + ((r.ilvl + 1) * 18) + 'px;' : ''}">${r.num ? '• ' : ''}${r.h}</p>`);
+      }else if(ln === 'tbl'){ const r = table(c); lines.push(r.t); html.push(r.h); }
+      else if(ln === 'sdt'){ const sc = child(c, 'sdtContent'); if(sc) block(sc); }
+    }
+  }
+  block(body);
+  out.parsed = {html: html.join('')};
+  out.text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  out.info = st.words + ' كلمة' + (st.tables ? ' · ' + st.tables + ' جدول' : '') + (st.images ? ' · ' + st.images + ' صورة (يونس ما كيشوفهاش)' : '');
+}
+
+// PowerPoint (.pptx)
+function _pptParas(doc){
+  return Array.from(doc.getElementsByTagNameNS(NS_A, 'p')).map(p=>{
+    let t = '';
+    for(const c of p.children){
+      const ln = c.localName;
+      if(ln === 'r' || ln === 'fld'){ const tt = Array.from(c.children).find(x=> x.localName === 't'); if(tt) t += tt.textContent; }
+      else if(ln === 'br') t += ' ';
+    }
+    return t.trim();
+  }).filter(Boolean);
+}
+async function _exPptx(buf, out){
+  const zip = _zipOpen(buf);
+  let order = [];
+  try{
+    const pres = _xml(await zip.text('ppt/presentation.xml')), rel = _xml(await zip.text('ppt/_rels/presentation.xml.rels'));
+    const map = {}; Array.from(rel.getElementsByTagName('Relationship')).forEach(r=> map[r.getAttribute('Id')] = r.getAttribute('Target'));
+    Array.from(pres.getElementsByTagNameNS('*', 'sldId')).forEach(s=>{ const t = map[s.getAttributeNS(NS_R, 'id')]; if(t) order.push(_zipPath('ppt/presentation.xml', t)); });
+  }catch(e){ order = []; }
+  if(!order.length) order = zip.names().filter(n=> /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b)=> parseInt(a.match(/\d+/)[0], 10) - parseInt(b.match(/\d+/)[0], 10));
+  if(!order.length) throw new Error('ما لقيت شرائح فهاد الملف.');
+  const slides = [];
+  for(let i = 0; i < order.length; i++){
+    const sx = await zip.text(order[i]); if(!sx) continue;
+    const paras = _pptParas(_xml(sx)); let notes = [];
+    try{
+      const rx = await zip.text(order[i].replace(/([^/]+)$/, '_rels/$1.rels'));
+      if(rx){ const nr = Array.from(_xml(rx).getElementsByTagName('Relationship')).find(r=> /\/notesSlide$/.test(r.getAttribute('Type') || ''));
+        if(nr){ const nx = await zip.text(_zipPath(order[i], nr.getAttribute('Target'))); if(nx) notes = _pptParas(_xml(nx)).filter(t=> !/^\d+$/.test(t)); } }
+    }catch(e){}
+    slides.push({n: i + 1, paras, notes});
+  }
+  out.parsed = {slides};
+  out.text = slides.map(s=> '--- شريحة ' + s.n + ' ---\n' + s.paras.join('\n') + (s.notes.length ? '\n(ملاحظات المقدم: ' + s.notes.join(' ') + ')' : '')).join('\n\n');
+  out.info = slides.length + ' شريحة';
+}
+
+// OpenDocument (.odt / .odp)
+async function _exOdf(buf, out, ext){
+  const zip = _zipOpen(buf);
+  const xml = await zip.text('content.xml'); if(!xml) throw new Error('content.xml ناقص.');
+  const doc = _xml(xml);
+  const pt = el=>{ let t = ''; el.childNodes.forEach(c=>{
+    if(c.nodeType === 3) t += c.nodeValue;
+    else if(c.nodeType === 1){ const ln = c.localName; if(ln === 's') t += ' '.repeat(parseInt(c.getAttributeNS(NS_TEXT, 'c'), 10) || 1); else if(ln === 'tab') t += '\t'; else if(ln === 'line-break') t += '\n'; else t += pt(c); }
+  }); return t; };
+  if(ext === 'odp'){
+    const slides = Array.from(doc.getElementsByTagNameNS(NS_DRAW, 'page')).map((pg, i)=> ({n: i + 1, paras: Array.from(pg.getElementsByTagNameNS(NS_TEXT, 'p')).map(p=> pt(p).trim()).filter(t=> t && !/^<[a-z-]+>$/i.test(t)), notes: []}));
+    out.parsed = {slides};
+    out.text = slides.map(s=> '--- شريحة ' + s.n + ' ---\n' + s.paras.join('\n')).join('\n\n');
+    out.info = slides.length + ' شريحة';
+  }else{
+    const lines = [], tdepth = el=>{ let d = 0; for(let n = el.parentNode; n && n.nodeType === 1; n = n.parentNode) if(n.localName === 'table' && n.namespaceURI === NS_TABLE) d++; return d; };
+    Array.from(doc.getElementsByTagNameNS('*', '*')).forEach(el=>{
+      if(el.namespaceURI === NS_TEXT && tdepth(el) === 0){ if(el.localName === 'h') lines.push('# ' + pt(el).trim()); else if(el.localName === 'p') lines.push(pt(el)); }
+      else if(el.namespaceURI === NS_TABLE && el.localName === 'table-row' && tdepth(el) === 1){
+        const cells = Array.from(el.children).filter(c=> c.localName === 'table-cell' || c.localName === 'covered-table-cell').map(c=> Array.from(c.getElementsByTagNameNS(NS_TEXT, 'p')).map(p=> pt(p).trim()).join(' '));
+        lines.push('| ' + cells.join(' | ') + ' |');
+      }
+    });
+    out.text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    out.info = out.text.split(/\s+/).filter(Boolean).length + ' كلمة';
+  }
+}
+
+// RTF
+function _rtfToText(src){
+  const m = /\\ansicpg(\d+)/.exec(src.slice(0, 2000)); let dec;
+  try{ dec = new TextDecoder(m ? 'windows-' + m[1] : 'windows-1252'); }catch(e){ dec = new TextDecoder('windows-1252'); }
+  const SKIPW = new Set(['fonttbl', 'colortbl', 'stylesheet', 'info', 'pict', 'header', 'headerl', 'headerr', 'headerf', 'footer', 'footerl', 'footerr', 'footerf', 'footnote', 'object', 'themedata', 'colorschememapping', 'latentstyles', 'datastore', 'listtable', 'listoverridetable', 'generator', 'xmlnstbl', 'rsidtbl', 'private', 'fldinst', 'pgptbl', 'revtbl', 'bkmkstart', 'bkmkend', 'falt', 'panose']);
+  const out = [], bytes = [], ucStack = []; let uc = 1, depth = 0, skipDepth = 0, skipN = 0, i = 0;
+  const flush = ()=>{ if(bytes.length){ out.push(dec.decode(new Uint8Array(bytes))); bytes.length = 0; } };
+  const n = src.length;
+  while(i < n){
+    const ch = src[i];
+    if(ch === '{'){ flush(); depth++; ucStack.push(uc); i++; continue; }
+    if(ch === '}'){ flush(); if(skipDepth && depth === skipDepth) skipDepth = 0; depth--; uc = ucStack.pop() || 1; i++; continue; }
+    if(ch === '\r' || ch === '\n'){ i++; continue; }
+    if(ch !== '\\'){ if(skipN > 0) skipN--; else if(!skipDepth){ flush(); out.push(ch); } i++; continue; }
+    const nx = src[i + 1];
+    if(nx === "'"){ if(skipN > 0) skipN--; else if(!skipDepth) bytes.push(parseInt(src.substr(i + 2, 2), 16) || 63); i += 4; continue; }
+    if(nx === '\\' || nx === '{' || nx === '}'){ if(skipN > 0) skipN--; else if(!skipDepth){ flush(); out.push(nx); } i += 2; continue; }
+    if(nx === '*'){ if(!skipDepth) skipDepth = depth; i += 2; continue; }
+    if(nx === '~'){ if(!skipDepth){ flush(); out.push(' '); } i += 2; continue; }
+    if(nx === '-' || nx === '_' || nx === '|' || nx === ':'){ i += 2; continue; }
+    const mm = /^\\([a-zA-Z]+)(-?\d+)? ?/.exec(src.substr(i, 32));
+    if(!mm){ i += 2; continue; }
+    i += mm[0].length;
+    const w = mm[1], arg = mm[2] !== undefined ? parseInt(mm[2], 10) : null;
+    if(SKIPW.has(w)){ if(!skipDepth) skipDepth = depth; continue; }
+    if(skipDepth) continue;
+    flush();
+    if(w === 'par' || w === 'line' || w === 'sect' || w === 'page' || w === 'row') out.push('\n');
+    else if(w === 'cell') out.push(' | ');
+    else if(w === 'tab') out.push('\t');
+    else if(w === 'uc') uc = arg == null ? 1 : arg;
+    else if(w === 'u' && arg != null){ out.push(String.fromCharCode(arg < 0 ? arg + 65536 : arg)); skipN = uc; }
+    else if(w === 'emdash') out.push('—'); else if(w === 'endash') out.push('–'); else if(w === 'bullet') out.push('•');
+    else if(w === 'lquote') out.push('‘'); else if(w === 'rquote') out.push('’'); else if(w === 'ldblquote') out.push('“'); else if(w === 'rdblquote') out.push('”');
+  }
+  flush();
+  return out.join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function _exRtf(buf, out){
+  const src = new TextDecoder('windows-1252').decode(new Uint8Array(buf));
+  if(!/^\s*\{\\rtf/.test(src)) throw new Error('ماشي ملف RTF صالح.');
+  out.text = _rtfToText(src);
+  out.info = out.text.split(/\s+/).filter(Boolean).length + ' كلمة';
+}
+
+// Word القديم (.doc): كنقراو حاوية OLE وجدول القطع (piece table) بلا مكتبات
+function _cfbRead(buf){
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  const sig = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+  if(u8.length < 512 || sig.some((b, i)=> u8[i] !== b)) throw new Error('ماشي ملف Office قديم صالح.');
+  const ss = 1 << dv.getUint16(0x1E, true), mss = 1 << dv.getUint16(0x20, true);
+  const nFat = dv.getUint32(0x2C, true), dirStart = dv.getUint32(0x30, true), cutoff = dv.getUint32(0x38, true), mfStart = dv.getUint32(0x3C, true), nMf = dv.getUint32(0x40, true), difStart = dv.getUint32(0x44, true), nDif = dv.getUint32(0x48, true);
+  const END = 0xFFFFFFFA, secOff = s=> (s + 1) * ss;
+  const fatSecs = [];
+  for(let i = 0; i < 109 && fatSecs.length < nFat; i++){ const s = dv.getUint32(0x4C + i * 4, true); if(s < END) fatSecs.push(s); }
+  let ds = difStart, g = 0;
+  while(ds < END && fatSecs.length < nFat && g++ <= nDif){ const o = secOff(ds), per = ss / 4 - 1; for(let i = 0; i < per && fatSecs.length < nFat; i++){ const s = dv.getUint32(o + i * 4, true); if(s < END) fatSecs.push(s); } ds = dv.getUint32(o + per * 4, true); }
+  const fat = [];
+  fatSecs.forEach(s=>{ const o = secOff(s); for(let i = 0; i < ss / 4 && o + i * 4 + 4 <= u8.length; i++) fat.push(dv.getUint32(o + i * 4, true)); });
+  const chain = (start, arr)=>{ const r = []; let s = start, c = 0; while(s < END && c++ < 2000000){ r.push(s); s = arr[s]; if(s === undefined) break; } return r; };
+  const readStream = (start, size)=>{ const secs = chain(start, fat), o = new Uint8Array(secs.length * ss); secs.forEach((s, i)=> o.set(u8.subarray(secOff(s), secOff(s) + ss), i * ss)); return o.subarray(0, size); };
+  const dirSecs = chain(dirStart, fat), dir = readStream(dirStart, dirSecs.length * ss), dd = new DataView(dir.buffer, dir.byteOffset, dir.byteLength);
+  const ents = {}; let root = null;
+  for(let o = 0; o + 128 <= dir.length; o += 128){
+    const nl = dd.getUint16(o + 64, true); if(!nl) continue;
+    const name = new TextDecoder('utf-16le').decode(dir.subarray(o, o + Math.max(0, nl - 2))), type = dir[o + 66];
+    const e = {start: dd.getUint32(o + 116, true), size: dd.getUint32(o + 120, true), type};
+    if(type === 5) root = e; else if(type === 2 && !ents[name]) ents[name] = e;
+  }
+  let mini = null, miniFat = null;
+  const get = name=>{
+    const e = ents[name]; if(!e) return null;
+    if(e.size >= cutoff) return readStream(e.start, e.size);
+    if(!root) return null;
+    if(!mini){ mini = readStream(root.start, root.size); const mf = readStream(mfStart, nMf * ss), md = new DataView(mf.buffer, mf.byteOffset, mf.byteLength); miniFat = []; for(let i = 0; i + 4 <= mf.length; i += 4) miniFat.push(md.getUint32(i, true)); }
+    const secs = chain(e.start, miniFat), o = new Uint8Array(secs.length * mss);
+    secs.forEach((s, i)=> o.set(mini.subarray(s * mss, s * mss + mss), i * mss));
+    return o.subarray(0, e.size);
+  };
+  return {get};
+}
+function _exDoc(buf, out){
+  const cfb = _cfbRead(buf), wd = cfb.get('WordDocument');
+  if(!wd) throw new Error('ماشي ملف Word صالح.');
+  const dv = new DataView(wd.buffer, wd.byteOffset, wd.byteLength);
+  if(dv.getUint16(0, true) !== 0xA5EC) throw new Error('نسخة Word هادي قديمة بزاف (قبل 97). حفظو كـ .docx وعاود.');
+  const flags = dv.getUint16(0x0A, true);
+  if(flags & 0x0100) throw new Error('الملف محمي بكلمة سر.');
+  const tbl = cfb.get((flags & 0x0200) ? '1Table' : '0Table');
+  if(!tbl) throw new Error('بنية الملف ناقصة.');
+  const ccpText = dv.getInt32(0x4C, true), fcClx = dv.getUint32(0x1A2, true), lcbClx = dv.getUint32(0x1A6, true);
+  const td = new DataView(tbl.buffer, tbl.byteOffset, tbl.byteLength);
+  let p = fcClx, pcd = null;
+  while(p < fcClx + lcbClx && p < tbl.length){ const t = td.getUint8(p); if(t === 1) p += 3 + td.getUint16(p + 1, true); else if(t === 2){ pcd = {off: p + 5, lcb: td.getUint32(p + 1, true)}; break; } else break; }
+  if(!pcd) throw new Error('بنية النص غير مفهومة. حفظو كـ .docx وعاود.');
+  const n = Math.floor((pcd.lcb - 4) / 12), parts = []; let total = 0;
+  for(let i = 0; i < n && total < ccpText; i++){
+    const cpS = td.getUint32(pcd.off + i * 4, true), cpE = td.getUint32(pcd.off + (i + 1) * 4, true);
+    const fcRaw = td.getUint32(pcd.off + (n + 1) * 4 + i * 8 + 2, true), comp = (fcRaw & 0x40000000) !== 0, fc = fcRaw & 0x3FFFFFFF;
+    let len = cpE - cpS; if(cpS + len > ccpText) len = ccpText - cpS; if(len <= 0) continue;
+    if(comp){ const st = fc >>> 1; parts.push(new TextDecoder('windows-1252').decode(wd.subarray(st, st + len))); }
+    else parts.push(new TextDecoder('utf-16le').decode(wd.subarray(fc, fc + len * 2)));
+    total += len;
+  }
+  let res = '', last07 = false; const fld = [];
+  for(const ch of parts.join('')){
+    const c = ch.charCodeAt(0);
+    if(c === 0x13){ fld.push('code'); continue; }
+    if(c === 0x14){ if(fld.length) fld[fld.length - 1] = 'res'; continue; }
+    if(c === 0x15){ fld.pop(); continue; }
+    if(fld.includes('code')) continue;
+    if(c === 0x07){ if(last07) res = res.replace(/ \| $/, '\n'); else res += ' | '; last07 = true; continue; }
+    last07 = false;
+    if(c === 0x0D || c === 0x0B || c === 0x0C) res += '\n';
+    else if(c === 0x09) res += '\t';
+    else if(c >= 0x20) res += ch;
+  }
+  out.text = res.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  out.info = out.text.split(/\s+/).filter(Boolean).length + ' كلمة';
+}
+
+async function _extractFile(file){
+  const name = file.name || '', ext = ((name.match(/\.([^.\/\\]+)$/) || [])[1] || '').toLowerCase(), type = file.type || '';
+  let hit = _FILE_FMT.find(x=> x[0].test(ext));
+  if(!hit && /^text\//.test(type)) hit = [null, 'text', '📃', 'نص'];
+  const out = {fmt: hit ? hit[1] : 'unknown', icon: hit ? hit[2] : _otherIcon(ext, type), label: hit ? hit[3] : (ext ? ext.toUpperCase() : 'ملف'), text: '', info: '', parsed: null, readable: false, note: ''};
+  try{
+    const buf = await file.arrayBuffer();
+    if(out.fmt === 'sheet') await _exSheet(buf, out);
+    else if(out.fmt === 'csv') _exCsv(buf, out);
+    else if(out.fmt === 'docx') await _exDocx(buf, out);
+    else if(out.fmt === 'doc') _exDoc(buf, out);
+    else if(out.fmt === 'pptx') await _exPptx(buf, out);
+    else if(out.fmt === 'odf') await _exOdf(buf, out, ext);
+    else if(out.fmt === 'rtf') _exRtf(buf, out);
+    else if(out.fmt === 'text') _exText(buf, out);
+    else if(out.fmt === 'ppt') out.note = 'ملف PowerPoint القديم (.ppt) ما كيتقراش. احفظو كـ .pptx وعاود.';
+    else out.note = 'هاد النوع من الملفات ما كيقراوش يونس (كيقرا Excel وWord وPowerPoint وCSV والنصوص وPDF والصور). تسجل كمرفق فقط وتقدر تحمّلو.';
+  }catch(e){ out.text = ''; out.parsed = null; out.note = 'ما قدرش يونس يقرا هاد الملف: ' + (e && e.message ? e.message : e); }
+  if(out.text && out.text.trim()){
+    out.readable = true; out.note = '';
+    if(out.text.length > FILE_TEXT_STORE_MAX){ out.textFull = out.text.length; out.text = out.text.slice(0, FILE_TEXT_STORE_MAX); }
+  }else if(!out.note) out.note = 'الملف خاوي ولا ما فيه نص كيتقرا (ممكن يكون غير صور ولا مسح ضوئي).';
+  return out;
+}
+
+async function _buildAttachment(file){
+  const name = file.name || 'file', ext = ((name.match(/\.([^.\/\\]+)$/) || [])[1] || '').toLowerCase(), type = file.type || '';
+  if(type === 'application/pdf' || ext === 'pdf'){
+    if(file.size > MAX_PDF_BYTES){ alert(`ملف PDF "${name}" كبير زيادة (أكبر من 14 ميجا). قسمو لأجزاء أو صغّرو.`); return null; }
+    const data = await _readAsBase64(file);
+    let head = ''; try{ head = atob(data.slice(0, 8)); }catch(e){}
+    if(!head.startsWith('%PDF')){ alert(`"${name}" ماشي ملف PDF صالح.`); return null; }
+    return { data, mime: 'application/pdf', name };
+  }
+  if(/^image\//.test(type) || (!type && /^(png|jpe?g|webp|gif|bmp|heic|heif|avif)$/.test(ext))){
+    const shrinkable = /^image\/(jpeg|png|webp)$/.test(type);
+    if(file.size > (shrinkable ? 20 : 8) * 1024 * 1024){ alert(`الصورة "${name}" كبيرة زيادة، تجاوزناها.`); return null; }
+    const att = await _prepareImageFile(file);
+    if(att){ att.name = name; return att; }
+    // صيغة صورة ما قدرناش نحولوها (مثلا SVG): كتدوز كملف عادي
+  }
+  if(file.size > MAX_FILE_BYTES){ alert(`الملف "${name}" كبير زيادة (${_fmtBytes(file.size)}). الحد الأقصى ${_fmtBytes(MAX_FILE_BYTES)}.`); return null; }
+  if(pendingImages.filter(isFileAtt).reduce((n, a)=> n + (a.size || 0), 0) + file.size > MAX_FILES_TOTAL_BYTES){ alert('مجموع الملفات كبير زيادة فرسالة وحدة. صيفطهم على دفعتين.'); return null; }
+  const info = await _extractFile(file);
+  if(!info.readable) alert(`"${name}"\n${info.note}`);
+  return Object.assign({kind: 'file', name, mime: type || 'application/octet-stream', size: file.size, file}, info);
 }
 
 attachBtn.addEventListener('click', ()=> fileInput.click());
@@ -4209,35 +4726,27 @@ fileInput.addEventListener('change', async ()=>{
   if(!files.length) return;
   const room = Math.max(0, MAX_IMAGES - pendingImages.length);
   if(files.length > room) alert(`ماقدرش تزيد أكثر من ${MAX_IMAGES} مرفقات فمرة وحدة.`);
-  for(const file of files.slice(0, room)){
-    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
-    const isImg = /^image\//.test(file.type || '');
-    if(!isPdf && !isImg){ alert(`الملف "${file.name}" نوعو ما مدعومش. كنقبلو غير الصور وملفات PDF.`); continue; }
-    try{
-      let att;
-      if(isPdf){
-        if(file.size > MAX_PDF_BYTES){ alert(`ملف PDF "${file.name}" كبير زيادة (أكبر من 14 ميجا). قسمو لأجزاء أو صغّرو.`); continue; }
-        const data = await _readAsBase64(file);
-        let head = ''; try{ head = atob(data.slice(0, 8)); }catch(e){}
-        if(!head.startsWith('%PDF')){ alert(`"${file.name}" ماشي ملف PDF صالح.`); continue; }
-        att = { data, mime: 'application/pdf', name: file.name };
-      }else{
-        const shrinkable = /^image\/(jpeg|png|webp)$/.test(file.type || '');
-        if(file.size > (shrinkable ? 20 : 8) * 1024 * 1024){ alert(`الصورة "${file.name}" كبيرة زيادة، تجاوزناها.`); continue; }
-        att = await _prepareImageFile(file); att.name = file.name;
+  _attBusy++; renderAttachPreview();
+  try{
+    for(const file of files.slice(0, room)){
+      try{
+        const att = await _buildAttachment(file);
+        if(!att) continue;
+        if(!isFileAtt(att)){
+          const total = pendingImages.reduce((n, x)=> n + (x.data ? x.data.length : 0), 0) + att.data.length;
+          if(total > MAX_TOTAL_B64){ alert('مجموع المرفقات كبير زيادة فرسالة وحدة. صيفطهم على دفعتين.'); continue; }
+        }
+        pendingImages.push(att);
+        renderAttachPreview();
+      }catch(e){
+        alert(`ما قدرتش نقرا "${file.name}". جرب مرة ثانية.`);
       }
-      const total = pendingImages.reduce((n, x)=> n + x.data.length, 0) + att.data.length;
-      if(total > MAX_TOTAL_B64){ alert('مجموع المرفقات كبير زيادة فرسالة وحدة. صيفطهم على دفعتين.'); continue; }
-      pendingImages.push(att);
-      renderAttachPreview();
-    }catch(e){
-      alert(`ما قدرتش نقرا "${file.name}". جرب مرة ثانية.`);
     }
-  }
+  }finally{ _attBusy--; renderAttachPreview(); }
 });
 
 function renderAttachPreview(){
-  if(!pendingImages.length){
+  if(!pendingImages.length && !_attBusy){
     attachPreview.classList.remove('show');
     attachPreview.innerHTML = '';
     attachBtn.classList.remove('has-image');
@@ -4245,22 +4754,139 @@ function renderAttachPreview(){
   }
   attachBtn.classList.add('has-image');
   attachPreview.classList.add('show');
-  attachPreview.innerHTML = pendingImages.map((img, idx) => isPdfAtt(img) ? `
-    <div class="attach-thumb pdf" title="${escapeHtml(img.name || 'PDF')}">
-      <span class="pdf-ic">📄</span><span class="pdf-nm">${escapeHtml(img.name || 'PDF')}</span>
+  attachPreview.innerHTML = pendingImages.map((a, idx)=>{
+    if(isFileAtt(a)) return `
+    <div class="attach-thumb pdf file" data-idx="${idx}" title="${_h(a.name)}${a.readable ? '' : ' — ' + _h(a.note)}">
+      <span class="pdf-ic">${_h(a.icon)}</span><span class="pdf-nm">${_h(a.name)}</span>${a.readable ? '' : '<span class="att-warn">⚠️</span>'}
       <button class="attach-remove" data-idx="${idx}">✕</button>
-    </div>` : `
-    <div class="attach-thumb">
-      <img src="data:${img.mime};base64,${img.data}">
+    </div>`;
+    if(isPdfAtt(a)) return `
+    <div class="attach-thumb pdf" data-idx="${idx}" title="${_h(a.name || 'PDF')}">
+      <span class="pdf-ic">📄</span><span class="pdf-nm">${_h(a.name || 'PDF')}</span>
       <button class="attach-remove" data-idx="${idx}">✕</button>
-    </div>
-  `).join('');
+    </div>`;
+    return `
+    <div class="attach-thumb" data-idx="${idx}">
+      <img src="data:${a.mime};base64,${a.data}">
+      <button class="attach-remove" data-idx="${idx}">✕</button>
+    </div>`;
+  }).join('') + (_attBusy ? '<div class="attach-busy">⏳ كنقرا الملف...</div>' : '');
   attachPreview.querySelectorAll('.attach-remove').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      pendingImages.splice(parseInt(btn.dataset.idx,10), 1);
+    btn.addEventListener('click', e=>{
+      e.stopPropagation();
+      pendingImages.splice(parseInt(btn.dataset.idx, 10), 1);
       renderAttachPreview();
     });
   });
+  attachPreview.querySelectorAll('.attach-thumb').forEach(t=>{
+    t.addEventListener('click', ()=> openAttachmentPreview(pendingImages[parseInt(t.dataset.idx, 10)]));
+  });
+}
+
+/* ===== المعاينة: كتخدم بنفس نافذة المعاينة ديال التطبيق (زوم + تحميل) ===== */
+const _NUMRE = /^[\s\u200e\u200f(+\-]*\d[\d\s\u00a0.,'\/:%()\-]*$/;
+function _colName(i){ let s = ''; i++; while(i > 0){ const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); } return s; }
+function _sheetNode(sheets){
+  const root = document.createElement('div'); root.style.cssText = 'background:#fff; color:#111; padding:8px; font-size:12px;';
+  const bar = document.createElement('div'), area = document.createElement('div');
+  bar.style.cssText = 'display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;';
+  root.appendChild(bar); root.appendChild(area);
+  let cur = 0, shown = 300;
+  function draw(){
+    const s = sheets[cur];
+    bar.querySelectorAll('button').forEach((b, i)=>{ b.className = i === cur ? 'btn-primary' : 'btn-ghost'; });
+    if(!s.rows.length){ area.innerHTML = '<div style="padding:20px; text-align:center; color:#64748b;">الورقة خاوية.</div>'; return; }
+    const cols = s.cols, th = 'border:1px solid #cbd5e1; background:#f1f5f9; padding:3px 6px; font-weight:700; color:#475569; position:sticky; top:0;';
+    let h = '<div style="overflow-x:auto;"><table style="border-collapse:collapse; font-size:12px; min-width:100%;"><thead><tr><th style="' + th + ' left:0;"></th>';
+    for(let c = 0; c < cols; c++) h += '<th style="' + th + '">' + _colName((s.off || 0) + c) + '</th>';
+    h += '</tr></thead><tbody>';
+    s.rows.slice(0, shown).forEach(r=>{
+      h += '<tr><td style="border:1px solid #cbd5e1; background:#f1f5f9; padding:3px 6px; color:#64748b; text-align:center;">' + r.n + '</td>';
+      for(let c = 0; c < cols; c++){
+        const v = r.c[c] == null ? '' : String(r.c[c]), num = _NUMRE.test(v);
+        h += '<td dir="' + (num ? 'ltr' : 'auto') + '" style="border:1px solid #cbd5e1; padding:3px 6px; ' + (num ? 'text-align:right; white-space:nowrap; unicode-bidi:isolate;' : 'min-width:60px;') + '">' + _h(fixNumGroups(v)) + '</td>';
+      }
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+    area.innerHTML = h;
+    if(s.rows.length > shown){
+      const more = document.createElement('button'); more.className = 'btn-ghost'; more.style.cssText = 'margin:10px auto; display:block;';
+      more.textContent = '⬇️ عرض 300 سطر زيادة (' + shown + ' من ' + s.rows.length + ')';
+      more.addEventListener('click', ()=>{ shown += 300; draw(); });
+      area.appendChild(more);
+    }
+    if(s.cut){ const nt = document.createElement('div'); nt.style.cssText = 'color:#92400e; font-size:11.5px; padding:6px;'; nt.textContent = '⚠️ الملف أطول من ' + SHEET_MAX_ROWS + ' سطر، المعروض هو الأول فقط.'; area.appendChild(nt); }
+  }
+  if(sheets.length > 1) sheets.forEach((s, i)=>{ const b = document.createElement('button'); b.textContent = '📄 ' + s.name + (s.hidden ? ' (مخفية)' : ''); b.style.cssText = 'padding:5px 10px; font-size:12px;'; b.addEventListener('click', ()=>{ cur = i; shown = 300; draw(); }); bar.appendChild(b); });
+  draw();
+  return root;
+}
+function _slidesNode(slides){
+  const root = document.createElement('div'); root.style.cssText = 'padding:8px;';
+  slides.forEach(s=>{
+    const c = document.createElement('div'); c.style.cssText = 'background:#fff; color:#111; border:1px solid #cbd5e1; border-radius:8px; padding:12px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,.12);';
+    c.innerHTML = '<div style="font-weight:800; color:#1F4E79; margin-bottom:6px; font-size:12px;">🎞️ شريحة ' + s.n + '</div>' +
+      (s.paras.length ? s.paras.map((p, i)=> '<div dir="auto" style="margin:3px 0; ' + (i === 0 ? 'font-weight:700; font-size:15px;' : 'font-size:13px;') + '">' + _h(fixNumGroups(p)) + '</div>').join('') : '<div style="color:#94a3b8; font-size:12px;">(بلا نص)</div>') +
+      (s.notes && s.notes.length ? '<div dir="auto" style="margin-top:8px; padding-top:6px; border-top:1px dashed #cbd5e1; color:#64748b; font-size:12px;">📝 ' + _h(fixNumGroups(s.notes.join(' '))) + '</div>' : '');
+    root.appendChild(c);
+  });
+  return root;
+}
+function _textNode(text, forceLtr){
+  const root = document.createElement('div'); root.style.cssText = 'background:#fff; color:#111; padding:10px;';
+  const pre = document.createElement('pre');
+  pre.setAttribute('dir', forceLtr ? 'ltr' : 'auto');
+  pre.style.cssText = 'margin:0; white-space:pre-wrap; word-break:break-word; font-size:12.5px; line-height:1.6; font-family:inherit;' + (forceLtr ? ' text-align:left; unicode-bidi:isolate;' : '');
+  const MAXC = 60000;
+  pre.textContent = fixNumGroups(text.length > MAXC ? text.slice(0, MAXC) : text);
+  root.appendChild(pre);
+  if(text.length > MAXC){ const n = document.createElement('div'); n.style.cssText = 'color:#92400e; font-size:11.5px; margin-top:8px;'; n.textContent = '⚠️ المعاينة كتعرض غير أول ' + MAXC + ' حرف من ' + text.length + '. التحميل كيعطيك الملف كامل.'; root.appendChild(n); }
+  return root;
+}
+function _infoNode(a){
+  const w = document.createElement('div'); w.style.cssText = 'background:#fff; color:#111; padding:28px 18px; text-align:center; max-width:520px; margin:20px auto; border-radius:12px;';
+  w.innerHTML = '<div style="font-size:54px; line-height:1;">' + _h(a.icon || '📎') + '</div><div dir="auto" style="font-weight:800; margin:10px 0 4px; word-break:break-word;">' + _h(a.name) + '</div><div style="color:#64748b; font-size:12.5px;">' + _h(a.label || '') + ' · ' + _h(_fmtBytes(a.size)) + '</div>' +
+    '<div dir="auto" style="margin-top:14px; color:#92400e; font-size:13px; line-height:1.7;">' + _h(a.note || 'ما يمكنش نعرض هاد النوع داخل التطبيق.') + '</div><div style="margin-top:10px; color:#475569; font-size:12.5px;">تقدر تحمّلو بزر «تحميل» وتفتحو بتطبيق خارجي.</div>';
+  return w;
+}
+function _yunusTextNode(a){
+  const wrap = document.createElement('div');
+  const info = document.createElement('div'); info.style.cssText = 'background:#fffbeb; color:#92400e; padding:8px 12px; font-size:12px; line-height:1.7; border-bottom:1px solid #fde68a;';
+  const full = a.textFull || a.text.length;
+  info.innerHTML = '🤖 هادا هو النص اللي استخرجو التطبيق وكيتصيفط ليونس (' + _L(full.toLocaleString('en-US')) + ' حرف). Gemini كيتوصل بحتى ' + _L('120,000') + ' حرف، وGroq بـ ' + _L('12,000') + '، وCerebras بـ ' + _L('6,000') + ': كلما كان الملف كبير كلما تحتاج Gemini.';
+  wrap.appendChild(info); wrap.appendChild(_textNode(a.text, true));
+  return wrap;
+}
+async function _filePreviewNode(a){
+  if((a.fmt === 'sheet' || a.fmt === 'csv') && a.parsed) return _sheetNode(a.parsed.sheets);
+  if(a.fmt === 'docx' && a.parsed && a.parsed.html){ const w = document.createElement('div'); w.innerHTML = '<div dir="auto" style="background:#fff; color:#111; padding:16px; font-size:14px; line-height:1.8; max-width:900px; margin:0 auto; word-break:break-word;">' + a.parsed.html + '</div>'; return w; }
+  if((a.fmt === 'pptx' || a.fmt === 'odf') && a.parsed && a.parsed.slides) return _slidesNode(a.parsed.slides);
+  if(a.text) return _textNode(a.text);
+  return _infoNode(a);
+}
+function openAttachmentPreview(a){
+  if(!a) return;
+  if(isFileAtt(a)){
+    if(a.expired || !a.file){ alert('المعاينة ما بقاتش متاحة لهاد الملف: المرفقات كتبقى غير فالجلسة الحالية ومكتتخزنش فالهاتف (حماية لبياناتك). عاود أرفقو إلا بغيتي تعاينو.'); return; }
+    const variants = [{key: 'p', label: '👁 المعاينة', filename: a.name, render: ()=> _filePreviewNode(a), blob: async ()=> a.file}];
+    if(a.text) variants.push({key: 't', label: '🤖 اللي كيقراه يونس', filename: a.name.replace(/\.[^.]+$/, '') + '.txt', render: async ()=> _yunusTextNode(a), blob: async ()=> new Blob([a.text], {type: 'text/plain;charset=utf-8'})});
+    openFilePreview({title: a.name, first: 'p', noEdit: true, variants});
+    return;
+  }
+  const nm = a.name || ('image.' + _extFromMime(a.mime));
+  openFilePreview({title: nm, first: 'p', noEdit: true, variants: [{
+    key: 'p', label: '', filename: nm,
+    render: async ()=>{
+      const w = document.createElement('div');
+      if(isPdfAtt(a)){ await renderPdfPreview(w, {output: ()=> _b64ToBytes(a.data).buffer}); return w; }
+      const img = new Image(); img.src = 'data:' + a.mime + ';base64,' + a.data;
+      img.style.cssText = 'max-width:100%; display:block; margin:0 auto; background:#fff;';
+      try{ await img.decode(); }catch(e){}
+      w.appendChild(img); return w;
+    },
+    blob: async ()=> new Blob([_b64ToBytes(a.data)], {type: a.mime})
+  }]});
 }
 
 /* PDF -> صور JPEG (غير لـ Groq الاحتياطي، حيت Gemini كيقرا PDF مباشرة). pdf.js كيتحمل غير ملي يحتاجو */
@@ -4318,6 +4944,34 @@ async function _groqImageParts(atts){
   }
   return { parts, note };
 }
+// واش كاين ملف (مقروء) فآخر رسائل المحادثة
+function _lastFileIndex(msgs, windowSize){
+  const base = Math.max(0, msgs.length - windowSize);
+  for(let i = msgs.length - 1; i >= base; i--){
+    const m = msgs[i];
+    if(m && m.role === 'user' && m.files && m.files.some(f=> f.text)) return i;
+  }
+  return -1;
+}
+// نص الملفات المرفقة لكل رسالة (من الأحدث للأقدم) داخل ميزانية حروف حسب المزود: Gemini واسعة، Groq/Cerebras ضيقة
+function _fileCtx(msgs, total, per){
+  const out = new Array(msgs.length).fill('');
+  let left = total;
+  for(let i = msgs.length - 1; i >= 0; i--){
+    const m = msgs[i];
+    if(!m || m.role !== 'user' || !m.files || !m.files.length) continue;
+    out[i] = m.files.map(f=>{
+      const head = '📎 [ملف مرفق: ' + f.name + ' — ' + (f.label || '') + (f.info ? ' — ' + f.info : '') + ']';
+      if(f.expired) return head + '\n(محتوى هاد الملف ما بقاش متاح بعد إعادة فتح التطبيق)';
+      if(!f.text) return head + '\n(' + (f.note || 'ما قدرتش نقرا محتوى هاد الملف') + ')';
+      if(left <= 0) return head + '\n(تم حذف محتوى الملف من السياق لتوفير المساحة. إلا احتجتيه، قول للمستخدم يعاود يرفعو.)';
+      const all = f.textFull || f.text.length, take = Math.min(f.text.length, per, left); left -= take;
+      return head + '\n' + f.text.slice(0, take) + (take < all ? '\n…(تم اقتطاع الملف: المعروض ' + take + ' حرف من ' + all + '. نبّه المستخدم أن الباقي ما قريتوش.)' : '') + '\n[نهاية الملف]';
+    }).join('\n\n');
+  }
+  return out;
+}
+
 // واش كاين مرفق فآخر رسائل المحادثة (باش المتابعة "والطابق الأول؟" تبقى كتشوف البلان)
 function _lastAttachmentIndex(msgs, windowSize){
   const base = Math.max(0, msgs.length - windowSize);
@@ -4364,12 +5018,15 @@ async function sendMessage(){
   if(currentRole === 'employee') return;   // الموظف ما عندو حق يستعمل يونس
   const text = inputEl.value.trim();
   if(!text && !pendingImages.length) return;
+  if(_attBusy > 0){ alert('كنقرا الملف المرفق، تسنى ثواني وعاود.'); return; }
+  const _vis = _visAtts(), _docs = pendingImages.filter(isFileAtt);
 
-  // مرفق (PDF/صورة) بلا نص: كنسجلو فالمحادثة فقط بلا ما نصيفطو للذكاء الاصطناعي. المستخدم هو اللي كيكتب من بعد شنو بغا (تحليل، متري، تلخيص...) والمرفق كيبقى حاضر.
+  // مرفق (PDF/صورة/ملف) بلا نص: كنسجلو فالمحادثة فقط بلا ما نصيفطو للذكاء الاصطناعي. المستخدم هو اللي كيكتب من بعد شنو بغا (تحليل، متري، تلخيص...) والمرفق كيبقى حاضر.
   if(!text && pendingImages.length && !window._vnPending){
     const stageMsg = {role:'user', text:'', time:Date.now()};
-    if(pendingImages.length === 1) stageMsg.image = pendingImages[0];
-    else stageMsg.images = pendingImages.slice();
+    if(_vis.length === 1) stageMsg.image = _vis[0];
+    else if(_vis.length > 1) stageMsg.images = _vis.slice();
+    if(_docs.length) stageMsg.files = _docs.slice();
     messages.push(stageMsg);
     pendingImages = [];
     renderAttachPreview();
@@ -4380,7 +5037,7 @@ async function sendMessage(){
   }
 
   const key = getApiKey();
-  const hasImage = pendingImages.length > 0;
+  const hasImage = _vis.length > 0;   // الملفات النصية (Excel/Word...) ما كتحتاجش رؤية: كتتصيفط كنص
   if(!key && !getGroqKey() && !getCerebrasKey()){
     openModal();
     return;
@@ -4392,10 +5049,11 @@ async function sendMessage(){
     return;
   }
 
-  const msgObj = {role:'user', text: text || (hasImage ? DEFAULT_ATTACH_PROMPT : ''), time:Date.now()};
+  const msgObj = {role:'user', text: text || (hasImage ? DEFAULT_ATTACH_PROMPT : (_docs.length ? DEFAULT_FILE_PROMPT : '')), time:Date.now()};
   if(window._vnPending){ msgObj.voice = window._vnPending; window._vnPending = null; }
-  if(pendingImages.length === 1) msgObj.image = pendingImages[0];
-  else if(pendingImages.length > 1) msgObj.images = pendingImages.slice();
+  if(_vis.length === 1) msgObj.image = _vis[0];
+  else if(_vis.length > 1) msgObj.images = _vis.slice();
+  if(_docs.length) msgObj.files = _docs.slice();
   messages.push(msgObj);
   inputEl.value = '';
   pendingImages = [];
@@ -4410,7 +5068,7 @@ async function sendMessage(){
   let chain = buildProviderChain(hasImage);
   // متابعة على بلان/PDF مصيفط قبل (فآخر 6 رسائل): Gemini أولاً باش يبقى كيشوف المرفق
   const _heavy = !hasImage && HEAVY_GEMINI_FIRST && _isHeavyQuery(text, false) && Date.now() > _geminiQuotaUntil;
-  if(!hasImage && getApiKey() && (_lastAttachmentIndex(messages, 6) >= 0 || _heavy)){
+  if(!hasImage && getApiKey() && (_lastAttachmentIndex(messages, 6) >= 0 || _lastFileIndex(messages, 6) >= 0 || _heavy)){
     chain = chain.filter(c=> c.name !== 'Gemini');
     chain.unshift({fn: callGemini, key: getApiKey(), name: 'Gemini'});
   }
@@ -4588,9 +5246,11 @@ async function callGemini(key, msgs){
   // الملفات (صور/PDF) كنصيفطوها غير من آخر رسالة فيها مرفق، والباقي كيتعوض بملاحظة — باش الطلب ما يتجاوزش 20MB
   const _gBase = Math.max(0, msgs.length - 14);
   const _gAttIdx = _lastAttachmentIndex(msgs, 14);
-  const contents = msgs.slice(-14).map((m, k)=>{
+  const _gSlice = msgs.slice(-14), _gFiles = _fileCtx(_gSlice, 200000, 120000);   // نص ملفات Excel/Word/... كيتصيفط كنص عادي
+  const contents = _gSlice.map((m, k)=>{
     const parts = [];
-    if(m.text) parts.push({text: m.text});
+    const _tx = (m.text || '') + (_gFiles[k] ? (m.text ? '\n\n' : '') + _gFiles[k] : '');
+    if(_tx) parts.push({text: _tx});
     const hasAtt = (m.images && m.images.length) || m.image;
     if(hasAtt && (_gBase + k) !== _gAttIdx){
       parts.push({text: '[كان فهاد الرسالة مرفق (صورة/PDF) تصيفط قبل]'});
@@ -4605,7 +5265,9 @@ async function callGemini(key, msgs){
 
   const fullSystemPrompt = _yunusFullSystemPrompt(msgs);
   // رسالة جديدة فيها بلان/PDF/صورة (ولا مرفق تسجل بلا نص والمستخدم كتب التعليمات فالرسالة اللي بعدو)
-  const _gFresh = _gAttIdx >= 0 && (_gAttIdx === msgs.length - 1 || (_gAttIdx === msgs.length - 2 && !msgs[_gAttIdx].text && msgs[msgs.length - 1].role === 'user'));
+  const _gFi = _lastFileIndex(msgs, 14);
+  const _gFresh = (_gAttIdx >= 0 && (_gAttIdx === msgs.length - 1 || (_gAttIdx === msgs.length - 2 && !msgs[_gAttIdx].text && msgs[msgs.length - 1].role === 'user')))
+    || (_gFi >= 0 && (_gFi === msgs.length - 1 || (_gFi === msgs.length - 2 && !msgs[_gFi].text && msgs[msgs.length - 1].role === 'user')));
   // Gemini كيبغي أدوار متناوبة: كندمجو الرسائل المتتالية ديال نفس الدور (المرفق + التعليمات) فرسالة وحدة
   const _contents = [];
   contents.forEach(c=>{
@@ -4699,6 +5361,7 @@ function _yunusCompactPrompt(){
   _yunusCompactCache = t;
   return t;
 }
+const YUNUS_FILES_RULE = '\n\nملفات Excel وWord وPowerPoint وCSV والنصوص: كتوصلك داخل رسالة المستخدم بين "📎 [ملف مرفق: ...]" و"[نهاية الملف]". هادا هو المحتوى الحقيقي للملف (جداول Excel بصيغة [رقم السطر] خلية | خلية). اشتغل عليه مباشرة وما تقولش "ما قدرتش نقرا الملف". إلا لقيتي تنبيه اقتطاع، ولا الملف ما تقراش، ولا محتواه ما بقاش متاح، قولها للمستخدم بوضوح وما تخمنش الجزء الناقص. الصور داخل ملفات Word ما كتشوفهاش.';
 function _yunusFullSystemPrompt(msgs, compact){
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-CA');
@@ -4708,7 +5371,7 @@ function _yunusFullSystemPrompt(msgs, compact){
   const _recentUser = msgs.filter(m=>m.role==='user').slice(-2).map(m=>m.text || '').join(' ');
   let accountingSnapshot = accountingSnapshotNeeded(_recentUser || lastUserMsg) ? buildAccountingSnapshotText() : '';
   if(compact && accountingSnapshot.length > 7000) accountingSnapshot = accountingSnapshot.slice(0, 7000) + '\n… (باقي البيانات مقتطع لضيق الحدود)';
-  return (compact ? _yunusCompactPrompt() : SYSTEM_PROMPT) + YUNUS_DARIJA_RULE + YUNUS_ROUTING_RULE + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + (accountingSnapshot || YUNUS_ACCT_MISSING) + _metreContext(msgs);
+  return (compact ? _yunusCompactPrompt() : SYSTEM_PROMPT) + YUNUS_DARIJA_RULE + YUNUS_ROUTING_RULE + (msgs.some(m=> m && m.files && m.files.length) ? YUNUS_FILES_RULE : '') + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + (accountingSnapshot || YUNUS_ACCT_MISSING) + _metreContext(msgs);
 }
 
 async function _openAiStyleCall(url, apiKey, body, providerName){
@@ -4775,17 +5438,21 @@ async function callGroq(gKey, msgs){
   const gMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs, true)}];
   const lastAtts = hasImg ? ((_attSrc.images && _attSrc.images.length) ? _attSrc.images : [_attSrc.image]) : [];
   const gImg = hasImg ? await _groqImageParts(lastAtts) : { parts: [], note: '' };
+  const _gqFiles = _fileCtx(recent, 12000, 12000);   // نص ملفات Excel/Word/... (ميزانية Groq ضيقة)
+  let _gqCarry = '';
   recent.forEach((m, idx)=>{
     const isLast = idx === recent.length - 1;
-    if(m === _attSrc && _attSrc !== last) return; // المرفق غادي يتصيفط مع التعليمات
+    if(m === _attSrc && _attSrc !== last){ _gqCarry = _gqFiles[idx] || ''; return; } // المرفق غادي يتصيفط مع التعليمات
     if(m.role === 'user'){
+      const _fx = (_gqCarry && isLast ? _gqCarry + '\n\n' : '') + (_gqFiles[idx] || '');
+      const _tx = (m.text || '') + (_fx ? (m.text ? '\n\n' : '') + _fx : '');
       if(isLast && hasImg){
         const content = [];
-        content.push({type:'text', text: (m.text || 'حلل هاد الصورة.') + gImg.note});
+        content.push({type:'text', text: (_tx || 'حلل هاد الصورة.') + gImg.note});
         gImg.parts.forEach(pt=> content.push(pt));
         gMessages.push({role:'user', content});
       }else{
-        gMessages.push({role:'user', content: m.text || (_hasAttM(m) ? '[مرفق تصيفط قبل]' : '')});
+        gMessages.push({role:'user', content: _tx || (_hasAttM(m) ? '[مرفق تصيفط قبل]' : '')});
       }
     }else{
       gMessages.push({role:'assistant', content: m.text || ''});
@@ -4827,9 +5494,11 @@ async function callGroq(gKey, msgs){
 async function callCerebras(cKey, msgs){
   // Cerebras (مجاني) — نص فقط. الطبقة المجانية سياقها صغير (≈8K)، فكنقصرو التاريخ
   const cMessages = [{role:'system', content: _yunusFullSystemPrompt(msgs, true)}];
-  msgs.slice(-8).forEach(m=>{
-    if(!m.text) return;
-    cMessages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text });
+  const _cs = msgs.slice(-8), _cf = _fileCtx(_cs, 6000, 6000);   // نص ملفات Excel/Word/... (سياق Cerebras صغير)
+  _cs.forEach((m, i)=>{
+    const tx = (m.text || '') + (_cf[i] ? (m.text ? '\n\n' : '') + _cf[i] : '');
+    if(!tx) return;
+    cMessages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: tx });
   });
   return _openAiStyleCall('https://api.cerebras.ai/v1/chat/completions', cKey, {
     model: CEREBRAS_MODEL,
@@ -12685,7 +13354,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 17-11-2026 (و)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 20-11-2026 (أ)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -12693,7 +13362,7 @@ if('serviceWorker' in navigator){
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='intro-2026-11-17f';
+    const BUILD='files-2026-11-20a';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
