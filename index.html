@@ -728,10 +728,8 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
 
 /* ---------- التسويق ---------- */
 .quote-row{
-  border:1.5px solid var(--line); border-radius:12px; padding:8px; margin-bottom:8px;
+  display:flex; gap:6px; margin-bottom:7px;
 }
-.quote-row .qr-top, .quote-row .qr-bot{ display:flex; gap:6px; align-items:center; }
-.quote-row .qr-bot{ margin-top:6px; }
 .quote-row input{
   border:1.5px solid var(--line);
   border-radius:9px;
@@ -740,16 +738,23 @@ table.msg-table tr:nth-child(even) td{ background:var(--stone); }
   font-family:inherit;
   background:var(--stone);
 }
-.quote-row input.q-desc{ flex:1; min-width:0; }
-.quote-row input.q-unit{ flex:0 0 54px; min-width:0; }
-.quote-row input.q-qty{ flex:0 0 58px; min-width:0; }
-.quote-row input.q-price{ flex:1 1 70px; min-width:0; }
-.quote-row .q-no{ flex:0 0 34px; text-align:center; font-weight:800; font-size:12px; font-family:'IBM Plex Mono', monospace; direction:ltr; unicode-bidi:isolate; }
-.quote-row .q-amt{ flex:1 1 74px; text-align:left; direction:ltr; unicode-bidi:isolate; font-weight:800; font-size:12.5px; font-family:'IBM Plex Mono', monospace; white-space:nowrap; }
-.quote-row .q-btn{ background:none; border:none; color:inherit; font-size:15px; cursor:pointer; flex-shrink:0; padding:3px 4px; line-height:1; }
-.quote-row.q-head-row{ border-width:2px; }
-.quote-row.q-head-row input.q-desc{ font-weight:800; }
-.quote-row .qr-sub{ margin-top:6px; font-size:11.5px; font-weight:700; display:flex; justify-content:space-between; align-items:center; gap:6px; }
+.quote-row input.q-desc{ flex:2; min-width:0; }
+.quote-row input.q-qty{ flex:0 0 50px; }
+.quote-row input.q-unit{ flex:0 0 52px; }
+.quote-row input.q-price{ flex:0 0 70px; }
+.quote-row .q-del{ background:none; border:none; color:var(--maroon); font-size:15px; cursor:pointer; flex-shrink:0; }
+.quote-row .q-style{ flex:0 0 34px; height:36px; background:none; border:1.5px solid var(--line); border-radius:9px; cursor:pointer; font-size:14px; padding:0; flex-shrink:0; }
+.quote-row.lot input.q-unit, .quote-row.lot input.q-qty, .quote-row.lot input.q-price{ display:none; }
+.quote-row.lot input.q-desc{ font-weight:800; }
+.quote-pal{ display:none; margin:-3px 0 10px; padding:8px; border:1px dashed var(--line); border-radius:10px; background:var(--stone); }
+.quote-pal.open{ display:block; }
+.quote-pal .lotlbl{ display:flex; align-items:center; gap:6px; font-size:12px; margin-bottom:8px; cursor:pointer; }
+.quote-pal .sw-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(26px, 1fr)); gap:6px; }
+.quote-pal .sw{ width:100%; aspect-ratio:1 / 1; min-width:24px; border-radius:7px; border:1px solid rgba(0,0,0,.18); cursor:pointer; padding:0; }
+.quote-pal .sw.on{ outline:2px solid var(--navy); outline-offset:2px; }
+.quote-pal .sw-foot{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; font-size:12px; }
+.quote-pal .sw-foot input[type=color]{ width:44px; height:30px; border:none; background:none; padding:0; }
+.quote-pal .q-nocolor{ padding:6px 10px; font-size:12px; }
 .quote-total{
   text-align:left;
   font-weight:800;
@@ -1872,15 +1877,8 @@ input, select, textarea{ min-width:0; }
         <input type="text" id="quoteClientAddr" dir="auto" placeholder="العنوان (Adresse)" style="margin-bottom:6px;">
         <input type="text" id="quoteTitle" dir="auto" placeholder="عنوان الأشغال (مثال: TRAVAUX DE REMISE EN ETAT ...)" style="margin-bottom:6px;">
         <div style="display:flex; gap:6px; margin-bottom:6px;"><input type="date" id="quoteDate" style="flex:1;"><select id="quoteTva" style="flex:1;"><option value="20">TVA 20%</option><option value="10">TVA 10%</option><option value="14">TVA 14%</option><option value="7">TVA 7%</option><option value="0">بدون TVA</option></select></div>
-        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
-          <button type="button" class="btn-ghost" id="quoteHeadColorBtn" style="padding:7px 10px; font-size:12px;">🎨 لون رأس الجدول <span id="quoteHeadColorDot" style="display:inline-block; width:14px; height:14px; border-radius:50%; border:1px solid #888; vertical-align:middle; background:#8EB4E3;"></span></button>
-          <label style="font-size:12px; display:flex; gap:5px; align-items:center; cursor:pointer;"><input type="checkbox" id="quoteShowSub" checked style="width:auto; flex:0 0 auto;"> مجموع فرعي تحت كل عنوان</label>
-        </div>
         <div id="quoteRows"></div>
-        <div style="display:flex; gap:6px;">
-          <button class="btn-ghost" id="quoteAddRowBtn" style="flex:1;">➕ إضافة بند</button>
-          <button class="btn-ghost" id="quoteAddHeadBtn" style="flex:1;">🏷️ إضافة عنوان (LOT)</button>
-        </div>
+        <button class="btn-ghost" id="quoteAddRowBtn" style="width:100%;">➕ إضافة بند</button>
         <div class="quote-total">HT: <span id="quoteTotal">0</span> — TTC: <span id="quoteTtc">0</span> درهم</div>
         <button class="btn-primary" id="quotePreviewBtn">👁 معاينة عرض السعر (DEVIS)</button>
         <button class="btn-ghost" id="quoteSendBtn" style="width:100%; margin-top:6px;">💬 صقل البنود عبر يونس</button>
@@ -2552,7 +2550,7 @@ const SYSTEM_PROMPT = `أنت "يونس"، المساعد الشخصي والم�
 \`\`\`report
 {"title":"...","columns":["..."],"rows":[["..."]],"summary":"...","formats":["excel","pdf"]}
 \`\`\`
-- **عرض سعر (DEVIS)** (كلما طلب عرض سعر/devis لزبون: إلا ما حدّدش الزبون سولو "لأي زبون؟" وذكّرو بأسماء العملاء المسجلين، وسولو على العنوان (Adresse) وعنوان الأشغال والبنود إلا كانو ناقصين. ما تخترعش الأثمنة ولا الكميات. الرقم التسلسلي (Dev NN/YY) والتاريخ والشعار والصيغة كيتحسبو أوتوماتيكيًا من حاسبة عرض السعر ديال قسم التسويق، فما تكتبهمش. كتب البنود بالفرنسية فـ d (Désignation) والوحدة فـ u: ENS أو M2 أو M3 أو ML أو U أو KG. إلا كان عندك الزبون والبنود والأثمنة عمّر الكتلة، وزيد جملة وحدة غير باش تقول إن المعاينة قبل التحميل):
+- **عرض سعر (DEVIS)** (كلما طلب عرض سعر/devis لزبون: إلا ما حدّدش الزبون سولو "لأي زبون؟" وذكّرو بأسماء العملاء المسجلين، وسولو على العنوان (Adresse) وعنوان الأشغال والبنود إلا كانو ناقصين. ما تخترعش الأثمنة ولا الكميات. الرقم التسلسلي (Dev NN/YY) والتاريخ والشعار والصيغة كيتحسبو أوتوماتيكيًا من حاسبة عرض السعر ديال قسم التسويق، فما تكتبهمش. كتب البنود بالفرنسية فـ d (Désignation) والوحدة فـ u: ENS أو M2 أو M3 أو ML أو U أو KG. الألوان (اختيارية، غير إلا طلبها المستخدم): زيد فالبند حقل bg باللون (hex مثل #fde68a، أو اسم لون بالفرنسية: rouge، orange، jaune، vert، cyan، bleu، bleu marine، violet، rose، gris، marron، noir، blanc). باش تدير عنوان LOT زيد lot:true فالبند بلا u ولا q ولا p، و d هو عنوان الـ LOT (مثال: LOT 1 : GROS ŒUVRE). ما تخترعش ألوان ماطلبهاش المستخدم. إلا كان عندك الزبون والبنود والأثمنة عمّر الكتلة، وزيد جملة وحدة غير باش تقول إن المعاينة قبل التحميل):
 \`\`\`devis
 {"clientName":"...","clientAddr":"...","title":"TRAVAUX DE ...","items":[{"d":"...","u":"ENS","q":1,"p":0}],"tvaRate":20,"date":"YYYY-MM-DD"}
 \`\`\`
@@ -12542,115 +12540,92 @@ document.getElementById('marketingGenBtn').addEventListener('click', ()=>{
   });
 });
 
-/* ---- حاسبة عرض السعر: بنود + عناوين (LOT) + ألوان ---- */
-const QUOTE_HEAD_DEFAULT = '#8EB4E3';      // لون رأس الجدول الافتراضي (نفس النموذج الحالي)
-const QUOTE_HEADING_DEFAULT = '#D9E1F2';   // لون سطر العنوان (LOT) إلا ما تختار لون
-const QUOTE_PALETTE = ['#D9E1F2', '#DDEBF7', '#E2EFDA', '#FFF2CC', '#FCE4D6', '#F8CBAD', '#E4DFEC', '#EDEDED', '#8EB4E3', '#1F3864', '#375623', '#C55A11'];
-function _normHex(h){ const m = /^#?([0-9a-f]{6})$/i.exec(String(h || '').trim()); return m ? '#' + m[1].toUpperCase() : ''; }
-function _hexRgb(h){ const n = _normHex(h); if(!n) return null; const v = parseInt(n.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
-function _isDarkColor(h){ const c = _hexRgb(h); return !!c && (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) < 140; }
-// ترقيم: العنوان 1، 2، 3... والبنود تحتو 1.1، 1.2... (بلا عناوين: 1، 2، 3...)
-function quoteNumberLabels(items){
-  let hc = 0, ic = 0;
-  return items.map(it=>{ if(it.h){ hc++; ic = 0; return String(hc); } ic++; return hc ? hc + '.' + ic : String(ic); });
-}
-let _quoteHeadColor = QUOTE_HEAD_DEFAULT;
-function setQuoteHeadColor(c){ _quoteHeadColor = _normHex(c) || QUOTE_HEAD_DEFAULT; const d = document.getElementById('quoteHeadColorDot'); if(d) d.style.background = _quoteHeadColor; }
-
-// لوحة ألوان صغيرة (تظهر قرب الزر)
-let _qPop = null;
-function _qPopOutside(e){ if(_qPop && !_qPop.contains(e.target)) closeQuotePalette(); }
-function closeQuotePalette(){ document.removeEventListener('pointerdown', _qPopOutside, true); if(_qPop){ _qPop.remove(); _qPop = null; } }
-function openQuotePalette(anchor, current, onPick, allowNone){
-  closeQuotePalette();
-  const cur = _normHex(current), PW = 232;
-  const pop = document.createElement('div');
-  pop.style.cssText = 'position:fixed; z-index:99999; background:#fff; color:#111; border:1px solid #bbb; border-radius:12px; padding:10px; box-shadow:0 6px 24px rgba(0,0,0,.25); width:' + PW + 'px; direction:rtl; left:8px; top:8px;';
-  const grid = document.createElement('div'); grid.style.cssText = 'display:grid; grid-template-columns:repeat(6, 1fr); gap:8px;';
-  const mk = (col, label)=>{
-    const b = document.createElement('button'); b.type = 'button'; b.title = label || col;
-    b.style.cssText = 'width:30px; height:30px; border-radius:8px; padding:0; cursor:pointer; font-size:13px; color:#333; background:' + (col || '#fff') + '; border:' + ((col && col === cur) || (!col && !cur) ? '3px solid #000' : '1.5px solid #999') + ';';
-    if(!col) b.textContent = '✕';
-    b.addEventListener('click', ()=>{ closeQuotePalette(); onPick(col || ''); });
-    return b;
-  };
-  if(allowNone) grid.appendChild(mk('', 'بدون لون'));
-  QUOTE_PALETTE.forEach(c=> grid.appendChild(mk(c)));
-  pop.appendChild(grid);
-  const cr = document.createElement('div'); cr.style.cssText = 'margin-top:10px; display:flex; align-items:center; gap:8px; font-size:12px;';
-  const lab = document.createElement('span'); lab.textContent = 'لون آخر:';
-  const inp = document.createElement('input'); inp.type = 'color'; inp.value = (cur || QUOTE_HEADING_DEFAULT).toLowerCase(); inp.style.cssText = 'width:44px; height:30px; padding:0; border:none; background:none;';
-  inp.addEventListener('change', ()=>{ closeQuotePalette(); onPick(_normHex(inp.value)); });
-  cr.appendChild(lab); cr.appendChild(inp); pop.appendChild(cr);
-  document.body.appendChild(pop);
-  const r = anchor.getBoundingClientRect(), ph = pop.offsetHeight;
-  let left = Math.min(Math.max(8, r.left), window.innerWidth - PW - 8), top = r.bottom + 6;
-  if(top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 6);
-  pop.style.left = left + 'px'; pop.style.top = top + 'px';
-  _qPop = pop;
-  setTimeout(()=>{ if(_qPop === pop) document.addEventListener('pointerdown', _qPopOutside, true); }, 0);
-}
-function _applyRowColor(row, col){
-  col = _normHex(col);
-  row.dataset.color = col;
-  const shown = col || (row.dataset.type === 'head' ? QUOTE_HEADING_DEFAULT : '');
-  row.style.background = shown;
-  row.style.color = shown ? (_isDarkColor(shown) ? '#fff' : '#111') : '';
-}
-
 let quoteRowCount = 0;
-function _mkQuoteRow(type){
-  quoteRowCount++;
-  const row = document.createElement('div');
-  row.className = 'quote-row' + (type === 'head' ? ' q-head-row' : '');
-  row.dataset.id = 'q' + quoteRowCount; row.dataset.type = type;
-  const ctl = '<button type="button" class="q-btn q-up" title="فوق">▲</button><button type="button" class="q-btn q-dn" title="تحت">▼</button><button type="button" class="q-btn q-color" title="لون السطر">🎨</button><button type="button" class="q-btn q-del" title="حذف">✕</button>';
-  row.innerHTML = type === 'head'
-    ? '<div class="qr-top"><span class="q-no"></span><input type="text" class="q-desc" dir="auto" placeholder="عنوان (مثال: LOT 1 – DÉMOLITION ET ÉVACUATION)">' + ctl + '</div><div class="qr-sub"><span>Sous-total</span><span class="q-amt">0,00</span></div>'
-    : '<div class="qr-top"><span class="q-no"></span><input type="text" class="q-desc" dir="auto" placeholder="وصف البند (Désignation)">' + ctl + '</div><div class="qr-bot"><input type="text" class="q-unit" dir="ltr" placeholder="الوحدة" value="ENS"><input type="number" class="q-qty" dir="ltr" placeholder="الكمية" value="1" inputmode="decimal"><input type="number" class="q-price" dir="ltr" placeholder="ثمن الوحدة" inputmode="decimal"><span class="q-amt">0,00</span></div>';
-  document.getElementById('quoteRows').appendChild(row);
-  row.querySelector('.q-del').addEventListener('click', ()=>{ row.remove(); updateQuoteTotal(); });
-  row.querySelector('.q-up').addEventListener('click', ()=>{ const p = row.previousElementSibling; if(p){ p.before(row); updateQuoteTotal(); } });
-  row.querySelector('.q-dn').addEventListener('click', ()=>{ const n = row.nextElementSibling; if(n){ n.after(row); updateQuoteTotal(); } });
-  row.querySelector('.q-color').addEventListener('click', e=> openQuotePalette(e.currentTarget, row.dataset.color || (type === 'head' ? QUOTE_HEADING_DEFAULT : ''), c=> _applyRowColor(row, c), true));
-  row.querySelectorAll('input').forEach(inp=> inp.addEventListener('input', updateQuoteTotal));
-  _applyRowColor(row, '');
-  return row;
+
+/* ألوان السطور وعناوين LOT: لوحة واسعة + لون حر */
+const QUOTE_PALETTE = ['#fee2e2','#fecaca','#fca5a5','#f87171','#dc2626','#991b1b',
+  '#ffedd5','#fed7aa','#fdba74','#f97316','#c2410c',
+  '#fef9c3','#fde68a','#fde047','#eab308','#a16207',
+  '#dcfce7','#bbf7d0','#86efac','#22c55e','#15803d',
+  '#cffafe','#a5f3fc','#67e8f9','#06b6d4','#0e7490',
+  '#dbeafe','#bfdbfe','#93c5fd','#3b82f6','#1d4ed8',
+  '#e0e7ff','#c7d2fe','#a5b4fc','#6366f1','#4338ca',
+  '#f3e8ff','#e9d5ff','#d8b4fe','#a855f7','#7e22ce',
+  '#fce7f3','#fbcfe8','#f9a8d4','#ec4899','#be185d',
+  '#f5f5f4','#e7e5e4','#d6d3d1','#78716c','#1c1917',
+  '#1F4E79','#0f172a'];
+function _hexToRgb(h){ const m = /^#?([0-9a-f]{6})$/i.exec(String(h || '')); if(!m) return null; const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function _isDarkHex(h){ const c = _hexToRgb(h); return !!c && (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) < 140; }
+function applyQuoteRowStyle(row){
+  const bg = row.dataset.bg || '', lot = row.dataset.lot === '1', pal = row._pal;
+  row.classList.toggle('lot', lot);
+  row.style.background = bg;
+  row.style.borderRadius = bg ? '10px' : '';
+  row.style.padding = bg ? '4px' : '';
+  row.querySelectorAll('.q-desc, .q-unit, .q-qty, .q-price').forEach(inp=>{ inp.style.background = bg ? 'rgba(255,255,255,.82)' : ''; });
+  const st = row.querySelector('.q-style'); if(st){ st.style.background = bg; st.style.color = (bg && _isDarkHex(bg)) ? '#fff' : ''; }
+  if(pal){
+    const chk = pal.querySelector('.q-lot-chk'); if(chk) chk.checked = lot;
+    pal.querySelectorAll('.sw').forEach(s=> s.classList.toggle('on', !!bg && s.dataset.c.toLowerCase() === bg.toLowerCase()));
+    const col = pal.querySelector('.q-color'); if(col && _hexToRgb(bg)) col.value = bg;
+  }
 }
-function addQuoteRow(){ const r = _mkQuoteRow('item'); updateQuoteTotal(); return r; }
-function addQuoteHeading(){ const r = _mkQuoteRow('head'); updateQuoteTotal(); try{ r.querySelector('.q-desc').focus(); }catch(e){} return r; }
-function updateQuoteTotal(){
-  const rows = Array.from(document.querySelectorAll('#quoteRows .quote-row'));
-  const labels = quoteNumberLabels(rows.map(r=> ({h: r.dataset.type === 'head'})));
-  let total = 0, sub = 0, curHead = null;
-  const flush = ()=>{ if(curHead){ const a = curHead.querySelector('.q-amt'); if(a) a.textContent = fmtNum(sub); } };
-  rows.forEach((row, i)=>{
-    row.querySelector('.q-no').textContent = labels[i];
-    if(row.dataset.type === 'head'){ flush(); curHead = row; sub = 0; return; }
-    const amt = round2((parseFloat(row.querySelector('.q-qty').value) || 0) * (parseFloat(row.querySelector('.q-price').value) || 0));
-    row.querySelector('.q-amt').textContent = fmtNum(amt);
-    total += amt; sub += amt;
+function addQuoteRow(){
+  quoteRowCount++;
+  const id = 'q'+quoteRowCount;
+  const host = document.getElementById('quoteRows');
+  const row = document.createElement('div');
+  row.className = 'quote-row';
+  row.dataset.id = id; row.dataset.bg = ''; row.dataset.lot = '';
+  row.innerHTML = `
+    <input type="text" class="q-desc" dir="auto" placeholder="وصف البند">
+    <input type="text" class="q-unit" dir="ltr" placeholder="الوحدة" value="ENS">
+    <input type="number" class="q-qty" dir="ltr" placeholder="الكمية" value="1" inputmode="decimal">
+    <input type="number" class="q-price" dir="ltr" placeholder="السعر" inputmode="decimal">
+    <button type="button" class="q-style" title="لون السطر أو عنوان LOT">🎨</button>
+    <button class="q-del">✕</button>
+  `;
+  const pal = document.createElement('div');
+  pal.className = 'quote-pal';
+  pal.innerHTML = `
+    <label class="lotlbl"><input type="checkbox" class="q-lot-chk"><span>عنوان LOT (سطر عنوان بلا كمية ولا ثمن)</span></label>
+    <div class="sw-grid">${QUOTE_PALETTE.map(c=> '<button type="button" class="sw" data-c="' + c + '" title="' + c + '" style="background:' + c + '"></button>').join('')}</div>
+    <div class="sw-foot"><label>لون آخر <input type="color" class="q-color" value="#dbe7f5"></label><button type="button" class="btn-ghost q-nocolor">بلا لون</button></div>
+  `;
+  host.appendChild(row); host.appendChild(pal);
+  row._pal = pal;
+  row.querySelector('.q-style').addEventListener('click', ()=> pal.classList.toggle('open'));
+  pal.addEventListener('click', e=>{
+    const sw = e.target.closest && e.target.closest('.sw');
+    if(sw){ row.dataset.bg = sw.dataset.c; applyQuoteRowStyle(row); return; }
+    if(e.target.closest && e.target.closest('.q-nocolor')){ row.dataset.bg = ''; applyQuoteRowStyle(row); }
   });
-  flush();
-  total = round2(total);
+  pal.querySelector('.q-color').addEventListener('input', e=>{ row.dataset.bg = e.target.value; applyQuoteRowStyle(row); });
+  pal.querySelector('.q-lot-chk').addEventListener('change', e=>{ row.dataset.lot = e.target.checked ? '1' : ''; applyQuoteRowStyle(row); updateQuoteTotal(); });
+  row.querySelector('.q-del').addEventListener('click', ()=>{ row.remove(); pal.remove(); updateQuoteTotal(); });
+  row.querySelectorAll('input').forEach(inp=> inp.addEventListener('input', updateQuoteTotal));
+}
+function updateQuoteTotal(){
+  let total = 0;
+  document.querySelectorAll('#quoteRows .quote-row').forEach(row=>{
+    const qty = parseFloat(row.querySelector('.q-qty').value) || 0;
+    const price = parseFloat(row.querySelector('.q-price').value) || 0;
+    total += qty * price;
+  });
   const _tr = +((document.getElementById('quoteTva') || {}).value || 20); document.getElementById('quoteTotal').textContent = fmtNum(total); const _te = document.getElementById('quoteTtc'); if(_te) _te.textContent = fmtNum(total * (1 + _tr / 100));
 }
-document.getElementById('quoteAddRowBtn').addEventListener('click', ()=> addQuoteRow());
-document.getElementById('quoteAddHeadBtn').addEventListener('click', ()=> addQuoteHeading());
-document.getElementById('quoteHeadColorBtn').addEventListener('click', e=> openQuotePalette(e.currentTarget, _quoteHeadColor, setQuoteHeadColor, false));
+document.getElementById('quoteAddRowBtn').addEventListener('click', addQuoteRow);
 addQuoteRow();
 
 document.getElementById('quoteSendBtn').addEventListener('click', ()=>{
   const rows = [];
   document.querySelectorAll('#quoteRows .quote-row').forEach(row=>{
     const desc = row.querySelector('.q-desc').value.trim();
-    if(!desc) return;
-    if(row.dataset.type === 'head'){ rows.push('— عنوان: ' + desc); return; }
     const qty = row.querySelector('.q-qty').value;
     const price = row.querySelector('.q-price').value;
-    rows.push(`${desc} — الكمية: ${qty || 0} — السعر: ${price || 0} درهم`);
+    if(desc) rows.push(`${desc} — الكمية: ${qty || 0} — السعر: ${price || 0} درهم`);
   });
-  if(!rows.some(r=> !r.startsWith('— عنوان:'))) return;
+  if(rows.length === 0) return;
   const total = document.getElementById('quoteTotal').textContent;
   const msg = 'حوّل هالبنود لعرض سعر رسمي احترافي باسم شركة ALIOUA BTP:\n' + rows.join('\n') + `\nالإجمالي: ${total} درهم`;
   goToChatWithText(msg);
@@ -12668,11 +12643,8 @@ function nextQuoteNumber(dateStr){
   loadQuotes().forEach(q=>{ if(q.status === 'draft') return; const m = /^Dev\s*(\d+)\/(\d{2})$/i.exec(String(q.ref || '').trim()); if(m && m[2] === yy) max = Math.max(max, parseInt(m[1], 10)); });
   return 'Dev ' + String(max + 1).padStart(2, '0') + '/' + yy;
 }
-// مبلغ السطر مدوَّر لسنتيمين: مجموع الأسطر المطبوعة = المجموع المطبوع بالضبط. العناوين ما عندهاش مبلغ
-function quoteLineAmt(it){ return it.h ? 0 : round2((+it.q || 0) * (+it.p || 0)); }
-function fmtQty(n){ return String(Math.round((+n || 0) * 1000) / 1000).replace('.', ','); }
 function quoteTotals(q){
-  const ht = round2((q.items || []).reduce((s, it)=> s + quoteLineAmt(it), 0));
+  const ht = round2((q.items || []).reduce((s, it)=> s + (+it.q || 0) * (+it.p || 0), 0));
   const rate = (q.tvaRate === 0 || q.tvaRate) ? +q.tvaRate : 20, tva = round2(ht * rate / 100);
   return {ht, tva, ttc: round2(ht + tva), rate};
 }
@@ -12689,33 +12661,15 @@ function frWords(n){
 }
 function amountWordsFr(v){ const t = Math.round((+v || 0) * 100), d = Math.floor(t / 100), c = t % 100; let s = frWords(d) + ((d >= 1e6 && d % 1e6 === 0) ? ' de' : '') + (d > 1 ? ' Dirhams' : ' Dirham'); if(c) s += ' et ' + frWords(c) + (c > 1 ? ' centimes' : ' centime'); return s; }
 
-// بناء جدول عرض السعر (رأس + أسطر + عناوين + مجاميع فرعية) — منفصل باش يتسهّل اختبارو
-function buildQuoteTable(q){
-  const items = q.items || [], labels = quoteNumberLabels(items.map(it=> ({h: !!it.h}))), showSub = q.showSub !== false;
-  const headCol = _normHex(q.headColor) || QUOTE_HEAD_DEFAULT;
-  const fillOf = (col, isHead)=>{ const c = _normHex(col) || (isHead ? QUOTE_HEADING_DEFAULT : ''); return c ? {fillColor: _hexRgb(c), textColor: _isDarkColor(c) ? [255,255,255] : [0,0,0]} : {}; };
-  const subLabel = t=>{ const m = /^\s*(LOT\s*\d+[a-z]?)/i.exec(t || ''); return 'Sous-total ' + (m ? m[1].toUpperCase() : String(t || '').trim()); };
-  const body = [];
-  let sub = null;
-  const pushSub = ()=>{
-    if(sub && showSub && sub.n > 0){
-      const f = {fillColor: [242,242,242], fontStyle: 'bold'};
-      body.push([{content: subLabel(sub.d), colSpan: 5, styles: Object.assign({halign: 'right'}, f)}, {content: fmtNum(round2(sub.sum)), styles: Object.assign({halign: 'right'}, f)}]);
-    }
-  };
-  items.forEach((it, i)=>{
-    if(it.h){
-      pushSub(); sub = {d: it.d || '', sum: 0, n: 0};
-      const f = fillOf(it.c, true);
-      body.push([{content: labels[i], styles: Object.assign({halign: 'center', fontStyle: 'bold'}, f)}, {content: it.d || '', colSpan: 5, styles: Object.assign({halign: 'left', fontStyle: 'bold'}, f)}]);
-      return;
-    }
-    const amt = quoteLineAmt(it), f = fillOf(it.c, false), st = x=> Object.assign({}, x, f);
-    if(sub){ sub.sum += amt; sub.n++; }
-    body.push([{content: labels[i], styles: st({halign: 'center'})}, {content: it.d || '', styles: st({})}, {content: it.u || 'ENS', styles: st({halign: 'center'})}, {content: fmtQty(it.q), styles: st({halign: 'center'})}, {content: fmtNum(it.p), styles: st({halign: 'right'})}, {content: fmtNum(amt), styles: st({halign: 'right'})}]);
+function pdfQuoteBody(q){
+  let n = 0;
+  return (q.items || []).map(it=>{
+    const rgb = _hexToRgb(it.bg), tc = _isDarkHex(it.bg) ? [255,255,255] : [0,0,0];
+    if(it.lot) return [{content: it.d || '', colSpan: 5, styles: {fontStyle: 'bold', halign: 'left', fillColor: rgb || [217,217,217], textColor: tc}}];
+    n++;
+    const cells = [it.d || '', it.u || 'ENS', fmtNum(it.q), fmtNum(it.p), fmtNum((+it.q || 0) * (+it.p || 0))];
+    return rgb ? cells.map(c=> ({content: c, styles: {fillColor: rgb, textColor: tc}})) : cells;
   });
-  pushSub();
-  return {head: [['N°', 'Désignation des travaux', 'Unité', 'Qté', 'P.U. HT (DH)', 'Montant HT (DH)']], body, headFill: _hexRgb(headCol), headText: _isDarkColor(headCol) ? [255,255,255] : [0,0,0]};
 }
 function buildQuotePdfDoc(q){
   if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش بعد، تأكد من الإنترنت.');
@@ -12754,13 +12708,13 @@ function buildQuotePdfDoc(q){
     else { doc.setFont('helvetica', 'bold'); doc.setFontSize(11); const tl = doc.splitTextToSize(String(q.title), 190); tl.forEach((l, i)=> doc.text(l, PW / 2, y + 2 + i * 5, {align:'center'})); y += tl.length * 5; }
   }
   y += 5;
-  // الجدول: N° | Désignation | Unité | Qté | P.U. HT | Montant HT (+ عناوين LOT ملوّنة + مجاميع فرعية)
-  const tbl = buildQuoteTable(q);
+  // الجدول
   arabicAwareAutoTable(doc, {
-    startY: y, head: tbl.head, body: tbl.body, theme: 'grid',
+    startY: y, head: [['Désignation', 'unité', 'Quantité', 'Prix unitaire HT', 'Total']],
+    body: pdfQuoteBody(q), theme: 'grid',
     styles: {fontSize: 8.5, halign: 'left', lineColor: [120,120,120], lineWidth: 0.15, cellPadding: 1.6, textColor: [0,0,0]},
-    headStyles: {fillColor: tbl.headFill, textColor: tbl.headText, fontStyle: 'bold', halign: 'center', fontSize: 9.5},
-    columnStyles: {0:{cellWidth:13, halign:'center'}, 1:{cellWidth:87}, 2:{cellWidth:16, halign:'center'}, 3:{cellWidth:18, halign:'center'}, 4:{cellWidth:28, halign:'right'}, 5:{cellWidth:28, halign:'right'}},
+    headStyles: {fillColor: [142,180,227], textColor: [0,0,0], fontStyle: 'bold', halign: 'center', fontSize: 9.5},
+    columnStyles: {0:{cellWidth:98}, 1:{cellWidth:16, halign:'center'}, 2:{cellWidth:20, halign:'center'}, 3:{cellWidth:28, halign:'right'}, 4:{cellWidth:28, halign:'right'}},
     margin: {top:15, bottom:18, left:ML, right:MR}
   });
   // المجاميع
@@ -12787,7 +12741,7 @@ function saveQuoteRecord(q){
   const all = loadQuotes(), cur = all.find(x=> x.id === q.id), issued = !!cur && cur.status !== 'draft';
   if(!issued || all.some(x=> x.ref === q.ref && x.id !== q.id && x.status !== 'draft')) q.ref = nextQuoteNumber(q.date);   // الرقم النهائي كيتعطى وقت الإصدار (التحميل) فقط
   const now = Date.now();
-  const rec = {id: q.id, ref: q.ref, status: 'issued', date: q.date, clientName: q.clientName, clientAddr: q.clientAddr || '', clientNo: q.clientNo || '', title: q.title || '', items: q.items, tvaRate: q.tvaRate, headColor: _normHex(q.headColor), showSub: q.showSub !== false, createdAt: (cur && cur.createdAt) || q.createdAt || now, issuedAt: (cur && cur.issuedAt) || now, updatedAt: now};
+  const rec = {id: q.id, ref: q.ref, status: 'issued', date: q.date, clientName: q.clientName, clientAddr: q.clientAddr || '', clientNo: q.clientNo || '', title: q.title || '', items: q.items, tvaRate: q.tvaRate, createdAt: (cur && cur.createdAt) || q.createdAt || now, issuedAt: (cur && cur.issuedAt) || now, updatedAt: now};
   const i = all.findIndex(x=> x.id === q.id); if(i >= 0) all[i] = rec; else all.push(rec);
   saveQuotes(all);
 }
@@ -12795,9 +12749,9 @@ function saveQuoteRecord(q){
 function saveQuoteDraft(q){
   const all = loadQuotes(), i = all.findIndex(x=> x.id === q.id);
   if(i >= 0 && all[i].status !== 'draft') return;            // عرض صدر: ما كنبدلوهش
-  const rec = {id: q.id, ref: '', status: 'draft', date: q.date, clientName: q.clientName, clientAddr: q.clientAddr || '', clientNo: q.clientNo || '', title: q.title || '', items: q.items, tvaRate: q.tvaRate, headColor: _normHex(q.headColor), showSub: q.showSub !== false, createdAt: (i >= 0 && all[i].createdAt) || q.createdAt || Date.now()};
+  const rec = {id: q.id, ref: '', status: 'draft', date: q.date, clientName: q.clientName, clientAddr: q.clientAddr || '', clientNo: q.clientNo || '', title: q.title || '', items: q.items, tvaRate: q.tvaRate, createdAt: (i >= 0 && all[i].createdAt) || q.createdAt || Date.now()};
   if(i >= 0){
-    const o = all[i]; if(['date', 'clientName', 'clientAddr', 'clientNo', 'title', 'tvaRate', 'headColor', 'showSub'].every(k=> (o[k] == null ? (k === 'showSub' ? true : '') : o[k]) === rec[k]) && JSON.stringify(o.items) === JSON.stringify(rec.items)) return;   // ما تبدل والو
+    const o = all[i]; if(['date', 'clientName', 'clientAddr', 'clientNo', 'title', 'tvaRate'].every(k=> o[k] === rec[k]) && JSON.stringify(o.items) === JSON.stringify(rec.items)) return;   // ما تبدل والو
     rec.updatedAt = Date.now(); all[i] = rec;
   } else { rec.updatedAt = Date.now(); all.push(rec); }
   saveQuotes(all);
@@ -12805,20 +12759,151 @@ function saveQuoteDraft(q){
 function openQuotePreview(q, o){
   o = o || {};
   try{ saveQuoteDraft(q); renderQuoteHistory(); }catch(e){ console.error('تعذّر حفظ مسودة عرض السعر:', e); }
+  const qBase = ()=> 'Devis-' + String(q.ref || 'x').replace(/[\\\/:*?"<>|\s]+/g, '-') + '-' + String(q.clientName || '').replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 30);
   openFilePreview({
     title: 'DEVIS ' + (q.ref || '') + ' — ' + (q.clientName || ''), first: 'pdf', onEdit: o.onEdit,
-    variants: [{key:'pdf', label:'PDF', filename: ()=> 'Devis-' + String(q.ref || 'x').replace(/[\\\/:*?"<>|\s]+/g, '-') + '-' + String(q.clientName || '').replace(/[\\\/:*?"<>|\s]+/g, '-').slice(0, 30) + '.pdf',
-      render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, buildQuotePdfDoc(q)); return w; }, blob: async ()=> buildQuotePdfDoc(q).output('blob')}],
+    variants: [
+      {key:'pdf', label:'PDF', filename: ()=> qBase() + '.pdf',
+        render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, buildQuotePdfDoc(q)); return w; },
+        blob: async ()=> buildQuotePdfDoc(q).output('blob')},
+      {key:'excel', label:'Excel', filename: ()=> qBase() + '.xlsx',
+        render: async ()=> quoteXlsxPreviewNode(q),
+        blob: ()=> buildQuoteXlsxBlob(q)}
+    ],
     beforeDownload: ()=>{ saveQuoteRecord(q); if(o.onSaved) o.onSaved(q); }
   });
 }
+/* ---- صيغة Excel لعرض السعر (نفس أعمدة الدفتر: N° · Désignation · Unité · Qté · P.U. HT · Montant HT) ----
+   الأرقام كتتحسب بمعادلات حقيقية (الكمية × السعر، المجاميع، TVA) باش الموظفين يبدّلو الكميات والأثمان وكيتحدث كلشي وحدو */
+function quoteXlsxRep(q){
+  const t = quoteTotals(q); let n = 0;
+  const rows = (q.items || []).map(it=> it.lot ? [it.d || '', '', '', '', '', ''].map((v, i)=> i === 0 ? v : '') : (n++, [n, String(it.d || ''), String(it.u || 'ENS'), +it.q || 0, +it.p || 0, round2((+it.q || 0) * (+it.p || 0))]));
+  const totals = [['', '', '', '', 'Total HT', t.ht], ['', '', '', '', 'TVA ' + t.rate + '%', t.tva], ['', '', '', '', 'Total TTC', t.ttc]];
+  return {title: 'DEVIS ' + (q.ref || ''), subtitle: [q.clientName, q.title].filter(Boolean).join('  —  '),
+    sheets: [{name: '', columns: ['N°', 'Désignation', 'Unité', 'Qté', 'P.U. HT', 'Montant HT'], rows, totals, numCols: [3, 4, 5]}]};
+}
+function quoteXlsxPreviewNode(q){
+  const c = loadCompanyInfo(), t = quoteTotals(q), root = document.createElement('div');
+  root.style.cssText = 'background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:10px; font-size:12px; color:#111;';
+  const head = document.createElement('div'); head.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:8px;';
+  if(c.logoDataUrl){ const im = document.createElement('img'); im.src = c.logoDataUrl; im.style.cssText = 'height:42px;'; head.appendChild(im); }
+  const tt = document.createElement('div'); tt.innerHTML = '<div dir="auto" style="font-weight:800; font-size:15px; color:#1F4E79;"></div><div dir="auto" style="color:#64748b; font-size:11px;"></div>';
+  tt.children[0].textContent = 'DEVIS ' + (q.ref || ''); tt.children[1].textContent = [q.clientName, q.title].filter(Boolean).join('  —  ');
+  head.appendChild(tt); root.appendChild(head);
+  const wrap = document.createElement('div'); wrap.style.cssText = 'overflow-x:auto;';
+  const tb = document.createElement('table'); tb.style.cssText = 'border-collapse:collapse; width:100%; font-size:11.5px;';
+  const cell = (txt, extra)=>{ const td = document.createElement('td'); td.textContent = txt; td.setAttribute('dir', 'auto'); td.style.cssText = 'border:1px solid #cbd5e1; padding:4px 6px;' + (extra || ''); return td; };
+  const hr = document.createElement('tr'); ['N°', 'Désignation', 'Unité', 'Qté', 'P.U. HT', 'Montant HT'].forEach(h=>{ const th = cell(h, 'background:#1F4E79; color:#fff; font-weight:700; text-align:center;'); hr.appendChild(th); }); tb.appendChild(hr);
+  let n = 0;
+  (q.items || []).forEach(it=>{
+    const tr = document.createElement('tr'), bg = it.bg || '', tc = _isDarkHex(bg) ? '#fff' : '#111';
+    if(it.lot){ const td = cell(it.d || '', 'font-weight:800;' + (bg ? ' background:' + bg + '; color:' + tc + ';' : ' background:#dbe7f5;')); td.colSpan = 6; tr.appendChild(td); tb.appendChild(tr); return; }
+    n++;
+    const bgs = bg ? ' background:' + bg + '; color:' + tc + ';' : '';
+    tr.appendChild(cell(String(n), 'text-align:center;' + bgs));
+    tr.appendChild(cell(String(it.d || ''), bgs));
+    tr.appendChild(cell(String(it.u || 'ENS'), 'text-align:center;' + bgs));
+    tr.appendChild(cell(fmtNum(it.q), 'text-align:right; direction:ltr;' + bgs));
+    tr.appendChild(cell(fmtNum(it.p), 'text-align:right; direction:ltr;' + bgs));
+    tr.appendChild(cell(fmtNum((+it.q || 0) * (+it.p || 0)), 'text-align:right; direction:ltr; font-weight:600;' + bgs));
+    tb.appendChild(tr);
+  });
+  [['Total HT', t.ht], ['TVA ' + t.rate + '%', t.tva], ['Total TTC', t.ttc]].forEach(([l, v])=>{
+    const tr = document.createElement('tr'); const e = cell('', ''); e.colSpan = 4; tr.appendChild(e);
+    tr.appendChild(cell(l, 'font-weight:700; background:#dde6f2;')); tr.appendChild(cell(fmtNum(v), 'text-align:right; direction:ltr; font-weight:700; background:#dde6f2;')); tb.appendChild(tr);
+  });
+  wrap.appendChild(tb); root.appendChild(wrap);
+  return root;
+}
+async function buildQuoteXlsxBlob(q){
+  try{ await loadScriptOnce(EXCELJS_URL); }catch(e){}
+  if(typeof ExcelJS === 'undefined') return _xlsxPlainBlob(quoteXlsxRep(q));   // احتياطي بلا تنسيق ولا معادلات
+  const c = loadCompanyInfo(), t = quoteTotals(q), items = q.items || [];
+  const rtl = containsArabic(q.title || '') || containsArabic(q.clientName || '');
+  const wb = new ExcelJS.Workbook(); wb.creator = 'ALIOUA BTP'; wb.created = new Date();
+  const ws = wb.addWorksheet('Devis', {views:[{rightToLeft: rtl, state:'frozen', ySplit: 9}], pageSetup:{paperSize: 9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}});
+  ws.columns = [{width:6}, {width:52}, {width:10}, {width:12}, {width:15}, {width:17}];
+  const thin = {style:'thin', color:{argb:'FFBFC7D1'}}, border = {top:thin, left:thin, bottom:thin, right:thin}, NUM = '#,##0.00';
+  const lm = c.logoDataUrl && /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(c.logoDataUrl);
+  if(lm){ const id = wb.addImage({base64: lm[2], extension: /png/i.test(lm[1]) ? 'png' : 'jpeg'}); ws.addImage(id, {tl:{col:0, row:0}, ext:{width:150, height:50}}); }
+  [1, 2, 3].forEach(r=> ws.getRow(r).height = 17);
+  ws.mergeCells('A4:F4'); const h = ws.getCell('A4'); h.value = 'DEVIS ' + (q.ref || ''); h.font = {bold:true, size:16, color:{argb:'FF1F4E79'}}; h.alignment = {horizontal:'center', vertical:'middle'}; ws.getRow(4).height = 26;
+  ws.mergeCells('A5:F5'); ws.getCell('A5').value = q.title || ''; ws.getCell('A5').font = {bold:true, size:11}; ws.getCell('A5').alignment = {horizontal:'center'};
+  ws.mergeCells('A6:F6'); ws.getCell('A6').value = 'Client : ' + (q.clientName || '') + (q.clientAddr ? '   ·   Adresse : ' + q.clientAddr : ''); ws.getCell('A6').alignment = {horizontal:'left', wrapText:true};
+  ws.mergeCells('A7:F7'); ws.getCell('A7').value = 'Date : ' + frDate(q.date) + '   ·   N° client : ' + (q.clientNo || '—'); ws.getCell('A7').alignment = {horizontal:'left'};
+  const hr = ws.getRow(9); hr.height = 22;
+  ['N°', 'Désignation', 'Unité', 'Qté', 'P.U. HT', 'Montant HT'].forEach((x, i)=>{ const cell = hr.getCell(i + 1); cell.value = x; cell.font = {bold:true, color:{argb:'FFFFFFFF'}}; cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF1F4E79'}}; cell.alignment = {horizontal:'center', vertical:'middle'}; cell.border = border; });
+  const first = 10; let n = 0;
+  items.forEach((it, i)=>{
+    const r = first + i, argb = it.bg ? 'FF' + it.bg.replace('#', '').toUpperCase() : null;
+    if(it.lot){
+      ws.mergeCells('A' + r + ':F' + r);
+      const cc = ws.getCell('A' + r); cc.value = it.d || ''; cc.font = {bold:true, size:11, color:{argb: (it.bg && _isDarkHex(it.bg)) ? 'FFFFFFFF' : 'FF000000'}};
+      cc.fill = {type:'pattern', pattern:'solid', fgColor:{argb: argb || 'FFDBE7F5'}}; cc.alignment = {vertical:'middle', horizontal:'left'}; cc.border = border;
+      ws.getRow(r).height = 22; return;
+    }
+    n++;
+    const qty = +it.q || 0, pu = +it.p || 0, row = ws.getRow(r);
+    row.getCell(1).value = n; row.getCell(2).value = String(it.d || ''); row.getCell(3).value = String(it.u || 'ENS');
+    row.getCell(4).value = qty; row.getCell(5).value = pu;
+    row.getCell(6).value = {formula: 'D' + r + '*E' + r, result: round2(qty * pu)};
+    row.eachCell({includeEmpty:true}, (cell, col)=>{
+      cell.border = border; cell.alignment = {vertical:'top', wrapText:true, horizontal: col === 2 ? 'left' : (col === 4 || col >= 5 ? 'right' : 'center')};
+      if(col >= 4) cell.numFmt = NUM;
+      if(argb && col <= 6) cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb}};
+    });
+  });
+  const last = first + items.length - 1, s0 = last + 2;
+  const sumF = items.length ? 'SUM(F' + first + ':F' + last + ')' : '0';
+  const htRow = s0, tvaRow = s0 + 1, ttcRow = s0 + 2;
+  const lab = (r, txt, val, formula)=>{ ws.mergeCells('A' + r + ':E' + r); const a = ws.getCell('A' + r); a.value = txt; a.font = {bold:true}; a.alignment = {horizontal:'right'}; const f = ws.getCell('F' + r); f.value = formula ? {formula, result: val} : val; f.numFmt = NUM; f.font = {bold:true}; f.border = border; f.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFDDE6F2'}}; };
+  lab(htRow, 'Total HT', t.ht, sumF);
+  lab(tvaRow, 'TVA ' + t.rate + '%', t.tva, 'F' + htRow + '*' + t.rate + '/100');
+  lab(ttcRow, 'Total TTC', t.ttc, 'F' + htRow + '+F' + tvaRow);
+  const wr = ttcRow + 2;
+  ws.mergeCells('A' + wr + ':F' + wr); ws.getCell('A' + wr).value = 'Arrêté le présent devis à la somme TTC de : ' + amountWordsFr(t.ttc); ws.getCell('A' + wr).alignment = {wrapText:true, vertical:'top'}; ws.getRow(wr).height = 32;
+  ws.mergeCells('A' + (wr + 2) + ':F' + (wr + 2)); ws.getCell('A' + (wr + 2)).value = 'Si ce devis vous convient, veuillez nous le retourner signé précédé de la mention : « BON POUR ACCORD ET EXECUTION DU DEVIS ».'; ws.getCell('A' + (wr + 2)).alignment = {wrapText:true}; ws.getRow(wr + 2).height = 30;
+  ws.headerFooter.oddFooter = '&L' + (c.name || 'ALIOUA BTP') + '&RPage &P / &N';
+  return new Blob([await wb.xlsx.writeBuffer()], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
 const _h32 = s => { let h = 5381; for(let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+const _QUOTE_COLOR_NAMES = {
+  'bleu marine':'#1F4E79', 'navy':'#1F4E79', 'كحلي':'#1F4E79', 'أزرق داكن':'#1F4E79',
+  'rouge':'#fca5a5', 'red':'#fca5a5', 'أحمر':'#fca5a5', 'احمر':'#fca5a5', 'حمراء':'#fca5a5',
+  'orange':'#fdba74', 'برتقالي':'#fdba74', 'برتقالى':'#fdba74',
+  'jaune':'#fde68a', 'yellow':'#fde68a', 'أصفر':'#fde68a', 'اصفر':'#fde68a', 'صفراء':'#fde68a', 'أصفرة':'#fde68a',
+  'vert':'#86efac', 'green':'#86efac', 'أخضر':'#86efac', 'اخضر':'#86efac', 'خضراء':'#86efac',
+  'cyan':'#67e8f9', 'turquoise':'#67e8f9', 'تركواز':'#67e8f9', 'أزرق سماوي':'#67e8f9',
+  'bleu':'#93c5fd', 'blue':'#93c5fd', 'أزرق':'#93c5fd', 'ازرق':'#93c5fd', 'زرقاء':'#93c5fd',
+  'violet':'#d8b4fe', 'purple':'#d8b4fe', 'بنفسجي':'#d8b4fe', 'أرجواني':'#d8b4fe', 'بنفسجية':'#d8b4fe',
+  'rose':'#f9a8d4', 'pink':'#f9a8d4', 'وردي':'#f9a8d4', 'وردية':'#f9a8d4',
+  'gris':'#d6d3d1', 'gray':'#d6d3d1', 'grey':'#d6d3d1', 'رمادي':'#d6d3d1', 'رمادية':'#d6d3d1',
+  'marron':'#a16207', 'brun':'#a16207', 'brown':'#a16207', 'بني':'#a16207', 'بنية':'#a16207',
+  'noir':'#1c1917', 'black':'#1c1917', 'أسود':'#1c1917', 'اسود':'#1c1917', 'سوداء':'#1c1917',
+  'blanc':'#ffffff', 'white':'#ffffff', 'أبيض':'#ffffff', 'ابيض':'#ffffff', 'بيضاء':'#ffffff',
+  'or':'#fde047', 'gold':'#fde047', 'ذهبي':'#fde047'
+};
+function _quoteColor(v){
+  const s = String(v == null ? '' : v).trim().toLowerCase();
+  if(!s) return '';
+  if(/^#?[0-9a-f]{6}$/.test(s)) return s[0] === '#' ? s : '#' + s;
+  if(_QUOTE_COLOR_NAMES[s]) return _QUOTE_COLOR_NAMES[s];
+  const keys = Object.keys(_QUOTE_COLOR_NAMES).sort((a, b)=> b.length - a.length);
+  const hit = keys.find(k=> s.includes(k));
+  return hit ? _QUOTE_COLOR_NAMES[hit] : '';
+}
 function appendDevisAction(container, jsonText){
   const wrap = document.createElement('div'); wrap.className = 'appt-action-card';
   try{
     const d = JSON.parse(jsonText);
-    const items = (Array.isArray(d.items) ? d.items : []).map(it=> ({d: String(it.d || it.designation || ''), u: String(it.u || it.unit || 'ENS'), q: +(it.q != null ? it.q : it.qty) || 0, p: +(it.p != null ? it.p : it.price) || 0})).filter(it=> it.d);
-    if(!d.clientName || !items.length) throw new Error('بيانات ناقصة');
+    const items = (Array.isArray(d.items) ? d.items : []).map(it=> {
+      const lot = it.lot === true || String(it.lot || '').toLowerCase() === 'true' || String(it.type || '').toLowerCase() === 'lot';
+      const o = {d: String(it.d || it.designation || ''), u: lot ? '' : String(it.u || it.unit || 'ENS'), q: lot ? 0 : (+(it.q != null ? it.q : it.qty) || 0), p: lot ? 0 : (+(it.p != null ? it.p : it.price) || 0)};
+      if(lot) o.lot = true;
+      const bg = _quoteColor(it.bg || it.color || it.couleur); if(bg) o.bg = bg;
+      return o;
+    }).filter(it=> it.d);
+    if(!d.clientName || !items.some(it=> !it.lot)) throw new Error('بيانات ناقصة');
     const id = 'qy' + _h32(jsonText), saved = loadQuotes().find(x=> x.id === id);
     const q = saved ? Object.assign({}, saved) : {id, date: /^\d{4}-\d{2}-\d{2}$/.test(d.date || '') ? d.date : todayStr(), clientName: String(d.clientName), clientAddr: String(d.clientAddr || d.addr || ''), clientNo: '', title: String(d.title || ''), items, tvaRate: (d.tvaRate === 0 || d.tvaRate) ? +d.tvaRate : 20, createdAt: Date.now()};
     if(!q.clientAddr){ const prev = loadQuotes().slice().reverse().find(x=> x.clientName === q.clientName); if(prev) q.clientAddr = prev.clientAddr || ''; }
@@ -12890,13 +12975,7 @@ function loadQuoteIntoForm(q){
   const tva = document.getElementById('quoteTva');
   if(tva){ const v = String((q.tvaRate === 0 || q.tvaRate) ? q.tvaRate : 20); if(!Array.from(tva.options).some(o=> o.value === v)){ const o = document.createElement('option'); o.value = v; o.textContent = 'TVA ' + v + '%'; tva.appendChild(o); } tva.value = v; }
   const rows = document.getElementById('quoteRows'); rows.innerHTML = '';
-  setQuoteHeadColor(q.headColor); const ss = document.getElementById('quoteShowSub'); if(ss) ss.checked = q.showSub !== false;
-  (q.items && q.items.length ? q.items : [{}]).forEach(it=>{
-    const r = _mkQuoteRow(it.h ? 'head' : 'item');
-    r.querySelector('.q-desc').value = it.d || '';
-    if(!it.h){ r.querySelector('.q-unit').value = it.u || 'ENS'; r.querySelector('.q-qty').value = it.q != null ? it.q : 1; r.querySelector('.q-price').value = it.p != null ? it.p : ''; }
-    if(it.c) _applyRowColor(r, it.c);
-  });
+  (q.items && q.items.length ? q.items : [{}]).forEach(it=>{ addQuoteRow(); const _all = rows.querySelectorAll('.quote-row'), r = _all[_all.length - 1]; r.dataset.bg = it.bg || ''; r.dataset.lot = it.lot ? '1' : ''; applyQuoteRowStyle(r); r.querySelector('.q-desc').value = it.d || ''; r.querySelector('.q-unit').value = it.u || 'ENS'; r.querySelector('.q-qty').value = it.q != null ? it.q : 1; r.querySelector('.q-price').value = it.p != null ? it.p : ''; });
   _quoteFormId = draft ? q.id : null;      // مسودة: كنكملو عليها. عرض صدر: كنديرو منو نسخة جديدة وما كنبدلوش الأصل
   updateQuoteTotal(); refreshQuoteRef();
   try{ document.getElementById('quoteClientName').scrollIntoView({behavior: 'smooth', block: 'center'}); }catch(e){}
@@ -12905,16 +12984,14 @@ function quoteFormToObj(){
   const items = [];
   document.querySelectorAll('#quoteRows .quote-row').forEach(row=>{
     const d = row.querySelector('.q-desc').value.trim(); if(!d) return;
-    const c = row.dataset.color || '';
-    let it;
-    if(row.dataset.type === 'head') it = {h: 1, d};
-    else it = {d, u: (row.querySelector('.q-unit').value.trim() || 'ENS'), q: parseFloat(row.querySelector('.q-qty').value) || 0, p: parseFloat(row.querySelector('.q-price').value) || 0};
-    if(c) it.c = c;
+    const lot = row.dataset.lot === '1', bg = row.dataset.bg || '';
+    const it = lot ? {d, u: '', q: 0, p: 0, lot: true} : {d, u: (row.querySelector('.q-unit').value.trim() || 'ENS'), q: parseFloat(row.querySelector('.q-qty').value) || 0, p: parseFloat(row.querySelector('.q-price').value) || 0};
+    if(bg) it.bg = bg;
     items.push(it);
   });
-  const ss = document.getElementById('quoteShowSub');
-  return {id: _quoteFormId || (_quoteFormId = 'qt' + Date.now()), date: _qv('quoteDate') || todayStr(), clientName: _qv('quoteClientName'), clientAddr: _qv('quoteClientAddr'), clientNo: '', title: _qv('quoteTitle'), items, tvaRate: +_qv('quoteTva'), headColor: _quoteHeadColor, showSub: ss ? !!ss.checked : true, createdAt: Date.now()};
+  return {id: _quoteFormId || (_quoteFormId = 'qt' + Date.now()), date: _qv('quoteDate') || todayStr(), clientName: _qv('quoteClientName'), clientAddr: _qv('quoteClientAddr'), clientNo: '', title: _qv('quoteTitle'), items, tvaRate: +_qv('quoteTva'), createdAt: Date.now()};
 }
+
 (function initQuoteUi(){
   const dt = document.getElementById('quoteDate'); if(dt && !dt.value) dt.value = todayStr();
   fillQuoteClients(); refreshQuoteRef(); renderQuoteHistory();
@@ -12926,14 +13003,14 @@ function quoteFormToObj(){
   document.getElementById('quotePreviewBtn')?.addEventListener('click', ()=>{
     const q = quoteFormToObj();
     if(!q.clientName){ alert('اكتب اسم الزبون أولاً.'); return; }
-    if(!q.items.some(it=> !it.h)){ alert('زيد بند واحد على الأقل (وصف + كمية + سعر).'); return; }
+    if(!q.items.some(it=> !it.lot)){ alert('زيد بند واحد على الأقل (وصف + كمية + سعر).'); return; }
     q.ref = nextQuoteNumber(q.date);
     openQuotePreview(q, {onSaved: ()=>{ _quoteFormId = null; refreshQuoteRef(); renderQuoteHistory(); }});
   });
   document.getElementById('quoteNewBtn')?.addEventListener('click', ()=>{
     ['quoteClientName', 'quoteClientAddr', 'quoteTitle'].forEach(id=>{ const e = document.getElementById(id); if(e) e.value = ''; });
     const cs = document.getElementById('quoteClientSel'); if(cs) cs.value = '';
-    document.getElementById('quoteDate').value = todayStr(); document.getElementById('quoteRows').innerHTML = ''; setQuoteHeadColor(QUOTE_HEAD_DEFAULT); const _ss = document.getElementById('quoteShowSub'); if(_ss) _ss.checked = true; closeQuotePalette(); addQuoteRow(); updateQuoteTotal();
+    document.getElementById('quoteDate').value = todayStr(); document.getElementById('quoteRows').innerHTML = ''; addQuoteRow(); updateQuoteTotal();
     _quoteFormId = null; refreshQuoteRef();
   });
 })();
@@ -13484,7 +13561,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 20-11-2026 (أ)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 21-11-2026 (ج)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
