@@ -12661,6 +12661,13 @@ function frWords(n){
 }
 function amountWordsFr(v){ const t = Math.round((+v || 0) * 100), d = Math.floor(t / 100), c = t % 100; let s = frWords(d) + ((d >= 1e6 && d % 1e6 === 0) ? ' de' : '') + (d > 1 ? ' Dirhams' : ' Dirham'); if(c) s += ' et ' + frWords(c) + (c > 1 ? ' centimes' : ' centime'); return s; }
 
+/* لغة الـ devis: إلا كان فيه عنوان الأشغال، كنحكمو بلغته؛ وإلا فبأغلبية البنود. عربي = RTL، فرنسي = LTR */
+function quoteIsArabic(q){
+  if(q.title && String(q.title).trim()) return containsArabic(q.title);
+  const ds = (q.items || []).filter(it=> it.d && !it.lot);
+  if(!ds.length) return containsArabic(q.clientName || '');
+  return ds.filter(it=> containsArabic(it.d)).length * 2 >= ds.length;
+}
 function pdfQuoteBody(q){
   let n = 0;
   return (q.items || []).map(it=>{
@@ -12674,7 +12681,10 @@ function pdfQuoteBody(q){
 function buildQuotePdfDoc(q){
   if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش بعد، تأكد من الإنترنت.');
   const c = loadCompanyInfo(), { jsPDF } = window.jspdf, doc = new jsPDF({unit:'mm', format:'a4'});
-  const PW = 210, ML = 10, MR = 10, RIGHT = PW - MR, tot = quoteTotals(q);
+  const PW = 210, ML = 10, MR = 10, RIGHT = PW - MR, tot = quoteTotals(q), ar = quoteIsArabic(q);
+  const qHead = ['Désignation', 'unité', 'Quantité', 'Prix unitaire HT', 'Total'];
+  const qStyles = {0:{cellWidth:98}, 1:{cellWidth:16, halign:'center'}, 2:{cellWidth:20, halign:'center'}, 3:{cellWidth:28, halign:'right'}, 4:{cellWidth:28, halign:'right'}};
+  const qStyleCols = ar ? {0:qStyles[4], 1:qStyles[3], 2:qStyles[2], 3:qStyles[1], 4:qStyles[0]} : qStyles;
   // الشعار (أو نص بديل)
   let hasLogo = false;
   if(c.logoDataUrl){ try{ const p = doc.getImageProperties(c.logoDataUrl), w = 66, h = Math.min(26, w * p.height / p.width); doc.addImage(c.logoDataUrl, p.fileType || 'PNG', ML, 12, w, h); hasLogo = true; }catch(e){} }
@@ -12710,11 +12720,11 @@ function buildQuotePdfDoc(q){
   y += 5;
   // الجدول
   arabicAwareAutoTable(doc, {
-    startY: y, head: [['Désignation', 'unité', 'Quantité', 'Prix unitaire HT', 'Total']],
-    body: pdfQuoteBody(q), theme: 'grid',
+    startY: y, head: [ar ? qHead.slice().reverse() : qHead],
+    body: pdfQuoteBody(q).map(r=> (ar && r.length > 1) ? r.slice().reverse() : r), theme: 'grid',
     styles: {fontSize: 8.5, halign: 'left', lineColor: [120,120,120], lineWidth: 0.15, cellPadding: 1.6, textColor: [0,0,0]},
     headStyles: {fillColor: [142,180,227], textColor: [0,0,0], fontStyle: 'bold', halign: 'center', fontSize: 9.5},
-    columnStyles: {0:{cellWidth:98}, 1:{cellWidth:16, halign:'center'}, 2:{cellWidth:20, halign:'center'}, 3:{cellWidth:28, halign:'right'}, 4:{cellWidth:28, halign:'right'}},
+    columnStyles: qStyleCols,
     margin: {top:15, bottom:18, left:ML, right:MR}
   });
   // المجاميع
@@ -12790,6 +12800,7 @@ function quoteXlsxPreviewNode(q){
   const tt = document.createElement('div'); tt.innerHTML = '<div dir="auto" style="font-weight:800; font-size:15px; color:#1F4E79;"></div><div dir="auto" style="color:#64748b; font-size:11px;"></div>';
   tt.children[0].textContent = 'DEVIS ' + (q.ref || ''); tt.children[1].textContent = [q.clientName, q.title].filter(Boolean).join('  —  ');
   head.appendChild(tt); root.appendChild(head);
+  root.setAttribute('dir', quoteIsArabic(q) ? 'rtl' : 'ltr');
   const wrap = document.createElement('div'); wrap.style.cssText = 'overflow-x:auto;';
   const tb = document.createElement('table'); tb.style.cssText = 'border-collapse:collapse; width:100%; font-size:11.5px;';
   const cell = (txt, extra)=>{ const td = document.createElement('td'); td.textContent = txt; td.setAttribute('dir', 'auto'); td.style.cssText = 'border:1px solid #cbd5e1; padding:4px 6px;' + (extra || ''); return td; };
@@ -12819,7 +12830,7 @@ async function buildQuoteXlsxBlob(q){
   try{ await loadScriptOnce(EXCELJS_URL); }catch(e){}
   if(typeof ExcelJS === 'undefined') return _xlsxPlainBlob(quoteXlsxRep(q));   // احتياطي بلا تنسيق ولا معادلات
   const c = loadCompanyInfo(), t = quoteTotals(q), items = q.items || [];
-  const rtl = containsArabic(q.title || '') || containsArabic(q.clientName || '');
+  const rtl = quoteIsArabic(q);
   const wb = new ExcelJS.Workbook(); wb.creator = 'ALIOUA BTP'; wb.created = new Date();
   const ws = wb.addWorksheet('Devis', {views:[{rightToLeft: rtl, state:'frozen', ySplit: 9}], pageSetup:{paperSize: 9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}});
   ws.columns = [{width:6}, {width:52}, {width:10}, {width:12}, {width:15}, {width:17}];
@@ -13561,7 +13572,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 21-11-2026 (ج)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 21-11-2026 (د)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
