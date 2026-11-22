@@ -13858,7 +13858,7 @@ function bootAfterUnlock(){
   window.addEventListener('pagehide', ()=> makeHardBackup('pagehide'));
 }
 
-/* ===== وكيل الأوراش — المرحلة 1+2: للمدير فقط، قراءة فقط. الزر عند الطلب، والملخص اليومي مرة وحدة فاليوم عند فتح التطبيق ===== */
+/* ===== وكيل الأوراش — المرحلة 1+2+3+4+5 (صور، قراءة العقد، دردشة يونس، إشعارات تيليغرام): للمدير فقط، قراءة فقط. الزر عند الطلب، والملخص اليومي مرة وحدة فاليوم عند فتح التطبيق ===== */
 const SITE_AGENT = (function(){
   const L = x => '<bdi dir="ltr">' + x + '</bdi>';          // الأرقام دايما بالترتيب الصحيح
   const money = v => L(_pf(v)), pc = v => L(_pp(v));
@@ -13867,7 +13867,10 @@ const SITE_AGENT = (function(){
   try{ if(Array.isArray(CLOUD_SYNC_EXCLUDE) && !CLOUD_SYNC_EXCLUDE.includes(DAILY_KEY)) CLOUD_SYNC_EXCLUDE.push(DAILY_KEY); }catch(e){}
   const rd = () => { try{ return JSON.parse(LS.getItem(DAILY_KEY) || 'null'); }catch(e){ return null; } };
   const stored = sig => { const x = rd(); return x && x.sig === sig && x.text ? x.text : ''; };
-  const keep = (sig, text) => safeSetItem(DAILY_KEY, JSON.stringify({date: todayStr(), ts: Date.now(), sig, text}));
+  const save = patch => safeSetItem(DAILY_KEY, JSON.stringify(Object.assign({}, rd() || {}, patch)));
+  const keep = (sig, text) => save({date: todayStr(), ts: Date.now(), sig, text});
+  const plain = t => String(t).replace(/<[^>]+>/g, '');
+  const say = text => { try{ messages.push({role: 'model', text: String(text).slice(0, 3500), time: Date.now()}); saveHistory(); renderMessages(); }catch(e){ console.error('وكيل الأوراش:', e); } };
 
   function analyse(){
     const ctx = _projCtx(), today = todayStr();
@@ -13886,6 +13889,17 @@ const SITE_AGENT = (function(){
       if(ws.length && last === null) add(1, 'عندو ' + L(ws.length) + ' أجراء وما تسجل حتى حضور');
       else if(ws.length && idle > 3) add(1, 'آخر حضور تسجل من ' + L(idle) + ' أيام');
       f.billing.sched.filter(r=> r.overdue).forEach(r=> add(2, 'دفعة مستحقة وما تغطاتش: ' + escapeHtml(r.label || r.due)));
+      const T = p.terms || {};
+      if(T.start && T.days > 0){
+        const el = Math.floor((Date.parse(today) - Date.parse(T.start)) / 864e5);
+        const capAmt = (T.capPct && +p.contractAmount) ? +p.contractAmount * T.capPct / 100 : null;
+        const pen = d => { if(!T.penaltyPerDay || d <= 0) return ''; let v = d * T.penaltyPerDay; if(capAmt) v = Math.min(v, capAmt); return ' — الغرامة ≈ ' + money(v) + ' درهم'; };
+        if(el > T.days) add(2, 'الأجل ديال العقد فات بـ ' + L(el - T.days) + ' أيام' + pen(el - T.days));
+        else if(el >= 0){
+          if(prog !== null && prog > 0){ const late = Math.ceil(el / (prog / 100) - T.days); if(late > 0) add(late > 15 ? 2 : 1, 'بهاد الوتيرة غادي تتأخر ≈ ' + L(late) + ' أيام' + pen(late)); }
+          const left = T.days - el; if(left <= 14 && (prog === null || prog < 90)) add(1, 'بقاو ' + L(left) + ' أيام فقط على الأجل');
+        }
+      }
       return {p, f, prog, idle, spend, al};
     });
   }
@@ -13894,7 +13908,7 @@ const SITE_AGENT = (function(){
     const R = x => (x === null || x === undefined) ? null : Math.round(+x);
     return rows.map(r=> ({name: r.p.name, contractHT: R(r.f.contract.ht), budget: R(r.f.budget.amount), spent: R(r.f.totalExpense),
       spentPctOfBudget: R(r.f.budgetPct), billedPct: R(r.f.billedPct), progressPct: R(r.prog), daysSinceAttendance: r.idle,
-      workers: r.f.workerCount, alerts: r.al.map(a=> a.t.replace(/<[^>]+>/g, ''))}));
+      workers: r.f.workerCount, deadlineDays: (r.p.terms || {}).days || null, penaltyPerDay: (r.p.terms || {}).penaltyPerDay || null, alerts: r.al.map(a=> a.t.replace(/<[^>]+>/g, ''))}));
   }
   const mkPrompt = d => 'نتا مدير عمليات خبير فالبناء (BTP) كتخدم مع المدير العام. هادي أرقام الأوراش، الكود هو اللي حسبها: ما تعاود تحسبها وما تخترع أرقام.\n'
     + JSON.stringify(d) + '\n\nلكل ورش فيه مشكل حقيقي جاوب بهاد الصيغة: **المشكل** ← **السبب المحتمل** ← **الحل المقترح** ← **الأثر المالي التقريبي** (غير بأرقام معطاة). الأوراش اللي ما فيهاش مشكل قولها فسطر واحد. إلا نقص معطى مهم (مثلا نسبة الإنجاز) سول عليه فآخر الجواب. ما تكتب LaTeX. أقل من 300 كلمة. غير اقتراحات والقرار للمدير.';
@@ -13907,6 +13921,135 @@ const SITE_AGENT = (function(){
     throw last;
   }
 
+  // ---- صور الإنجاز: كتتخزن محليًا فجهاز المدير فقط (قاعدة IndexedDB منفصلة، ما كتتزامنش ما كتلمس بيانات التطبيق) ----
+  const idb = () => new Promise((res, rej)=>{ const r = indexedDB.open('site_agent_photos', 1); r.onupgradeneeded = ()=> r.result.createObjectStore('p', {keyPath: 'id'}); r.onsuccess = ()=> res(r.result); r.onerror = ()=> rej(r.error); });
+  const PH = {
+    async all(){ const db = await idb(); return new Promise((res, rej)=>{ const q = db.transaction('p').objectStore('p').getAll(); q.onsuccess = ()=> res(q.result || []); q.onerror = ()=> rej(q.error); }); },
+    async put(rec){ const db = await idb(); return new Promise((res, rej)=>{ const t = db.transaction('p', 'readwrite'); t.objectStore('p').put(rec); t.oncomplete = res; t.onerror = ()=> rej(t.error); }); },
+    async del(id){ const db = await idb(); return new Promise((res, rej)=>{ const t = db.transaction('p', 'readwrite'); t.objectStore('p').delete(id); t.oncomplete = res; t.onerror = ()=> rej(t.error); }); }
+  };
+  const compress = file => new Promise((res, rej)=>{
+    const im = new Image(), u = URL.createObjectURL(file);
+    im.onload = ()=>{ const k = Math.min(1, 1280 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); res(c.toDataURL('image/jpeg', 0.7).split(',')[1]); };
+    im.onerror = ()=>{ URL.revokeObjectURL(u); rej(new Error('IMG')); };
+    im.src = u;
+  });
+  const BTN = 'padding:6px 10px; border:1px solid #cbd5e1; border-radius:10px; background:#fff; font-size:12px; cursor:pointer;';
+  const photoBar = id => '<div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;"><button type="button" style="' + BTN + '" data-sa-pb="' + id + '">📷 زيد صور الإنجاز</button><button type="button" style="' + BTN + '" data-sa-pa="' + id + '">🔎 حلل الصور</button><input type="file" accept="image/*" multiple hidden data-sa-pi="' + id + '"></div><div data-sa-ps="' + id + '" style="margin-top:6px;"></div><div data-sa-pr="' + id + '" style="margin-top:6px; font-size:12.5px;"></div>';
+
+  async function showThumbs(pid, host){
+    const ph = (await PH.all()).filter(x=> x.projectId === pid).sort((a, b)=> b.ts - a.ts);
+    host.innerHTML = ph.length ? '<div style="font-size:11.5px; margin-bottom:4px;">📷 ' + L(ph.length) + ' صور (تاريخ الرفع)، كتتخزن فهاد الهاتف فقط</div><div style="display:flex; gap:4px; flex-wrap:wrap;">' + ph.slice(0, 6).map(x=> '<img alt="" src="data:image/jpeg;base64,' + x.data + '" style="width:54px; height:54px; object-fit:cover; border-radius:8px;">').join('') + '</div>' : '';
+  }
+
+  async function addPhotos(pid, files, host){
+    host.textContent = '⏳ كنصغّر ونحفظ الصور...';
+    try{
+      for(const f of Array.from(files).slice(0, 8)) await PH.put({id: 'ph' + Date.now() + Math.random().toString(36).slice(2, 6), projectId: pid, ts: Date.now(), data: await compress(f)});
+      const mine = (await PH.all()).filter(x=> x.projectId === pid).sort((a, b)=> b.ts - a.ts);
+      for(const old of mine.slice(12)) await PH.del(old.id);   // نبقاو غير على آخر 12 صورة فكل مشروع
+      await showThumbs(pid, host);
+    }catch(e){ host.textContent = '⚠️ ما قدرتش نحفظ الصور (' + (e && e.message === 'IMG' ? 'صورة غير مقروءة' : 'مشكل فتخزين الهاتف') + ').'; }
+  }
+
+  async function analysePhotos(pid, outEl){
+    if(currentRole !== 'admin' || busy) return;
+    busy = true;
+    try{
+      const ph = (await PH.all()).filter(x=> x.projectId === pid).sort((a, b)=> b.ts - a.ts).slice(0, 3);
+      if(!ph.length){ outEl.textContent = 'زيد صور أول، من بعد دوز على «حلل الصور».'; return; }
+      const row = analyse().find(r=> r.p.id === pid);
+      outEl.textContent = '⏳ كنشوف الصور...';
+      const prompt = 'نتا مهندس مراقب أشغال فالبناء (BTP). هادو آخر ' + ph.length + ' صور ديال الورش «' + row.p.name + '». نسبة الإنجاز اللي صرّح بها المدير: ' + (row.prog === null ? 'ما معروفاش' : Math.round(row.prog) + '%') + '. جاوب بالدارجة المغربية فأقل من 150 كلمة: 1) شنو المرحلة اللي باينة فالصور؟ 2) واش كتوافق نسبة الإنجاز المصرح بها؟ (تقدير تقريبي، ماشي قياس دقيق) 3) أي ملاحظة جودة ولا سلامة باينة 4) شنو ما قدرتش تشوف. ما تخترع حتى حاجة ما باينة فالصور. ما تكتب LaTeX.';
+      const chain = buildProviderChain(true);
+      if(!chain.length) throw new Error('NOKEY');
+      const msg = [{role: 'user', text: prompt, images: ph.map(x=> ({mime: 'image/jpeg', data: x.data})), time: Date.now()}];
+      let text = '', last = null;
+      for(const c of chain){ try{ text = await c.fn(c.key, msg); break; }catch(e){ last = e; } }
+      if(!text) throw last || new Error('EMPTY');
+      outEl.innerHTML = ''; renderRichBotContent(outEl, text);
+    }catch(e){ outEl.textContent = '⚠️ تحليل الصور ما تفتحش دابا (' + (e && e.message === 'NOKEY' ? 'خاصك مفتاح Gemini ولا Groq مفعّل' : 'حد الاستعمال ولا الإنترنت') + ').'; }
+    finally{ busy = false; }
+  }
+
+  function bindPhotos(out){
+    out.querySelectorAll('[data-sa-pb]').forEach(b=>{
+      const id = b.dataset.saPb, inp = out.querySelector('[data-sa-pi="' + id + '"]'), st = out.querySelector('[data-sa-ps="' + id + '"]');
+      b.onclick = ()=> inp.click();
+      inp.onchange = ()=>{ if(inp.files && inp.files.length) addPhotos(id, inp.files, st).then(()=>{ inp.value = ''; }); };
+      showThumbs(id, st).catch(()=>{});
+    });
+    out.querySelectorAll('[data-sa-pa]').forEach(b=>{ b.onclick = ()=> analysePhotos(b.dataset.saPa, out.querySelector('[data-sa-pr="' + b.dataset.saPa + '"]')); });
+  }
+
+  // ---- يونس كيقرا العقد (من نسخة المشروع) ← كيقترح، وانت كتأكد، والكود كيحسب ----
+  const b64 = blob => new Promise((res, rej)=>{ const r = new FileReader(); r.onload = ()=> res(String(r.result).split(',')[1]); r.onerror = ()=> rej(r.error); r.readAsDataURL(blob); });
+  const termsBar = p => { const T = p.terms || {}, has = (p.contractFiles || []).length;
+    return '<div style="margin-top:8px; font-size:12px;">' + (T.days ? '📄 العقد: ' + L(T.days) + ' يوم من ' + L(T.start || '؟') + (T.penaltyPerDay ? ' · غرامة ' + money(T.penaltyPerDay) + ' درهم/يوم' : '') + (T.capPct ? ' · سقف ' + pc(T.capPct) : '') : '📄 شروط العقد (المدة والغرامات) ما مسجلاش') + '</div><div style="margin-top:6px;">'
+      + (has ? '<button type="button" style="' + BTN + '" data-sa-cr="' + p.id + '">📄 يونس يقرا العقد</button>' : '<span style="font-size:11.5px;">زيد نسخة العقد فبطاقة المشروع باش يقراها يونس.</span>') + '</div><div data-sa-cf="' + p.id + '" style="margin-top:6px;"></div>'; };
+  const CPROMPT = 'هادا عقد صفقة بناء. استخرج منو غير المعلومات المكتوبة فيه، وجاوب بـ JSON صالح فقط (بلا شرح وبلا ```): {"start_date":"YYYY-MM-DD أو null","duration_days":رقم أو null,"duration_text":"نص مدة الإنجاز كيف كاين فالعقد أو null","penalty_clause":"نص بند غرامة التأخير حرفيا أو null","penalty_per_day_mad":مبلغ يومي بالدرهم أو null,"penalty_permille":نسبة بالألف لكل يوم أو null,"penalty_cap_pct":سقف الغرامة كنسبة مئوية أو null,"payment_schedule":[{"label":"...","percent":رقم أو null}]}. إلا ما لقيتيش المعلومة رجّع null. ما تخترع وما تحسب والو. إلا كانت المدة بالأشهر خلي duration_days null وكتب النص فـ duration_text.';
+
+  async function readContract(pid, host){
+    if(currentRole !== 'admin' || busy) return;
+    busy = true;
+    try{
+      const p = loadProjects().find(x=> x.id === pid), imgs = [];
+      host.textContent = '⏳ يونس كيقرا العقد...';
+      for(const f of (p.contractFiles || []).slice(0, 2)){
+        const rec = await FILEVAULT.get(f.id);
+        if(rec && /^(application\/pdf|image\/)/.test(rec.type)) imgs.push({mime: rec.type, data: await b64(rec.blob)});
+      }
+      if(!imgs.length) throw new Error('NOFILE');
+      const chain = buildProviderChain(true);
+      if(!chain.length) throw new Error('NOKEY');
+      let raw = '', last = null;
+      for(const c of chain){ try{ raw = await c.fn(c.key, [{role: 'user', text: CPROMPT, images: imgs, time: Date.now()}]); break; }catch(e){ last = e; } }
+      if(!raw) throw last || new Error('EMPTY');
+      let J = null; try{ const m = raw.match(/\{[\s\S]*\}/); J = m ? JSON.parse(m[0]) : null; }catch(e){ J = null; }
+      if(!J){ host.innerHTML = ''; renderRichBotContent(host, raw); return; }
+      const num = v => { const x = parseFloat(v); return isFinite(x) ? x : ''; }, ctx = _projCtx(), f = projectFinancials(p, ctx), ttc = _projTtc(p);
+      const sched = Array.isArray(J.payment_schedule) ? J.payment_schedule : [];
+      host.innerHTML = '<div style="font-size:12.5px; line-height:1.7;">'
+        + (J.duration_text ? '<div>📅 المدة (من العقد): <i dir="auto">' + escapeHtml(String(J.duration_text)) + '</i></div>' : '')
+        + (J.penalty_clause ? '<div>📌 بند الغرامة (من العقد): <i dir="auto">' + escapeHtml(String(J.penalty_clause)) + '</i></div>' : '<div>📌 ما لقيتش بند الغرامة فالعقد.</div>')
+        + (num(J.penalty_permille) !== '' ? '<div>🔢 ‰' + L(num(J.penalty_permille)) + ' ≈ ' + money(f.contract.ht * num(J.penalty_permille) / 1000) + ' درهم/يوم على HT، ولا ≈ ' + money(ttc * num(J.penalty_permille) / 1000) + ' على TTC. شوف العقد باش تختار.</div>' : '')
+        + (sched.length ? '<div>💳 الدفعات: ' + sched.map(x=> escapeHtml(String(x.label || '')) + (num(x.percent) !== '' ? ' ' + L(num(x.percent)) + '%' : '')).join(' · ') + '</div>' : '')
+        + '<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">'
+        + '<label>تاريخ الانطلاق<input type="date" data-sa-t="start" value="' + (/^\d{4}-\d{2}-\d{2}$/.test(String(J.start_date)) ? J.start_date : '') + '"></label>'
+        + '<label>المدة (بالأيام)<input type="number" min="1" inputmode="numeric" data-sa-t="days" value="' + num(J.duration_days) + '"></label>'
+        + '<label>الغرامة/اليوم (درهم)<input type="number" min="0" inputmode="decimal" data-sa-t="pen" value="' + num(J.penalty_per_day_mad) + '"></label>'
+        + '<label>سقف الغرامة (% من الصفقة)<input type="number" min="0" inputmode="decimal" data-sa-t="cap" value="' + num(J.penalty_cap_pct) + '"></label></div>'
+        + '<button type="button" style="' + BTN + ' margin-top:8px;" data-sa-tsave="1">✅ أكّد وسجّل</button><div style="font-size:11.5px; margin-top:4px;">يونس قرا العقد بالذكاء الاصطناعي: تأكد من كل رقم من الورقة قبل التسجيل.</div></div>';
+      host.querySelector('[data-sa-tsave]').onclick = ()=>{
+        const g = k => host.querySelector('[data-sa-t="' + k + '"]').value, n = k => { const v = parseFloat(g(k)); return isFinite(v) && v >= 0 ? v : null; };
+        updateProject(pid, {terms: {start: /^\d{4}-\d{2}-\d{2}$/.test(g('start')) ? g('start') : '', days: n('days'), penaltyPerDay: n('pen'), capPct: n('cap'), readAt: Date.now()}});
+        host.textContent = '✅ تسجلات شروط العقد. دوز على «تحليل الأوراش» باش تدخل فالتحليل.';
+      };
+      say('📄 قريت عقد «' + p.name + '»' + (J.duration_text ? '\nالمدة: ' + J.duration_text : '') + (J.penalty_clause ? '\nبند الغرامة: ' + J.penalty_clause : '\nما لقيتش بند الغرامة.') + '\nأكّد الأرقام فبطاقة المشروع (🧠 تحليل الأوراش) باش نستعملهم فالتحليل.');
+    }catch(e){ host.textContent = '⚠️ يونس ما قدرش يقرا العقد (' + (e && e.message === 'NOFILE' ? 'الملف ماشي PDF ولا صورة' : e && e.message === 'NOKEY' ? 'خاصك مفتاح Gemini ولا Groq مفعّل' : 'حد الاستعمال ولا الإنترنت') + ').'; }
+    finally{ busy = false; }
+  }
+  function bindTerms(out){ out.querySelectorAll('[data-sa-cr]').forEach(b=>{ b.onclick = ()=> readContract(b.dataset.saCr, out.querySelector('[data-sa-cf="' + b.dataset.saCr + '"]')); }); }
+
+  // ---- يونس كيهضر معاك: كيعرف حالة الأوراش، وكيكتب فالدردشة (ملخص الصباح + أي تنبيه أحمر جديد) ----
+  function statusText(){ return analyse().map(r=> '- ' + r.p.name + ': مصاريف ' + Math.round(r.f.totalExpense) + (r.f.budgetPct !== null ? '، ' + Math.round(r.f.budgetPct) + '% من الميزانية' : '') + (r.prog !== null ? '، إنجاز ' + Math.round(r.prog) + '%' : '') + (r.al.length ? '، تنبيهات: ' + r.al.map(a=> plain(a.t)).join(' / ') : '، بلا تنبيهات')).join('\n').slice(0, 2500); }
+  const redKeys = rows => rows.flatMap(r=> r.al.filter(a=> a.lvl === 2).map(a=> r.p.id + '|' + plain(a.t)));
+  function dailyChat(rows, text){
+    const cnt = lv => rows.reduce((n, r)=> n + r.al.filter(a=> a.lvl === lv).length, 0), red = cnt(2), org = cnt(1);
+    return '☀️ ملخص الأوراش ديال اليوم: ' + (red || org ? '🔴 ' + red + ' · 🟠 ' + org : '🟢 كلشي مزيان') + '\n' + rows.filter(r=> r.al.length).map(r=> '• ' + r.p.name + ': ' + r.al.map(a=> plain(a.t)).join(' / ')).join('\n') + (text ? '\n\n' + text : '') + '\n\nبغيتي نفصّل معاك شي ورش؟';
+  }
+  async function watch(){ pushSchedule(false);                                  // كل 20 دقيقة والتطبيق مفتوح: بلا ذكاء اصطناعي، غير الكود
+    if(currentRole !== 'admin' || busy) return;
+    try{
+      const rows = analyse(), today = todayStr(), y = rd() || {}, seen = y.annDate === today ? (y.ann || []) : [], fresh = [];
+      rows.forEach(r=> r.al.filter(a=> a.lvl === 2).forEach(a=>{ const k = r.p.id + '|' + plain(a.t); if(!seen.includes(k)) fresh.push({k, t: r.p.name + ': ' + plain(a.t)}); }));
+      if(!fresh.length) return;
+      save({annDate: today, ann: seen.concat(fresh.map(x=> x.k)).slice(-60)});
+      say('🔴 تنبيه جديد فالأوراش:\n' + fresh.map(x=> '• ' + x.t).join('\n'));
+      try{ renderDaily(rows, (rd() || {}).text || ''); }catch(e){ console.error('وكيل الأوراش (البطاقة):', e); }
+    }catch(e){ console.error('وكيل الأوراش (المراقبة):', e); }
+  }
+
   function codeHtml(rows){
     if(!rows.length) return '<div class="empty-hint">ماكاينش مشاريع مسجلة.</div>';
     return rows.map(r=>{
@@ -13914,7 +14057,7 @@ const SITE_AGENT = (function(){
       return '<div class="list-card" style="margin-bottom:8px;"><div class="lc-title" dir="auto">' + (worst === 2 ? '🔴 ' : worst === 1 ? '🟠 ' : '🟢 ') + escapeHtml(r.p.name) + '</div>'
         + '<div class="lc-meta">مصاريف ' + money(r.f.totalExpense) + ' درهم' + (r.f.budgetPct !== null ? ' · ' + pc(r.f.budgetPct) + ' من الميزانية' : '') + '</div>'
         + (r.al.length ? '<ul style="margin:6px 18px 0; padding:0; font-size:12.5px; line-height:1.7;">' + r.al.map(a=> '<li>' + (a.lvl === 2 ? '🔴 ' : '🟠 ') + a.t + '</li>').join('') + '</ul>' : '<div style="font-size:12.5px; margin-top:4px;">كلشي مزيان حسب المعطيات.</div>')
-        + '<label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-size:12px;">نسبة الإنجاز <input type="number" min="0" max="100" inputmode="decimal" data-sa-pg="' + r.p.id + '" value="' + (r.prog === null ? '' : r.prog) + '" style="width:80px;"> %</label></div>';
+        + '<label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-size:12px;">نسبة الإنجاز <input type="number" min="0" max="100" inputmode="decimal" data-sa-pg="' + r.p.id + '" value="' + (r.prog === null ? '' : r.prog) + '" style="width:80px;"> %</label>' + photoBar(r.p.id) + termsBar(r.p) + '</div>';
     }).join('');
   }
 
@@ -13932,6 +14075,7 @@ const SITE_AGENT = (function(){
           inp.style.borderColor = '#2e7d32';                // تسجل. دوز على «تحليل الأوراش» باش يتحدّث التحليل
         };
       });
+      bindPhotos(out); bindTerms(out);
       if(!rows.length) return;
       const ai = out.querySelector('#siteAgentAI'), d = data(rows), sig = JSON.stringify(d);
       let text = stored(sig);
@@ -13969,11 +14113,68 @@ const SITE_AGENT = (function(){
       let text = (x && x.date === today) ? (x.text || '') : '';
       if(!x || x.date !== today){
         try{ text = await askAI(mkPrompt(data(rows))); keep(sig, text); }
-        catch(e){ safeSetItem(DAILY_KEY, JSON.stringify({date: today, ts: Date.now(), sig: '', text: ''})); }
+        catch(e){ save({date: today, ts: Date.now(), sig: '', text: ''}); }
       }
-      renderDaily(rows, text);
+      try{ renderDaily(rows, text); }catch(e){ console.error('وكيل الأوراش (البطاقة):', e); }
+      if((rd() || {}).posted !== today){ say(dailyChat(rows, text)); save({posted: today, annDate: today, ann: redKeys(rows)}); }
     }catch(e){ console.error('وكيل الأوراش (الملخص اليومي):', e); }
     finally{ busy = false; }
+  }
+
+  // ---- إشعارات تيليغرام (والتطبيق مسدود): الجدول كيتحسب هنا، والـWorker كيرسل نصوص عامة فقط (بلا أسماء ولا مبالغ) ----
+  const NK = 'alioua_btp_site_agent_notify';          // الرابط والرمز السري: محليين فجهاز المدير، ما كيتزامنوش
+  try{ if(Array.isArray(CLOUD_SYNC_EXCLUDE) && !CLOUD_SYNC_EXCLUDE.includes(NK)) CLOUD_SYNC_EXCLUDE.push(NK); }catch(e){}
+  const nrd = () => { try{ return JSON.parse(LS.getItem(NK) || 'null') || {}; }catch(e){ return {}; } };
+  const hsh = x => { let h = 0; for(const ch of String(x)) h = (h * 31 + ch.charCodeAt(0)) | 0; return (h >>> 0).toString(36); };
+  const ymd = t => new Date(t).toLocaleDateString('en-CA');
+  const atH = (k, h) => Date.parse(k + 'T00:00:00') + h * 3600e3;
+  const isYmd = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+  function buildSchedule(){
+    const now = Date.now(), out = [], DAY = 864e5;
+    const add = (id, at, text)=>{ if(isFinite(at) && at > now + 60e3 && at < now + 40 * DAY) out.push({id, at, text}); };
+    for(let i = 0; i < 7; i++){ const k = ymd(now + i * DAY); add('am-' + k, atH(k, 8), '☀️ ملخص الأوراش جاهز فيونس'); }
+    try{ computeDues().forEach(d=>{ const k = ymd(d.due), tx = d.kind === 'supplier' ? '⏰ عندك استحقاق مورّد — افتح يونس' : '💰 عندك استحقاق زبون — افتح يونس', h = hsh(d.kind + d.name); add('du-' + h + '-' + k, atH(k, 9), tx); add('du1-' + h + '-' + k, atH(k, 9) - DAY, tx); }); }catch(e){}
+    try{ loadCheques().filter(c=> c.status !== 'cleared' && isYmd(c.date)).forEach(c=>{ const tx = '🧾 عندك شيك مستحق — افتح يونس'; add('ch-' + c.id, atH(c.date, 9), tx); if(c.dir !== 'in') add('ch1-' + c.id, atH(c.date, 9) - DAY, tx); }); }catch(e){}
+    try{
+      const ctx = _projCtx();
+      loadProjects().forEach(p=>{
+        const T = p.terms || {};
+        if(T.start && T.days > 0){ const dl = ymd(Date.parse(T.start + 'T00:00:00') + T.days * DAY); [14, 7, 0].forEach(b=> add('dl' + b + '-' + p.id + '-' + dl, atH(dl, 9) - b * DAY, '📄 أجل عقد قريب — افتح يونس')); }
+        projectFinancials(p, ctx).billing.sched.filter(r=> isYmd(r.due) && !r.covered).forEach(r=> add('pm-' + p.id + '-' + r.due, atH(r.due, 9), '💳 دفعة مستحقة اليوم — افتح يونس'));
+      });
+    }catch(e){}
+    return out;
+  }
+  let lastPush = 0;
+  async function pushSchedule(force){
+    if(currentRole !== 'admin') return false;
+    const c = nrd(); if(!c.url || !c.secret) return false;
+    if(!force && Date.now() - lastPush < 10 * 60e3) return false;
+    lastPush = Date.now();
+    try{ const r = await fetch(c.url.replace(/\/+$/, '') + '/sync', {method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c.secret}, body: JSON.stringify({items: buildSchedule()})}); return r.ok; }
+    catch(e){ console.error('وكيل الأوراش (تيليغرام):', e); return false; }
+  }
+  const NHTML = '<details style="margin-top:10px; font-size:12.5px;"><summary style="cursor:pointer;">🔔 إشعارات تيليغرام (والتطبيق مسدود)</summary><div style="margin-top:6px; display:grid; gap:6px;">'
+    + '<input id="saNurl" dir="ltr" placeholder="رابط الـWorker: https://xxx.workers.dev" autocomplete="off"><input id="saNsec" dir="ltr" type="password" placeholder="الرمز السري (SECRET)" autocomplete="off">'
+    + '<button type="button" style="' + BTN + '" id="saNsave">حفظ وتجربة</button><div id="saNmsg"></div>'
+    + '<div style="font-size:11.5px; line-height:1.7;">كتوصلك رسائل بنص عام فقط (بلا أسماء ولا مبالغ) والتفاصيل فيونس. كتغطي: ملخص الصباح، الاستحقاقات، الشيكات، آجال العقود، الدفعات المستحقة. الجدول كيتجدد كل ما تفتح التطبيق ولا تخرج منو.</div></div></details>';
+  function bindNotify(bar){
+    const c = nrd(), u = bar.querySelector('#saNurl'), sc = bar.querySelector('#saNsec'), m = bar.querySelector('#saNmsg');
+    if(!u) return;
+    u.value = c.url || ''; if(c.secret) sc.placeholder = '•••• محفوظ (خليه خاوي باش يبقى هو)';
+    bar.querySelector('#saNsave').onclick = async ()=>{
+      const url = u.value.trim().replace(/\/+$/, ''), sec = sc.value.trim() || nrd().secret || '';
+      if(!/^https:\/\//.test(url) || !sec){ m.textContent = '⚠️ دخل الرابط (https://...) والرمز السري.'; return; }
+      safeSetItem(NK, JSON.stringify({url, secret: sec}));
+      m.textContent = '⏳ كنجرب...';
+      try{
+        const r = await fetch(url + '/test', {method: 'POST', headers: {'Authorization': 'Bearer ' + sec}}), j = await r.json().catch(()=> ({}));
+        if(r.status === 401){ m.textContent = '⚠️ الرمز السري غالط.'; return; }
+        if(!r.ok || !j.ok){ m.textContent = '⚠️ الـWorker جاوب ولكن تيليغرام ما بعثش: تأكد من BOT_TOKEN وCHAT_ID، ومن أنك صيفطتي /start للبوت.'; return; }
+        const ok = await pushSchedule(true);
+        m.textContent = ok ? '✅ توصلك رسالة فتيليغرام، والجدول تصيفط.' : '✅ الرسالة وصلات، ولكن الجدول ما تصيفطش (عاود دوز).';
+      }catch(e){ m.textContent = '⚠️ ما قدرتش نوصل للـWorker (الرابط غالط ولا الإنترنت).'; }
+    };
   }
 
   function ensureUI(){
@@ -13981,16 +14182,28 @@ const SITE_AGENT = (function(){
     const list = document.getElementById('projectsList');
     if(!list || document.getElementById('siteAgentBar')) return;
     const bar = document.createElement('div'); bar.id = 'siteAgentBar'; bar.style.cssText = 'margin-top:12px;';
-    bar.innerHTML = '<button class="btn-primary" id="siteAgentBtn">🧠 تحليل الأوراش</button><div id="siteAgentOut" style="margin-top:10px;"></div>';
+    bar.innerHTML = '<button class="btn-primary" id="siteAgentBtn">🧠 تحليل الأوراش</button><div id="siteAgentOut" style="margin-top:10px;"></div>' + NHTML;
     list.parentNode.insertBefore(bar, list);
     bar.querySelector('#siteAgentBtn').onclick = run;
+    bindNotify(bar);
   }
   const _rp = renderProjects;
   renderProjects = function(){ const r = _rp.apply(this, arguments); try{ ensureUI(); }catch(e){ console.error('وكيل الأوراش:', e); } return r; };
+  const _sp = _yunusFullSystemPrompt;
+  _yunusFullSystemPrompt = function(msgs){
+    const base = _sp.apply(this, arguments);
+    try{
+      if(currentRole !== 'admin') return base;
+      const q = ((msgs || []).slice().reverse().find(m=> m && m.role === 'user') || {}).text || '';
+      if(!/مشروع|مشاريع|ورش|أوراش|اوراش|إنجاز|انجاز|تأخر|تاخر|غرامة|غرامه|عقد|ميزانية|ميزانيه|الأجل|اجل/.test(q)) return base;
+      return base + '\n\n[حالة الأوراش — محسوبة بالكود: استعملها وما تخترع أرقام]\n' + statusText();
+    }catch(e){ return base; }
+  };
+  let _watching = false;
   const _bu = bootAfterUnlock;                            // كيتشغل غير بعد إدخال الـPIN
-  bootAfterUnlock = function(){ const r = _bu.apply(this, arguments); setTimeout(()=>{ try{ auto(); }catch(e){ console.error('وكيل الأوراش:', e); } }, 4000); return r; };
+  bootAfterUnlock = function(){ const r = _bu.apply(this, arguments); setTimeout(()=>{ try{ auto(); }catch(e){ console.error('وكيل الأوراش:', e); } }, 4000); if(!_watching){ _watching = true; setInterval(watch, 20 * 60 * 1000); document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') pushSchedule(false); }); setTimeout(()=> pushSchedule(false), 8000); } return r; };
   try{ ensureUI(); }catch(e){}
-  return {run, analyse, data, auto};
+  return {run, analyse, data, auto, analysePhotos, PH, readContract, watch, statusText, buildSchedule, pushSchedule};
 })();
 </script>
 </body>
