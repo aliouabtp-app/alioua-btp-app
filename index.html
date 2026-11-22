@@ -13857,6 +13857,141 @@ function bootAfterUnlock(){
   setInterval(()=> makeHardBackup('auto-5min'), 5*60*1000);
   window.addEventListener('pagehide', ()=> makeHardBackup('pagehide'));
 }
+
+/* ===== وكيل الأوراش — المرحلة 1+2: للمدير فقط، قراءة فقط. الزر عند الطلب، والملخص اليومي مرة وحدة فاليوم عند فتح التطبيق ===== */
+const SITE_AGENT = (function(){
+  const L = x => '<bdi dir="ltr">' + x + '</bdi>';          // الأرقام دايما بالترتيب الصحيح
+  const money = v => L(_pf(v)), pc = v => L(_pp(v));
+  let busy = false;
+  const DAILY_KEY = 'alioua_btp_site_agent_daily';   // محلي فجهاز المدير فقط: ما كيتزامنش سحابيًا
+  try{ if(Array.isArray(CLOUD_SYNC_EXCLUDE) && !CLOUD_SYNC_EXCLUDE.includes(DAILY_KEY)) CLOUD_SYNC_EXCLUDE.push(DAILY_KEY); }catch(e){}
+  const rd = () => { try{ return JSON.parse(LS.getItem(DAILY_KEY) || 'null'); }catch(e){ return null; } };
+  const stored = sig => { const x = rd(); return x && x.sig === sig && x.text ? x.text : ''; };
+  const keep = (sig, text) => safeSetItem(DAILY_KEY, JSON.stringify({date: todayStr(), ts: Date.now(), sig, text}));
+
+  function analyse(){
+    const ctx = _projCtx(), today = todayStr();
+    return loadProjects().map(p=>{
+      const f = projectFinancials(p, ctx), al = [], add = (lvl, t)=> al.push({lvl, t});
+      const prog = (p.progressPct === 0 || p.progressPct) ? +p.progressPct : null;
+      const ws = ctx.workers.filter(w=> w.projectId === p.id);
+      const dts = ctx.att.filter(a=> a.date && ws.some(w=> w.id === a.workerId)).map(a=> a.date).sort();
+      const last = dts.length ? dts[dts.length - 1] : null;
+      const idle = last ? Math.floor((Date.parse(today) - Date.parse(last)) / 864e5) : null;
+      const spend = f.budgetPct !== null ? f.budgetPct : (f.contract.ht ? f.totalExpense / f.contract.ht * 100 : null);
+      if(f.budgetPct !== null && f.budgetPct >= 80) add(f.budgetPct >= 100 ? 2 : 1, 'المصاريف وصلات ' + pc(f.budgetPct) + ' من الميزانية');
+      if(f.margin !== null && (f.margin < 0 || f.marginPct < 10)) add(f.margin < 0 ? 2 : 1, f.margin < 0 ? 'المصاريف فاتو ثمن الصفقة (HT)' : 'الهامش ضعيف: ' + pc(f.marginPct));
+      if(prog !== null && spend !== null && spend - prog > 15) add(spend - prog > 30 ? 2 : 1, 'المصروف ' + pc(spend) + ' والإنجاز ' + pc(prog) + ' فقط');
+      if(prog !== null && f.billedPct !== null && prog - f.billedPct > 15) add(1, 'الإنجاز ' + pc(prog) + ' والفوترة ' + pc(f.billedPct) + ': كاين شغل ما تفوترش');
+      if(ws.length && last === null) add(1, 'عندو ' + L(ws.length) + ' أجراء وما تسجل حتى حضور');
+      else if(ws.length && idle > 3) add(1, 'آخر حضور تسجل من ' + L(idle) + ' أيام');
+      f.billing.sched.filter(r=> r.overdue).forEach(r=> add(2, 'دفعة مستحقة وما تغطاتش: ' + escapeHtml(r.label || r.due)));
+      return {p, f, prog, idle, spend, al};
+    });
+  }
+
+  function data(rows){
+    const R = x => (x === null || x === undefined) ? null : Math.round(+x);
+    return rows.map(r=> ({name: r.p.name, contractHT: R(r.f.contract.ht), budget: R(r.f.budget.amount), spent: R(r.f.totalExpense),
+      spentPctOfBudget: R(r.f.budgetPct), billedPct: R(r.f.billedPct), progressPct: R(r.prog), daysSinceAttendance: r.idle,
+      workers: r.f.workerCount, alerts: r.al.map(a=> a.t.replace(/<[^>]+>/g, ''))}));
+  }
+  const mkPrompt = d => 'نتا مدير عمليات خبير فالبناء (BTP) كتخدم مع المدير العام. هادي أرقام الأوراش، الكود هو اللي حسبها: ما تعاود تحسبها وما تخترع أرقام.\n'
+    + JSON.stringify(d) + '\n\nلكل ورش فيه مشكل حقيقي جاوب بهاد الصيغة: **المشكل** ← **السبب المحتمل** ← **الحل المقترح** ← **الأثر المالي التقريبي** (غير بأرقام معطاة). الأوراش اللي ما فيهاش مشكل قولها فسطر واحد. إلا نقص معطى مهم (مثلا نسبة الإنجاز) سول عليه فآخر الجواب. ما تكتب LaTeX. أقل من 300 كلمة. غير اقتراحات والقرار للمدير.';
+
+  async function askAI(prompt){
+    const chain = buildProviderChain(false);
+    if(!chain.length) throw new Error('NOKEY');
+    let last = null;
+    for(const c of chain){ try{ return await c.fn(c.key, [{role: 'user', text: prompt, time: Date.now()}]); }catch(e){ last = e; } }
+    throw last;
+  }
+
+  function codeHtml(rows){
+    if(!rows.length) return '<div class="empty-hint">ماكاينش مشاريع مسجلة.</div>';
+    return rows.map(r=>{
+      const worst = r.al.reduce((m, a)=> Math.max(m, a.lvl), 0);
+      return '<div class="list-card" style="margin-bottom:8px;"><div class="lc-title" dir="auto">' + (worst === 2 ? '🔴 ' : worst === 1 ? '🟠 ' : '🟢 ') + escapeHtml(r.p.name) + '</div>'
+        + '<div class="lc-meta">مصاريف ' + money(r.f.totalExpense) + ' درهم' + (r.f.budgetPct !== null ? ' · ' + pc(r.f.budgetPct) + ' من الميزانية' : '') + '</div>'
+        + (r.al.length ? '<ul style="margin:6px 18px 0; padding:0; font-size:12.5px; line-height:1.7;">' + r.al.map(a=> '<li>' + (a.lvl === 2 ? '🔴 ' : '🟠 ') + a.t + '</li>').join('') + '</ul>' : '<div style="font-size:12.5px; margin-top:4px;">كلشي مزيان حسب المعطيات.</div>')
+        + '<label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-size:12px;">نسبة الإنجاز <input type="number" min="0" max="100" inputmode="decimal" data-sa-pg="' + r.p.id + '" value="' + (r.prog === null ? '' : r.prog) + '" style="width:80px;"> %</label></div>';
+    }).join('');
+  }
+
+  async function run(){
+    if(currentRole !== 'admin' || busy) return;
+    busy = true;
+    const out = document.getElementById('siteAgentOut');
+    try{
+      const rows = analyse();
+      out.innerHTML = codeHtml(rows) + '<div id="siteAgentAI" style="margin-top:8px; font-size:13px;"></div>';
+      out.querySelectorAll('[data-sa-pg]').forEach(inp=>{
+        inp.onchange = ()=>{
+          const v = inp.value === '' ? null : Math.min(100, Math.max(0, +inp.value || 0));
+          updateProject(inp.dataset.saPg, {progressPct: v});
+          inp.style.borderColor = '#2e7d32';                // تسجل. دوز على «تحليل الأوراش» باش يتحدّث التحليل
+        };
+      });
+      if(!rows.length) return;
+      const ai = out.querySelector('#siteAgentAI'), d = data(rows), sig = JSON.stringify(d);
+      let text = stored(sig);
+      if(!text){ ai.textContent = '⏳ كنحلل...'; text = await askAI(mkPrompt(d)); keep(sig, text); }
+      ai.innerHTML = ''; renderRichBotContent(ai, text);
+    }catch(e){
+      const ai = document.getElementById('siteAgentAI');
+      if(ai) ai.textContent = '⚠️ التحليل بالذكاء الاصطناعي ما تفتحش دابا (' + (e && e.message === 'NOKEY' ? 'ما كاينش مفتاح مفعّل' : 'حد الاستعمال ولا الإنترنت') + '). التنبيهات اللي فوق محسوبة بالكود وصحيحة.';
+    }finally{ busy = false; }
+  }
+
+  function renderDaily(rows, text){
+    const anchor = document.getElementById('overdueAlertsBanner'); if(!anchor) return;
+    const old = document.getElementById('siteAgentDaily'); if(old) old.remove();
+    const cnt = lv => rows.reduce((n, r)=> n + r.al.filter(a=> a.lvl === lv).length, 0), red = cnt(2), org = cnt(1);
+    const box = document.createElement('div'); box.id = 'siteAgentDaily';
+    box.style.cssText = 'background:#f0fdf4; border:1px solid #86efac; border-radius:14px; margin:0 16px 12px; padding:10px 14px; font-size:12.5px;';
+    box.innerHTML = '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><b>🧠 ملخص الأوراش ديال اليوم</b><span>' + (red || org ? '🔴 ' + L(red) + ' · 🟠 ' + L(org) : '🟢 كلشي مزيان') + '</span><button id="saX" style="border:0; background:none; font-size:16px; cursor:pointer;" aria-label="إغلاق">✕</button></div>'
+      + (red || org || text ? '<details style="margin-top:6px;"><summary style="cursor:pointer;">التفاصيل</summary><div id="saBody" style="margin-top:6px;"></div></details>' : '');
+    anchor.insertAdjacentElement('afterend', box);
+    box.querySelector('#saX').onclick = ()=> box.remove();
+    const body = box.querySelector('#saBody');
+    if(body){
+      body.innerHTML = rows.filter(r=> r.al.length).map(r=> '<div style="margin-bottom:6px;"><b dir="auto">' + escapeHtml(r.p.name) + '</b><ul style="margin:2px 18px 0; padding:0; line-height:1.7;">' + r.al.map(a=> '<li>' + (a.lvl === 2 ? '🔴 ' : '🟠 ') + a.t + '</li>').join('') + '</ul></div>').join('') + '<div id="saAI"></div>';
+      if(text) renderRichBotContent(body.querySelector('#saAI'), text);
+    }
+  }
+
+  async function auto(){                                  // مرة وحدة فاليوم: إلا فشل الذكاء الاصطناعي ما كنعاودوش حتى للغد
+    if(currentRole !== 'admin' || busy) return;
+    busy = true;
+    try{
+      const rows = analyse(); if(!rows.length) return;
+      const today = todayStr(), x = rd(), sig = JSON.stringify(data(rows));
+      let text = (x && x.date === today) ? (x.text || '') : '';
+      if(!x || x.date !== today){
+        try{ text = await askAI(mkPrompt(data(rows))); keep(sig, text); }
+        catch(e){ safeSetItem(DAILY_KEY, JSON.stringify({date: today, ts: Date.now(), sig: '', text: ''})); }
+      }
+      renderDaily(rows, text);
+    }catch(e){ console.error('وكيل الأوراش (الملخص اليومي):', e); }
+    finally{ busy = false; }
+  }
+
+  function ensureUI(){
+    if(currentRole !== 'admin') return;
+    const list = document.getElementById('projectsList');
+    if(!list || document.getElementById('siteAgentBar')) return;
+    const bar = document.createElement('div'); bar.id = 'siteAgentBar'; bar.style.cssText = 'margin-top:12px;';
+    bar.innerHTML = '<button class="btn-primary" id="siteAgentBtn">🧠 تحليل الأوراش</button><div id="siteAgentOut" style="margin-top:10px;"></div>';
+    list.parentNode.insertBefore(bar, list);
+    bar.querySelector('#siteAgentBtn').onclick = run;
+  }
+  const _rp = renderProjects;
+  renderProjects = function(){ const r = _rp.apply(this, arguments); try{ ensureUI(); }catch(e){ console.error('وكيل الأوراش:', e); } return r; };
+  const _bu = bootAfterUnlock;                            // كيتشغل غير بعد إدخال الـPIN
+  bootAfterUnlock = function(){ const r = _bu.apply(this, arguments); setTimeout(()=>{ try{ auto(); }catch(e){ console.error('وكيل الأوراش:', e); } }, 4000); return r; };
+  try{ ensureUI(); }catch(e){}
+  return {run, analyse, data, auto};
+})();
 </script>
 </body>
 </html>
