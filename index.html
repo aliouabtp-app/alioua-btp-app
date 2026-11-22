@@ -14036,7 +14036,7 @@ const SITE_AGENT = (function(){
   const redKeys = rows => rows.flatMap(r=> r.al.filter(a=> a.lvl === 2).map(a=> r.p.id + '|' + plain(a.t)));
   function dailyChat(rows, text){
     const cnt = lv => rows.reduce((n, r)=> n + r.al.filter(a=> a.lvl === lv).length, 0), red = cnt(2), org = cnt(1);
-    return '☀️ ملخص الأوراش ديال اليوم: ' + (red || org ? '🔴 ' + red + ' · 🟠 ' + org : '🟢 كلشي مزيان') + '\n' + rows.filter(r=> r.al.length).map(r=> '• ' + r.p.name + ': ' + r.al.map(a=> plain(a.t)).join(' / ')).join('\n') + (text ? '\n\n' + text : '') + '\n\nبغيتي نفصّل معاك شي ورش؟';
+    return '☀️ ملخص الأوراش ديال اليوم: ' + (red || org ? '🔴 ' + red + ' · 🟠 ' + org : '🟢 كلشي مزيان') + '\n' + rows.filter(r=> r.al.length).map(r=> '• ' + r.p.name + ': ' + r.al.map(a=> plain(a.t)).join(' / ')).join('\n') + (text ? '\n\n' + text : '') + (() => { try{ const e = effectifText(todayStr()); return e ? '\n\n' + e : ''; }catch(err){ return ''; } })() + '\n\nبغيتي نفصّل معاك شي ورش؟';
   }
   async function watch(){ pushSchedule(false);                                  // كل 20 دقيقة والتطبيق مفتوح: بلا ذكاء اصطناعي، غير الكود
     if(currentRole !== 'admin' || busy) return;
@@ -14132,7 +14132,12 @@ const SITE_AGENT = (function(){
   function buildSchedule(){
     const now = Date.now(), out = [], DAY = 864e5;
     const add = (id, at, text)=>{ if(isFinite(at) && at > now + 60e3 && at < now + 40 * DAY) out.push({id, at, text}); };
-    for(let i = 0; i < 7; i++){ const k = ymd(now + i * DAY); add('am-' + k, atH(k, 8), '☀️ ملخص الأوراش جاهز فيونس'); }
+    let first = true; const hm = new Date(now), stamp = ymd(now).slice(8) + '/' + ymd(now).slice(5, 7) + ' ' + String(hm.getHours()).padStart(2, '0') + ':' + String(hm.getMinutes()).padStart(2, '0');
+    for(let i = 0; i < 7; i++){
+      const k = ymd(now + i * DAY), at = atH(k, 8); let tx = '☀️ ملخص الأوراش جاهز فيونس';
+      if(first && at > now + 60e3){ first = false; if(nrd().eff !== false){ try{ const e = effectifText(k); if(e) tx = '☀️ صباح الخير\n' + e + '\n(معطيات التطبيق: ' + stamp + ')\nالتفاصيل فيونس.'; }catch(err){} } }
+      add('am-' + k, at, tx);
+    }
     try{ computeDues().forEach(d=>{ const k = ymd(d.due), tx = d.kind === 'supplier' ? '⏰ عندك استحقاق مورّد — افتح يونس' : '💰 عندك استحقاق زبون — افتح يونس', h = hsh(d.kind + d.name); add('du-' + h + '-' + k, atH(k, 9), tx); add('du1-' + h + '-' + k, atH(k, 9) - DAY, tx); }); }catch(e){}
     try{ loadCheques().filter(c=> c.status !== 'cleared' && isYmd(c.date)).forEach(c=>{ const tx = '🧾 عندك شيك مستحق — افتح يونس'; add('ch-' + c.id, atH(c.date, 9), tx); if(c.dir !== 'in') add('ch1-' + c.id, atH(c.date, 9) - DAY, tx); }); }catch(e){}
     try{
@@ -14156,16 +14161,17 @@ const SITE_AGENT = (function(){
   }
   const NHTML = '<details style="margin-top:10px; font-size:12.5px;"><summary style="cursor:pointer;">🔔 إشعارات تيليغرام (والتطبيق مسدود)</summary><div style="margin-top:6px; display:grid; gap:6px;">'
     + '<input id="saNurl" dir="ltr" placeholder="رابط الـWorker: https://xxx.workers.dev" autocomplete="off"><input id="saNsec" dir="ltr" type="password" placeholder="الرمز السري (SECRET)" autocomplete="off">'
-    + '<button type="button" style="' + BTN + '" id="saNsave">حفظ وتجربة</button><div id="saNmsg"></div>'
+    + '<label style="display:flex; gap:6px; align-items:flex-start;"><input type="checkbox" id="saNeff" checked> <span>أدرج عدد الأجراء بكل مشروع فرسالة الصباح (أسماء المشاريع والأرقام غادي تخرج لتيليغرام)</span></label><button type="button" style="' + BTN + '" id="saNsave">حفظ وتجربة</button><div id="saNmsg"></div>'
     + '<div style="font-size:11.5px; line-height:1.7;">كتوصلك رسائل بنص عام فقط (بلا أسماء ولا مبالغ) والتفاصيل فيونس. كتغطي: ملخص الصباح، الاستحقاقات، الشيكات، آجال العقود، الدفعات المستحقة. الجدول كيتجدد كل ما تفتح التطبيق ولا تخرج منو.</div></div></details>';
   function bindNotify(bar){
     const c = nrd(), u = bar.querySelector('#saNurl'), sc = bar.querySelector('#saNsec'), m = bar.querySelector('#saNmsg');
     if(!u) return;
+    bar.querySelector('#saNeff').checked = c.eff !== false;
     u.value = c.url || ''; if(c.secret) sc.placeholder = '•••• محفوظ (خليه خاوي باش يبقى هو)';
     bar.querySelector('#saNsave').onclick = async ()=>{
       const url = u.value.trim().replace(/\/+$/, ''), sec = sc.value.trim() || nrd().secret || '';
       if(!/^https:\/\//.test(url) || !sec){ m.textContent = '⚠️ دخل الرابط (https://...) والرمز السري.'; return; }
-      safeSetItem(NK, JSON.stringify({url, secret: sec}));
+      safeSetItem(NK, JSON.stringify({url, secret: sec, eff: bar.querySelector('#saNeff').checked}));
       m.textContent = '⏳ كنجرب...';
       try{
         const r = await fetch(url + '/test', {method: 'POST', headers: {'Authorization': 'Bearer ' + sec}}), j = await r.json().catch(()=> ({}));
@@ -14175,6 +14181,20 @@ const SITE_AGENT = (function(){
         m.textContent = ok ? '✅ توصلك رسالة فتيليغرام، والجدول تصيفط.' : '✅ الرسالة وصلات، ولكن الجدول ما تصيفطش (عاود دوز).';
       }catch(e){ m.textContent = '⚠️ ما قدرتش نوصل للـWorker (الرابط غالط ولا الإنترنت).'; }
     };
+  }
+
+  // ---- effectif: عدد الأجراء فكل مشروع (كيتحسب بالكود من الحضور المسجل) ----
+  function effectif(ref){                                  // ref = نهار الصباح اللي غادي يتقرا فيه التقرير؛ "البارح" = النهار اللي قبلو
+    const ctx = _projCtx(), yd = ymd(Date.parse(ref + 'T00:00:00') - 864e5);
+    return loadProjects().map(p=>{
+      const ws = ctx.workers.filter(w=> w.projectId === p.id && (!w.startDate || w.startDate <= ref) && !(wEndDate(w) && wEndDate(w) <= ref));
+      const ids = new Set(ws.map(w=> w.id)), rec = ctx.att.filter(a=> a.date === yd && ids.has(a.workerId));
+      return {name: p.name, reg: ws.length, rec: rec.length, pres: rec.filter(a=> a.status === 'present' || a.status === 'half').length, abs: rec.filter(a=> a.status === 'absent').length};
+    }).filter(r=> r.reg > 0 || r.rec > 0);
+  }
+  function effectifText(ref){
+    const rows = effectif(ref); if(!rows.length) return '';
+    return ('👷 الأجراء فالأوراش — ' + ref.slice(8) + '/' + ref.slice(5, 7) + '\n' + rows.map(r=> '• ' + r.name + ': ' + r.reg + ' مسجلين · ' + (r.rec ? 'البارح ' + r.pres + ' حضروا، ' + r.abs + ' غابوا' : 'البارح ما تسجلش الحضور')).join('\n')).slice(0, 800);
   }
 
   function ensureUI(){
@@ -14203,7 +14223,7 @@ const SITE_AGENT = (function(){
   const _bu = bootAfterUnlock;                            // كيتشغل غير بعد إدخال الـPIN
   bootAfterUnlock = function(){ const r = _bu.apply(this, arguments); setTimeout(()=>{ try{ auto(); }catch(e){ console.error('وكيل الأوراش:', e); } }, 4000); if(!_watching){ _watching = true; setInterval(watch, 20 * 60 * 1000); document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') pushSchedule(false); }); setTimeout(()=> pushSchedule(false), 8000); } return r; };
   try{ ensureUI(); }catch(e){}
-  return {run, analyse, data, auto, analysePhotos, PH, readContract, watch, statusText, buildSchedule, pushSchedule};
+  return {run, analyse, data, auto, analysePhotos, PH, readContract, watch, statusText, buildSchedule, pushSchedule, effectifText};
 })();
 </script>
 </body>
