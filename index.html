@@ -13870,7 +13870,7 @@ const SITE_AGENT = (function(){
   const save = patch => safeSetItem(DAILY_KEY, JSON.stringify(Object.assign({}, rd() || {}, patch)));
   const keep = (sig, text) => save({date: todayStr(), ts: Date.now(), sig, text});
   const plain = t => String(t).replace(/<[^>]+>/g, '');
-  const say = text => { try{ messages.push({role: 'model', text: String(text).slice(0, 3500), time: Date.now()}); saveHistory(); renderMessages(); }catch(e){ console.error('وكيل الأوراش:', e); } };
+  const say = text => { try{ messages.push({role: 'model', text: ('🧠 عليوة:\n' + String(text)).slice(0, 3500), time: Date.now()}); saveHistory(); renderMessages(); }catch(e){ console.error('وكيل الأوراش:', e); } };
 
   function analyse(){
     const ctx = _projCtx(), today = todayStr();
@@ -14093,7 +14093,7 @@ const SITE_AGENT = (function(){
     const cnt = lv => rows.reduce((n, r)=> n + r.al.filter(a=> a.lvl === lv).length, 0), red = cnt(2), org = cnt(1);
     const box = document.createElement('div'); box.id = 'siteAgentDaily';
     box.style.cssText = 'background:#f0fdf4; border:1px solid #86efac; border-radius:14px; margin:0 16px 12px; padding:10px 14px; font-size:12.5px;';
-    box.innerHTML = '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><b>🧠 ملخص الأوراش ديال اليوم</b><span>' + (red || org ? '🔴 ' + L(red) + ' · 🟠 ' + L(org) : '🟢 كلشي مزيان') + '</span><button id="saX" style="border:0; background:none; font-size:16px; cursor:pointer;" aria-label="إغلاق">✕</button></div>'
+    box.innerHTML = '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><b>🧠 عليوة: ملخص الأوراش ديال اليوم</b><span>' + (red || org ? '🔴 ' + L(red) + ' · 🟠 ' + L(org) : '🟢 كلشي مزيان') + '</span><button id="saX" style="border:0; background:none; font-size:16px; cursor:pointer;" aria-label="إغلاق">✕</button></div>'
       + (red || org || text ? '<details style="margin-top:6px;"><summary style="cursor:pointer;">التفاصيل</summary><div id="saBody" style="margin-top:6px;"></div></details>' : '');
     anchor.insertAdjacentElement('afterend', box);
     box.querySelector('#saX').onclick = ()=> box.remove();
@@ -14135,7 +14135,7 @@ const SITE_AGENT = (function(){
     let first = true; const hm = new Date(now), stamp = ymd(now).slice(8) + '/' + ymd(now).slice(5, 7) + ' ' + String(hm.getHours()).padStart(2, '0') + ':' + String(hm.getMinutes()).padStart(2, '0');
     for(let i = 0; i < 7; i++){
       const k = ymd(now + i * DAY), at = atH(k, 9); let tx = '☀️ ملخص الأوراش جاهز فيونس';
-      if(first && at > now + 60e3){ first = false; if(nrd().eff !== false){ try{ const e = effectifText(k); if(e) tx = '☀️ صباح الخير\n' + e + '\n(معطيات التطبيق: ' + stamp + ')\nالتفاصيل فيونس.'; }catch(err){} } }
+      if(first && at > now + 60e3){ first = false; if(nrd().eff !== false){ try{ const e = effectifText(k); if(e) tx = '🧠 عليوة: صباح الخير ☀️\n' + e + '\n(معطيات التطبيق: ' + stamp + ')\nالتفاصيل فيونس.'; }catch(err){} } }
       add('am-' + k, at, tx);
     }
     try{ computeDues().forEach(d=>{ const k = ymd(d.due), tx = d.kind === 'supplier' ? '⏰ عندك استحقاق مورّد — افتح يونس' : '💰 عندك استحقاق زبون — افتح يونس', h = hsh(d.kind + d.name); add('du-' + h + '-' + k, atH(k, 9), tx); add('du1-' + h + '-' + k, atH(k, 9) - DAY, tx); }); }catch(e){}
@@ -14215,8 +14215,10 @@ const SITE_AGENT = (function(){
     try{
       if(currentRole !== 'admin') return base;
       const q = ((msgs || []).slice().reverse().find(m=> m && m.role === 'user') || {}).text || '';
-      if(!/مشروع|مشاريع|ورش|أوراش|اوراش|إنجاز|انجاز|تأخر|تاخر|غرامة|غرامه|عقد|ميزانية|ميزانيه|الأجل|اجل/.test(q)) return base;
-      return base + '\n\n[حالة الأوراش — محسوبة بالكود: استعملها وما تخترع أرقام]\n' + statusText();
+      const asAgent = /^\s*(يا\s+)?(ال)?(عليو[ةهاى]?|وكيل)(?![\u0621-\u064A])/.test(q) || /^\s*(agent|alioua|aliwa)\b/i.test(q);
+      if(!asAgent && !/مشروع|مشاريع|ورش|أوراش|اوراش|إنجاز|انجاز|تأخر|تاخر|غرامة|غرامه|عقد|ميزانية|ميزانيه|الأجل|اجل/.test(q)) return base;
+      return base + '\n\n[حالة الأوراش — محسوبة بالكود: استعملها وما تخترع أرقام]\n' + statusText()
+        + (asAgent ? '\n[وضع عليوة: سميتك «عليوة»، وكيل الأوراش ديال المدير العام. بدا جوابك بعبارة «🧠 عليوة:» وجاوب كمدير عمليات خبير فالبناء: حلل، نبّه للمخاطر، واقترح خطوات واضحة، بالدارجة المغربية وبأرقام الحالة فقط.]' : '');
     }catch(e){ return base; }
   };
   let _watching = false;
