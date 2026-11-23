@@ -13889,6 +13889,7 @@ const SITE_AGENT = (function(){
       if(ws.length && last === null) add(1, 'عندو ' + L(ws.length) + ' أجراء وما تسجل حتى حضور');
       else if(ws.length && idle > 3) add(1, 'آخر حضور تسجل من ' + L(idle) + ' أيام');
       f.billing.sched.filter(r=> r.overdue).forEach(r=> add(2, 'دفعة مستحقة وما تغطاتش: ' + escapeHtml(r.label || r.due)));
+      if((p.contractFiles || []).length && !dgOf(p)) add(1, 'عليوة ما حفظش ذاكرة العقد (الأشغال والبنود): دوز «يونس يقرا العقد»');
       const T = p.terms || {};
       if(T.start && T.days > 0){
         const el = Math.floor((Date.parse(today) - Date.parse(T.start)) / 864e5);
@@ -13900,6 +13901,7 @@ const SITE_AGENT = (function(){
           const left = T.days - el; if(left <= 14 && (prog === null || prog < 90)) add(1, 'بقاو ' + L(left) + ' أيام فقط على الأجل');
         }
       }
+      { const st = itemStats(p); if(prog !== null && st.n && st.got >= Math.ceil(st.n / 2) && Math.abs(st.avg - prog) > 20) add(1, 'نسبة الإنجاز الإجمالية (' + pc(prog) + ') ما كتوافقش معدل البنود (' + pc(st.avg) + '): راجع الأرقام'); }
       return {p, f, prog, idle, spend, al};
     });
   }
@@ -13908,10 +13910,10 @@ const SITE_AGENT = (function(){
     const R = x => (x === null || x === undefined) ? null : Math.round(+x);
     return rows.map(r=> ({name: r.p.name, contractHT: R(r.f.contract.ht), budget: R(r.f.budget.amount), spent: R(r.f.totalExpense),
       spentPctOfBudget: R(r.f.budgetPct), billedPct: R(r.f.billedPct), progressPct: R(r.prog), daysSinceAttendance: r.idle,
-      workers: r.f.workerCount, deadlineDays: (r.p.terms || {}).days || null, penaltyPerDay: (r.p.terms || {}).penaltyPerDay || null, alerts: r.al.map(a=> a.t.replace(/<[^>]+>/g, ''))}));
+      workers: r.f.workerCount, contract: dgOf(r.p).slice(0, 900), workItemsProgress: itemsDigest(r.p, 1200), deadlineDays: (r.p.terms || {}).days || null, penaltyPerDay: (r.p.terms || {}).penaltyPerDay || null, alerts: r.al.map(a=> a.t.replace(/<[^>]+>/g, ''))}));
   }
   const mkPrompt = d => 'نتا مدير عمليات خبير فالبناء (BTP) كتخدم مع المدير العام. هادي أرقام الأوراش، الكود هو اللي حسبها: ما تعاود تحسبها وما تخترع أرقام.\n'
-    + JSON.stringify(d) + '\n\nلكل ورش فيه مشكل حقيقي جاوب بهاد الصيغة: **المشكل** ← **السبب المحتمل** ← **الحل المقترح** ← **الأثر المالي التقريبي** (غير بأرقام معطاة). الأوراش اللي ما فيهاش مشكل قولها فسطر واحد. إلا نقص معطى مهم (مثلا نسبة الإنجاز) سول عليه فآخر الجواب. ما تكتب LaTeX. أقل من 300 كلمة. غير اقتراحات والقرار للمدير.';
+    + JSON.stringify(d) + '\n\nلكل ورش فيه مشكل حقيقي جاوب بهاد الصيغة: **المشكل** ← **السبب المحتمل** ← **الحل المقترح** ← **الأثر المالي التقريبي** (غير بأرقام معطاة). الأوراش اللي ما فيهاش مشكل قولها فسطر واحد. إلا نقص معطى مهم (مثلا نسبة الإنجاز) سول عليه فآخر الجواب. ما تكتب LaTeX. أقل من 300 كلمة. غير اقتراحات والقرار للمدير. حقل workItemsProgress هو إنجاز كل بند من الأشغال المتعاقد عليها كيف صرح بيه المدير: استعملو للمقارنة بين المتعاقد والمنجز وبين البنود والمدة، وبند «ما تحددش» ما تفترضش فيه حتى نسبة. حقل contract فكل ورش هو ملخص العقد الموثق من المدير: هو المرجع، قارن دايما بيه (الأشغال المتعاقد عليها، البنود، الغرامات) وما تناقضوش ولا تقترح شغل خارج العقد بلا ما تنبّه. إلا الحاجة ما مذكورة فيه ولا contract خاوي قول ذلك صراحة وما تخمنش.';
 
   async function askAI(prompt){
     const chain = buildProviderChain(false);
@@ -13958,9 +13960,9 @@ const SITE_AGENT = (function(){
     try{
       const ph = (await PH.all()).filter(x=> x.projectId === pid).sort((a, b)=> b.ts - a.ts).slice(0, 3);
       if(!ph.length){ outEl.textContent = 'زيد صور أول، من بعد دوز على «حلل الصور».'; return; }
-      const row = analyse().find(r=> r.p.id === pid);
+      const row = analyse().find(r=> r.p.id === pid), dg = dgOf(row.p).slice(0, 1200), ip = itemsDigest(row.p, 700);
       outEl.textContent = '⏳ كنشوف الصور...';
-      const prompt = 'نتا مهندس مراقب أشغال فالبناء (BTP). هادو آخر ' + ph.length + ' صور ديال الورش «' + row.p.name + '». نسبة الإنجاز اللي صرّح بها المدير: ' + (row.prog === null ? 'ما معروفاش' : Math.round(row.prog) + '%') + '. جاوب بالدارجة المغربية فأقل من 150 كلمة: 1) شنو المرحلة اللي باينة فالصور؟ 2) واش كتوافق نسبة الإنجاز المصرح بها؟ (تقدير تقريبي، ماشي قياس دقيق) 3) أي ملاحظة جودة ولا سلامة باينة 4) شنو ما قدرتش تشوف. ما تخترع حتى حاجة ما باينة فالصور. ما تكتب LaTeX.';
+      const prompt = 'نتا مهندس مراقب أشغال فالبناء (BTP). هادو آخر ' + ph.length + ' صور ديال الورش «' + row.p.name + '». نسبة الإنجاز اللي صرّح بها المدير: ' + (row.prog === null ? 'ما معروفاش' : Math.round(row.prog) + '%') + '. ' + (dg ? 'الأشغال المتعاقد عليها (ملخص موثق من المدير): ' + dg + ' — قارن المرحلة اللي فالصور بيها ونبّه إلا كاين شغل خارج العقد. ' + (ip ? 'إنجاز البنود كيف صرح بيه المدير: ' + ip + '. ' : '') : '') + 'جاوب بالدارجة المغربية فأقل من 150 كلمة: 1) شنو المرحلة اللي باينة فالصور؟ 2) واش كتوافق نسبة الإنجاز المصرح بها؟ (تقدير تقريبي، ماشي قياس دقيق) 3) أي ملاحظة جودة ولا سلامة باينة 4) شنو ما قدرتش تشوف. ما تخترع حتى حاجة ما باينة فالصور. ما تكتب LaTeX.';
       const chain = buildProviderChain(true);
       if(!chain.length) throw new Error('NOKEY');
       const msg = [{role: 'user', text: prompt, images: ph.map(x=> ({mime: 'image/jpeg', data: x.data})), time: Date.now()}];
@@ -13984,10 +13986,58 @@ const SITE_AGENT = (function(){
 
   // ---- يونس كيقرا العقد (من نسخة المشروع) ← كيقترح، وانت كتأكد، والكود كيحسب ----
   const b64 = blob => new Promise((res, rej)=>{ const r = new FileReader(); r.onload = ()=> res(String(r.result).split(',')[1]); r.onerror = ()=> rej(r.error); r.readAsDataURL(blob); });
-  const termsBar = p => { const T = p.terms || {}, has = (p.contractFiles || []).length;
-    return '<div style="margin-top:8px; font-size:12px;">' + (T.days ? '📄 العقد: ' + L(T.days) + ' يوم من ' + L(T.start || '؟') + (T.penaltyPerDay ? ' · غرامة ' + money(T.penaltyPerDay) + ' درهم/يوم' : '') + (T.capPct ? ' · سقف ' + pc(T.capPct) : '') : '📄 شروط العقد (المدة والغرامات) ما مسجلاش') + '</div><div style="margin-top:6px;">'
-      + (has ? '<button type="button" style="' + BTN + '" data-sa-cr="' + p.id + '">📄 يونس يقرا العقد</button>' : '<span style="font-size:11.5px;">زيد نسخة العقد فبطاقة المشروع باش يقراها يونس.</span>') + '</div><div data-sa-cf="' + p.id + '" style="margin-top:6px;"></div>'; };
-  const CPROMPT = 'هادا عقد صفقة بناء. استخرج منو غير المعلومات المكتوبة فيه، وجاوب بـ JSON صالح فقط (بلا شرح وبلا ```): {"start_date":"YYYY-MM-DD أو null","duration_days":رقم أو null,"duration_text":"نص مدة الإنجاز كيف كاين فالعقد أو null","penalty_clause":"نص بند غرامة التأخير حرفيا أو null","penalty_per_day_mad":مبلغ يومي بالدرهم أو null,"penalty_permille":نسبة بالألف لكل يوم أو null,"penalty_cap_pct":سقف الغرامة كنسبة مئوية أو null,"payment_schedule":[{"label":"...","percent":رقم أو null}]}. إلا ما لقيتيش المعلومة رجّع null. ما تخترع وما تحسب والو. إلا كانت المدة بالأشهر خلي duration_days null وكتب النص فـ duration_text.';
+  const dgOf = p => ((p.contractDigest || {}).text || '');
+  // ---- تتبع الإنجاز بند بند: البنود كتجي من «الأشغال المتعاقد عليها» فذاكرة العقد، والنسب كيدخلها المدير ----
+  const scopeItems = p => {
+    const t = dgOf(p).split('\n'), i = t.findIndex(l=> /^الأشغال المتعاقد عليها/.test(l.trim())), out = [];
+    if(i < 0) return out;
+    for(let j = i + 1; j < t.length; j++){ const l = t[j].trim(); if(/^[-•*]\s+/.test(l)) out.push(l.replace(/^[-•*]\s+/, '').trim()); else if(l === '') continue; else break; }
+    return out.slice(0, 40);
+  };
+  const itemPct = (p, it) => { const e = (p.itemProgress || {})[hsh(it)]; return e && isFinite(e.pct) ? +e.pct : null; };
+  const itemStats = p => { const its = scopeItems(p), got = its.map(x=> itemPct(p, x)).filter(v=> v !== null); return {n: its.length, got: got.length, avg: got.length ? got.reduce((a, b)=> a + b, 0) / got.length : null}; };
+  const itemsLine = p => { const st = itemStats(p); return st.n ? '<div style="margin-top:4px; font-size:12px;">📊 بنود الأشغال: ' + L(st.got) + '/' + L(st.n) + ' محددين' + (st.avg !== null ? ' · المعدل البسيط ' + pc(st.avg) + ' (البنود ما عندهاش نفس الوزن)' : '') + '</div>' : ''; };
+  const itemsDigest = (p, max) => scopeItems(p).map(x=> { const v = itemPct(p, x); return x.slice(0, 70) + ' = ' + (v === null ? 'ما تحددش' : Math.round(v) + '%'); }).join(' | ').slice(0, max);
+  function openItems(pid, host){
+    const p = loadProjects().find(x=> x.id === pid); if(!p) return;
+    const its = scopeItems(p);
+    host.innerHTML = '<div style="font-size:12.5px; line-height:1.7;">📊 <b>إنجاز البنود</b> (من ذاكرة العقد). دخل نسبة كل بند، وخلي الخانة خاوية إلا ما تحددش:</div>'
+      + its.map(x=> '<label style="display:flex; align-items:center; gap:6px; margin:4px 0; font-size:12.5px;"><input type="number" min="0" max="100" inputmode="decimal" data-sa-ik="' + hsh(x) + '" value="' + (itemPct(p, x) === null ? '' : itemPct(p, x)) + '" style="width:70px;">%<span dir="auto" style="flex:1;">' + escapeHtml(x) + '</span></label>').join('')
+      + '<div data-sa-iavg style="font-size:12px; margin-top:6px;"></div>';
+    const avg = ()=>{ const cur = loadProjects().find(x=> x.id === pid) || p, st = itemStats(cur); host.querySelector('[data-sa-iavg]').innerHTML = st.avg === null ? '' : 'المعدل البسيط: ' + pc(st.avg) + ' (' + L(st.got) + '/' + L(st.n) + ' بنود). دوز «تحليل الأوراش» باش يدخل فالتحليل.'; };
+    host.querySelectorAll('[data-sa-ik]').forEach(inp=>{
+      inp.onchange = ()=>{
+        const cur = loadProjects().find(x=> x.id === pid) || p, map = Object.assign({}, cur.itemProgress || {});
+        const v = inp.value === '' ? null : Math.min(100, Math.max(0, parseFloat(inp.value) || 0));
+        if(v === null) delete map[inp.dataset.saIk]; else map[inp.dataset.saIk] = {pct: v, at: Date.now()};
+        updateProject(pid, {itemProgress: map}); avg();
+      };
+    });
+    avg();
+  }
+  const termsBar = p => { const T = p.terms || {}, has = (p.contractFiles || []).length, dg = dgOf(p);
+    return '<div style="margin-top:8px; font-size:12px;">' + (T.days ? '📄 العقد: ' + L(T.days) + ' يوم من ' + L(T.start || '؟') + (T.penaltyPerDay ? ' · غرامة ' + money(T.penaltyPerDay) + ' درهم/يوم' : '') + (T.capPct ? ' · سقف ' + pc(T.capPct) : '') : '📄 شروط العقد (المدة والغرامات) ما مسجلاش') + '</div>'
+      + '<div style="margin-top:4px; font-size:12px;">' + (dg ? '🧾 ذاكرة العقد ✓ محفوظة (' + L(ymd((p.contractDigest || {}).at || Date.now())) + ')' : (has ? '⚠️ ذاكرة العقد خاوية: عليوة ما كيعرفش الأشغال ولا البنود. دوز «يونس يقرا العقد»' : '')) + '</div>'
+      + itemsLine(p) + '<div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">'
+      + (has ? '<button type="button" style="' + BTN + '" data-sa-cr="' + p.id + '">📄 يونس يقرا العقد</button>' : '<span style="font-size:11.5px;">زيد نسخة العقد فبطاقة المشروع باش يقراها يونس.</span>')
+      + (dg ? '<button type="button" style="' + BTN + '" data-sa-de="' + p.id + '">✏️ ذاكرة العقد</button>' : '') + (scopeItems(p).length ? '<button type="button" style="' + BTN + '" data-sa-ip="' + p.id + '">📊 تتبع البنود</button>' : '') + '</div><div data-sa-cf="' + p.id + '" style="margin-top:6px;"></div>'; };
+  const CPROMPT = 'هادا عقد صفقة بناء. استخرج منو غير المعلومات المكتوبة فيه، وجاوب بـ JSON صالح فقط (بلا شرح وبلا ```): {"start_date":"YYYY-MM-DD أو null","duration_days":رقم أو null,"duration_text":"نص مدة الإنجاز كيف كاين فالعقد أو null","penalty_clause":"نص بند غرامة التأخير حرفيا أو null","penalty_per_day_mad":مبلغ يومي بالدرهم أو null,"penalty_permille":نسبة بالألف لكل يوم أو null,"penalty_cap_pct":سقف الغرامة كنسبة مئوية أو null,"payment_schedule":[{"label":"...","percent":رقم أو null}],"scope_items":["الأشغال المتعاقد عليها، مجمّعة فلوطات ولا بنود قصيرة (حتى 30 سطر، كل سطر أقل من 90 حرف، مع الكمية والوحدة والثمن إلا كانو مكتوبين)"],"key_clauses":["البنود المهمة: الدفعة الأولى، retenue de garantie، مدة الضمان، مراجعة الأثمان، شروط خاصة... (حتى 15 سطر قصير)"],"exclusions":["الأشغال المستثناة ولا اللي على حساب صاحب المشروع، إلا كانت مذكورة"]}. إلا ما لقيتيش المعلومة رجّع null ولا []. ما تخترع وما تحسب والو. إلا كانت المدة بالأشهر خلي duration_days null وكتب النص فـ duration_text.';
+  const digestText = J => {
+    const sec = (t, a) => Array.isArray(a) && a.length ? t + '\n' + a.map(x=> '- ' + String(x)).join('\n') : '';
+    const sched = Array.isArray(J.payment_schedule) ? J.payment_schedule.filter(x=> x && x.label).map(x=> String(x.label) + (x.percent != null && x.percent !== '' ? ' ' + x.percent + '%' : '')) : [];
+    return [sec('الأشغال المتعاقد عليها:', J.scope_items), sec('بنود مهمة:', J.key_clauses), J.duration_text ? 'المدة: ' + J.duration_text : '', J.penalty_clause ? 'الغرامة: ' + J.penalty_clause : '', sec('الدفعات:', sched), sec('مستثنى ولا ماشي داخل فالعقد:', J.exclusions)].filter(Boolean).join('\n');
+  };
+  const TA = 'width:100%; min-height:180px; font-size:12.5px; line-height:1.7; box-sizing:border-box;';
+  function digestEditor(pid, host, text, intro){
+    host.innerHTML = '<div style="font-size:12.5px; line-height:1.7;">' + intro + '<textarea dir="auto" data-sa-dg style="' + TA + '"></textarea><button type="button" style="' + BTN + ' margin-top:6px;" data-sa-dsave="1">✅ أكّد ذاكرة العقد</button><div data-sa-dmsg style="font-size:11.5px; margin-top:4px;"></div></div>';
+    host.querySelector('[data-sa-dg]').value = text;
+    host.querySelector('[data-sa-dsave]').onclick = ()=>{
+      const v = String(host.querySelector('[data-sa-dg]').value || '').trim().slice(0, 6000), m = host.querySelector('[data-sa-dmsg]');
+      if(!v){ m.textContent = '⚠️ الذاكرة خاوية.'; return; }
+      updateProject(pid, {contractDigest: {text: v, at: Date.now()}});
+      m.textContent = '✅ تسجلات. عليوة غادي يستعملها فكل تحليل ودردشة.';
+    };
+  }
 
   async function readContract(pid, host){
     if(currentRole !== 'admin' || busy) return;
@@ -14006,33 +14056,46 @@ const SITE_AGENT = (function(){
       for(const c of chain){ try{ raw = await c.fn(c.key, [{role: 'user', text: CPROMPT, images: imgs, time: Date.now()}]); break; }catch(e){ last = e; } }
       if(!raw) throw last || new Error('EMPTY');
       let J = null; try{ const m = raw.match(/\{[\s\S]*\}/); J = m ? JSON.parse(m[0]) : null; }catch(e){ J = null; }
-      if(!J){ host.innerHTML = ''; renderRichBotContent(host, raw); return; }
+      if(!J){ digestEditor(pid, host, String(raw).slice(0, 6000), '⚠️ ما قدرتش نرتّب الجواب بشكل منظم. هادا هو نص العقد كيف قراه يونس، صححو واحفظو: '); return; }
       const num = v => { const x = parseFloat(v); return isFinite(x) ? x : ''; }, ctx = _projCtx(), f = projectFinancials(p, ctx), ttc = _projTtc(p);
       const sched = Array.isArray(J.payment_schedule) ? J.payment_schedule : [];
       host.innerHTML = '<div style="font-size:12.5px; line-height:1.7;">'
         + (J.duration_text ? '<div>📅 المدة (من العقد): <i dir="auto">' + escapeHtml(String(J.duration_text)) + '</i></div>' : '')
         + (J.penalty_clause ? '<div>📌 بند الغرامة (من العقد): <i dir="auto">' + escapeHtml(String(J.penalty_clause)) + '</i></div>' : '<div>📌 ما لقيتش بند الغرامة فالعقد.</div>')
         + (num(J.penalty_permille) !== '' ? '<div>🔢 ‰' + L(num(J.penalty_permille)) + ' ≈ ' + money(f.contract.ht * num(J.penalty_permille) / 1000) + ' درهم/يوم على HT، ولا ≈ ' + money(ttc * num(J.penalty_permille) / 1000) + ' على TTC. شوف العقد باش تختار.</div>' : '')
-        + (sched.length ? '<div>💳 الدفعات: ' + sched.map(x=> escapeHtml(String(x.label || '')) + (num(x.percent) !== '' ? ' ' + L(num(x.percent)) + '%' : '')).join(' · ') + '</div>' : '')
         + '<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">'
         + '<label>تاريخ الانطلاق<input type="date" data-sa-t="start" value="' + (/^\d{4}-\d{2}-\d{2}$/.test(String(J.start_date)) ? J.start_date : '') + '"></label>'
         + '<label>المدة (بالأيام)<input type="number" min="1" inputmode="numeric" data-sa-t="days" value="' + num(J.duration_days) + '"></label>'
         + '<label>الغرامة/اليوم (درهم)<input type="number" min="0" inputmode="decimal" data-sa-t="pen" value="' + num(J.penalty_per_day_mad) + '"></label>'
         + '<label>سقف الغرامة (% من الصفقة)<input type="number" min="0" inputmode="decimal" data-sa-t="cap" value="' + num(J.penalty_cap_pct) + '"></label></div>'
-        + '<button type="button" style="' + BTN + ' margin-top:8px;" data-sa-tsave="1">✅ أكّد وسجّل</button><div style="font-size:11.5px; margin-top:4px;">يونس قرا العقد بالذكاء الاصطناعي: تأكد من كل رقم من الورقة قبل التسجيل.</div></div>';
+        + '<div style="margin-top:8px;">🧾 <b>ذاكرة العقد</b>: الأشغال المتعاقد عليها والبنود. راجعها وصححها، حيت هي المرجع ديال عليوة:</div><textarea dir="auto" data-sa-dg style="' + TA + '"></textarea>'
+        + '<button type="button" style="' + BTN + ' margin-top:8px;" data-sa-tsave="1">✅ أكّد وسجّل</button><div style="font-size:11.5px; margin-top:4px;">يونس قرا العقد بالذكاء الاصطناعي ويمكن يغلط أو ينسى بند: تأكد من كل رقم وكل شغل من الورقة قبل التسجيل.</div></div>';
+      host.querySelector('[data-sa-dg]').value = digestText(J);
       host.querySelector('[data-sa-tsave]').onclick = ()=>{
         const g = k => host.querySelector('[data-sa-t="' + k + '"]').value, n = k => { const v = parseFloat(g(k)); return isFinite(v) && v >= 0 ? v : null; };
-        updateProject(pid, {terms: {start: /^\d{4}-\d{2}-\d{2}$/.test(g('start')) ? g('start') : '', days: n('days'), penaltyPerDay: n('pen'), capPct: n('cap'), readAt: Date.now()}});
-        host.textContent = '✅ تسجلات شروط العقد. دوز على «تحليل الأوراش» باش تدخل فالتحليل.';
+        const dg = String(host.querySelector('[data-sa-dg]').value || '').trim().slice(0, 6000), patch = {terms: {start: /^\d{4}-\d{2}-\d{2}$/.test(g('start')) ? g('start') : '', days: n('days'), penaltyPerDay: n('pen'), capPct: n('cap'), readAt: Date.now()}};
+        if(dg) patch.contractDigest = {text: dg, at: Date.now()};
+        updateProject(pid, patch);
+        host.textContent = '✅ تسجلات شروط العقد وذاكرتو. عليوة غادي يستعملهم فالتحليل والدردشة.';
       };
-      say('📄 قريت عقد «' + p.name + '»' + (J.duration_text ? '\nالمدة: ' + J.duration_text : '') + (J.penalty_clause ? '\nبند الغرامة: ' + J.penalty_clause : '\nما لقيتش بند الغرامة.') + '\nأكّد الأرقام فبطاقة المشروع (🧠 تحليل الأوراش) باش نستعملهم فالتحليل.');
+      const cnt = a => Array.isArray(a) ? a.length : 0;
+      say('📄 قريت عقد «' + p.name + '»: لقيت ' + cnt(J.scope_items) + ' بند ديال الأشغال و' + cnt(J.key_clauses) + ' بنود مهمة' + (J.duration_text ? '\nالمدة: ' + J.duration_text : '') + (J.penalty_clause ? '\nبند الغرامة: ' + J.penalty_clause : '') + '\nراجعهم وأكّدهم فبطاقة المشروع (🧠 تحليل الأوراش) باش يحفظهم عليوة.');
     }catch(e){ host.textContent = '⚠️ يونس ما قدرش يقرا العقد (' + (e && e.message === 'NOFILE' ? 'الملف ماشي PDF ولا صورة' : e && e.message === 'NOKEY' ? 'خاصك مفتاح Gemini ولا Groq مفعّل' : 'حد الاستعمال ولا الإنترنت') + ').'; }
     finally{ busy = false; }
   }
-  function bindTerms(out){ out.querySelectorAll('[data-sa-cr]').forEach(b=>{ b.onclick = ()=> readContract(b.dataset.saCr, out.querySelector('[data-sa-cf="' + b.dataset.saCr + '"]')); }); }
+  function bindTerms(out){
+    out.querySelectorAll('[data-sa-cr]').forEach(b=>{ b.onclick = ()=> readContract(b.dataset.saCr, out.querySelector('[data-sa-cf="' + b.dataset.saCr + '"]')); });
+    out.querySelectorAll('[data-sa-ip]').forEach(b=>{ b.onclick = ()=> openItems(b.dataset.saIp, out.querySelector('[data-sa-cf="' + b.dataset.saIp + '"]')); });
+    out.querySelectorAll('[data-sa-de]').forEach(b=>{ b.onclick = ()=>{ const id = b.dataset.saDe, p = loadProjects().find(x=> x.id === id); if(p) digestEditor(id, out.querySelector('[data-sa-cf="' + id + '"]'), dgOf(p), '🧾 ذاكرة العقد المحفوظة. عدّل أي حاجة غالطة: '); }; });
+  }
 
   // ---- يونس كيهضر معاك: كيعرف حالة الأوراش، وكيكتب فالدردشة (ملخص الصباح + أي تنبيه أحمر جديد) ----
-  function statusText(){ return analyse().map(r=> '- ' + r.p.name + ': مصاريف ' + Math.round(r.f.totalExpense) + (r.f.budgetPct !== null ? '، ' + Math.round(r.f.budgetPct) + '% من الميزانية' : '') + (r.prog !== null ? '، إنجاز ' + Math.round(r.prog) + '%' : '') + (r.al.length ? '، تنبيهات: ' + r.al.map(a=> plain(a.t)).join(' / ') : '، بلا تنبيهات')).join('\n').slice(0, 2500); }
+  function statusText(q){
+    const rows = analyse(), qq = String(q || ''), named = rows.filter(r=> r.p.name && qq.includes(r.p.name)), full = named.length ? named : (rows.length === 1 ? rows : []);
+    const lines = rows.map(r=> '- ' + r.p.name + ': مصاريف ' + Math.round(r.f.totalExpense) + (r.f.budgetPct !== null ? '، ' + Math.round(r.f.budgetPct) + '% من الميزانية' : '') + (r.prog !== null ? '، إنجاز ' + Math.round(r.prog) + '%' : '') + (r.al.length ? '، تنبيهات: ' + r.al.map(a=> plain(a.t)).join(' / ') : '، بلا تنبيهات')).join('\n');
+    const blocks = rows.filter(r=> dgOf(r.p)).map(r=> '[عقد ' + r.p.name + ']\n' + dgOf(r.p).slice(0, full.includes(r) ? 1800 : 450) + (full.includes(r) && itemStats(r.p).got ? '\n[إنجاز البنود كيف صرح بيه المدير] ' + itemsDigest(r.p, 900) : '')).join('\n\n');
+    return (lines + (blocks ? '\n\n' + blocks : '')).slice(0, 4000);
+  }
   const redKeys = rows => rows.flatMap(r=> r.al.filter(a=> a.lvl === 2).map(a=> r.p.id + '|' + plain(a.t)));
   function dailyChat(rows, text){
     const cnt = lv => rows.reduce((n, r)=> n + r.al.filter(a=> a.lvl === lv).length, 0), red = cnt(2), org = cnt(1);
@@ -14216,8 +14279,8 @@ const SITE_AGENT = (function(){
       if(currentRole !== 'admin') return base;
       const q = ((msgs || []).slice().reverse().find(m=> m && m.role === 'user') || {}).text || '';
       const asAgent = /^\s*(يا\s+)?(ال)?(عليو[ةهاى]?|وكيل)(?![\u0621-\u064A])/.test(q) || /^\s*(agent|alioua|aliwa)\b/i.test(q);
-      if(!asAgent && !/مشروع|مشاريع|ورش|أوراش|اوراش|إنجاز|انجاز|تأخر|تاخر|غرامة|غرامه|عقد|ميزانية|ميزانيه|الأجل|اجل/.test(q)) return base;
-      return base + '\n\n[حالة الأوراش — محسوبة بالكود: استعملها وما تخترع أرقام]\n' + statusText()
+      if(!asAgent && !/مشروع|مشاريع|ورش|أوراش|اوراش|إنجاز|انجاز|تأخر|تاخر|غرامة|غرامه|عقد|ميزانية|ميزانيه|الأجل|اجل|أشغال|اشغال|بند|بنود|صفقة|متعاقد|لوط|فلوط|الدفعة|دفعات|الضمان|retenue/i.test(q)) return base;
+      return base + '\n\n[حالة الأوراش — محسوبة بالكود: استعملها وما تخترع أرقام. ملخص العقد [عقد ...] هو المرجع: ما تناقضوه، وإلا الحاجة ما مذكورة فيه قولها صراحة]\n' + statusText(q)
         + (asAgent ? '\n[وضع عليوة: سميتك «عليوة»، وكيل الأوراش ديال المدير العام. بدا جوابك بعبارة «🧠 عليوة:» وجاوب كمدير عمليات خبير فالبناء: حلل، نبّه للمخاطر، واقترح خطوات واضحة، بالدارجة المغربية وبأرقام الحالة فقط.]' : '');
     }catch(e){ return base; }
   };
