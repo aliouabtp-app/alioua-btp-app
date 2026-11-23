@@ -13572,7 +13572,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 21-11-2026 (د)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 23-11-2026 (أ)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -14226,23 +14226,41 @@ const SITE_AGENT = (function(){
     + '<input id="saNurl" dir="ltr" placeholder="رابط الـWorker: https://xxx.workers.dev" autocomplete="off"><input id="saNsec" dir="ltr" type="password" placeholder="الرمز السري (SECRET)" autocomplete="off">'
     + '<label style="display:flex; gap:6px; align-items:flex-start;"><input type="checkbox" id="saNeff" checked> <span>أدرج عدد الأجراء بكل مشروع فرسالة الصباح (أسماء المشاريع والأرقام غادي تخرج لتيليغرام)</span></label><button type="button" style="' + BTN + '" id="saNsave">حفظ وتجربة</button><div id="saNmsg"></div>'
     + '<div style="font-size:11.5px; line-height:1.7;">كتوصلك رسائل بنص عام فقط (بلا أسماء ولا مبالغ) والتفاصيل فيونس. كتغطي: ملخص الصباح، الاستحقاقات، الشيكات، آجال العقود، الدفعات المستحقة. الجدول كيتجدد كل ما تفتح التطبيق ولا تخرج منو.</div></div></details>';
+  // تعمير الحقول من التخزين: كيتعاود كل ما يتفتح التطبيق / يتفتح القسم / يتعاود الرسم، إلا ماكانش المستخدم كيكتب
+  function fillNotify(bar, force){
+    const u = bar.querySelector('#saNurl'), sc = bar.querySelector('#saNsec'), m = bar.querySelector('#saNmsg'), eff = bar.querySelector('#saNeff');
+    if(!u || !sc) return;
+    if(!force && (document.activeElement === u || document.activeElement === sc || u.dataset.dirty === '1' || sc.dataset.dirty === '1')) return;
+    const c = nrd();
+    u.value = c.url || '';
+    sc.value = '';
+    sc.placeholder = c.secret ? '•••• محفوظ (خليه خاوي باش يبقى هو)' : 'الرمز السري (SECRET)';
+    if(eff) eff.checked = c.eff !== false;
+    if(m && !m.dataset.msg) m.textContent = (c.url && c.secret) ? '✅ الرابط والرمز السري محفوظين فهاد الجهاز.' : '';
+  }
   function bindNotify(bar){
-    const c = nrd(), u = bar.querySelector('#saNurl'), sc = bar.querySelector('#saNsec'), m = bar.querySelector('#saNmsg');
+    const u = bar.querySelector('#saNurl'), sc = bar.querySelector('#saNsec'), m = bar.querySelector('#saNmsg');
     if(!u) return;
-    bar.querySelector('#saNeff').checked = c.eff !== false;
-    u.value = c.url || ''; if(c.secret) sc.placeholder = '•••• محفوظ (خليه خاوي باش يبقى هو)';
+    u.addEventListener('input', ()=>{ u.dataset.dirty = '1'; });
+    sc.addEventListener('input', ()=>{ sc.dataset.dirty = '1'; });
+    const det = bar.querySelector('details'); if(det) det.addEventListener('toggle', ()=> fillNotify(bar));
+    fillNotify(bar, true);
     bar.querySelector('#saNsave').onclick = async ()=>{
+      m.dataset.msg = '1';
       const url = u.value.trim().replace(/\/+$/, ''), sec = sc.value.trim() || nrd().secret || '';
       if(!/^https:\/\//.test(url) || !sec){ m.textContent = '⚠️ دخل الرابط (https://...) والرمز السري.'; return; }
-      safeSetItem(NK, JSON.stringify({url, secret: sec, eff: bar.querySelector('#saNeff').checked}));
+      const stored = safeSetItem(NK, JSON.stringify({url, secret: sec, eff: bar.querySelector('#saNeff').checked}));
+      const back = nrd();
+      if(!stored || back.url !== url || back.secret !== sec){ m.textContent = '⚠️ ما تسجلاتش فالتخزين (التطبيق مقفول ولا التخزين فيه مشكل). عاود حاول من بعد ما تفتح التطبيق بالـPIN.'; return; }
+      u.dataset.dirty = '0'; sc.dataset.dirty = '0';
       m.textContent = '⏳ كنجرب...';
       try{
         const r = await fetch(url + '/test', {method: 'POST', headers: {'Authorization': 'Bearer ' + sec}}), j = await r.json().catch(()=> ({}));
         if(r.status === 401){ m.textContent = '⚠️ الرمز السري غالط.'; return; }
         if(!r.ok || !j.ok){ m.textContent = '⚠️ الـWorker جاوب ولكن تيليغرام ما بعثش: تأكد من BOT_TOKEN وCHAT_ID، ومن أنك صيفطتي /start للبوت.'; return; }
         const ok = await pushSchedule(true);
-        m.textContent = ok ? '✅ توصلك رسالة فتيليغرام، والجدول تصيفط.' : '✅ الرسالة وصلات، ولكن الجدول ما تصيفطش (عاود دوز).';
-      }catch(e){ m.textContent = '⚠️ ما قدرتش نوصل للـWorker (الرابط غالط ولا الإنترنت).'; }
+        m.textContent = ok ? '✅ توصلك رسالة فتيليغرام، والجدول تصيفط. (الإعدادات محفوظة وغادي تبقى)' : '✅ الرسالة وصلات، ولكن الجدول ما تصيفطش (عاود دوز).';
+      }catch(e){ m.textContent = '⚠️ ما قدرتش نوصل للـWorker (الرابط غالط ولا الإنترنت). الإعدادات تحفظات.'; }
     };
   }
 
@@ -14261,9 +14279,12 @@ const SITE_AGENT = (function(){
   }
 
   function ensureUI(){
-    if(currentRole !== 'admin') return;
+    const bar0 = document.getElementById('siteAgentBar');
+    if(currentRole !== 'admin'){ if(bar0) bar0.remove(); return; }
+    if(LS.locked) return;                                   // قبل الـPIN التخزين مقفول: ما نبنيوش الفورم (كان كيتبنى خاوي ويبقى خاوي)
+    if(bar0){ try{ fillNotify(bar0); }catch(e){} return; }
     const list = document.getElementById('projectsList');
-    if(!list || document.getElementById('siteAgentBar')) return;
+    if(!list) return;
     const bar = document.createElement('div'); bar.id = 'siteAgentBar'; bar.style.cssText = 'margin-top:12px;';
     bar.innerHTML = '<button class="btn-primary" id="siteAgentBtn">🧠 تحليل الأوراش</button><div id="siteAgentOut" style="margin-top:10px;"></div>' + NHTML;
     list.parentNode.insertBefore(bar, list);
@@ -14286,7 +14307,7 @@ const SITE_AGENT = (function(){
   };
   let _watching = false;
   const _bu = bootAfterUnlock;                            // كيتشغل غير بعد إدخال الـPIN
-  bootAfterUnlock = function(){ const r = _bu.apply(this, arguments); setTimeout(()=>{ try{ auto(); }catch(e){ console.error('وكيل الأوراش:', e); } }, 4000); if(!_watching){ _watching = true; setInterval(watch, 20 * 60 * 1000); document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') pushSchedule(false); }); setTimeout(()=> pushSchedule(false), 8000); } return r; };
+  bootAfterUnlock = function(){ const r = _bu.apply(this, arguments); try{ ensureUI(); }catch(e){ console.error('وكيل الأوراش:', e); } setTimeout(()=>{ try{ auto(); }catch(e){ console.error('وكيل الأوراش:', e); } }, 4000); if(!_watching){ _watching = true; setInterval(watch, 20 * 60 * 1000); document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') pushSchedule(false); }); setTimeout(()=> pushSchedule(false), 8000); } return r; };
   try{ ensureUI(); }catch(e){}
   return {run, analyse, data, auto, analysePhotos, PH, readContract, watch, statusText, buildSchedule, pushSchedule, effectifText};
 })();
