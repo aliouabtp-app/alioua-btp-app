@@ -14134,7 +14134,7 @@ const SITE_AGENT = (function(){
     const add = (id, at, text)=>{ if(isFinite(at) && at > now + 60e3 && at < now + 40 * DAY) out.push({id, at, text}); };
     let first = true; const hm = new Date(now), stamp = ymd(now).slice(8) + '/' + ymd(now).slice(5, 7) + ' ' + String(hm.getHours()).padStart(2, '0') + ':' + String(hm.getMinutes()).padStart(2, '0');
     for(let i = 0; i < 7; i++){
-      const k = ymd(now + i * DAY), at = atH(k, 8); let tx = '☀️ ملخص الأوراش جاهز فيونس';
+      const k = ymd(now + i * DAY), at = atH(k, 9); let tx = '☀️ ملخص الأوراش جاهز فيونس';
       if(first && at > now + 60e3){ first = false; if(nrd().eff !== false){ try{ const e = effectifText(k); if(e) tx = '☀️ صباح الخير\n' + e + '\n(معطيات التطبيق: ' + stamp + ')\nالتفاصيل فيونس.'; }catch(err){} } }
       add('am-' + k, at, tx);
     }
