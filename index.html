@@ -2501,6 +2501,799 @@ const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 const CEREBRAS_MODEL = 'gpt-oss-120b';
 
+/* =====================================================================
+   المتري المحترف — وضع «métreur» ديال عليوة
+   النموذج كيقرا البلان وكيعطي الأبعاد (كتلة bordereau)، والتطبيق هو اللي كيحسب كلشي
+   (ضرب، جمع، خصم، مراجع بين المواد) وكيصاوب الجدول الاحترافي + PDF + Excel.
+   ===================================================================== */
+const BQ_ULBL = { M3:'m³', M2:'m²', ML:'ml', U:'U', ENS:'Ens', FF:'FF', KG:'kg', T:'T', L:'L' };
+const BQ_DIMS = { M3:3, M2:2, ML:1, U:0, ENS:0, FF:0 };
+const BQ_COUNT_UNITS = ['U', 'ENS', 'FF'];
+
+function _bqUnit(u){
+  const s = String(u == null ? '' : u).trim().toUpperCase().replace(/[\s.\^]/g, '').replace(/³/g, '3').replace(/²/g, '2');
+  if(s === 'M3' || s === 'MCUBE') return 'M3';
+  if(s === 'M2' || s === 'MCARRE') return 'M2';
+  if(s === 'ML' || s === 'M' || s === 'MLI' || s === 'MLIN') return 'ML';
+  if(s === 'U' || s === 'UN' || s === 'UNITE' || s === 'NBRE' || s === 'NB' || s === 'PCS' || s === 'PIECE' || s === 'PIÈCE' || s === 'P') return 'U';
+  if(s === 'ENS' || s === 'ENSEMBLE') return 'ENS';
+  if(s === 'FF' || s === 'FORFAIT' || s === 'FORF') return 'FF';
+  if(s === 'KG' || s === 'KGS') return 'KG';
+  if(s === 'T' || s === 'TONNE' || s === 'TONNES' || s === 'TN') return 'T';
+  if(s === 'L' || s === 'LITRE' || s === 'LITRES') return 'L';
+  return s || 'U';
+}
+// تدوير نص نص بعيد عن الصفر (كيطابق ROUND ديال Excel)
+function _bqR2(x){ const a = Math.abs(+x || 0); return Math.sign(x) * Math.round(a * 100 + 1e-7) / 100 || 0; }
+function _bqNum(x, d){ return fmtNum(x); }
+function _bqLotCode(lt, li){ const cd = (lt && lt.code != null && String(lt.code).trim() !== '') ? String(lt.code).trim() : String(li + 1); return /^\d$/.test(cd) ? '0' + cd : cd; }
+function _bqNo(lt, li, ar, ai){ const n = ar && ar.n; if(n != null && String(n).trim() !== '') return String(n).trim(); return (parseInt(_bqLotCode(lt, li), 10) || (li + 1)) + '.' + (ai + 1); }
+
+// حساب آمن لتعبير بسيط ("4.50+3.20" ولا "2*(0.30+0.30)") بلا eval
+function _bqEval(v){
+  if(v === null || v === undefined || v === '') return null;
+  if(typeof v === 'number') return isFinite(v) ? {val: v, expr: null} : null;
+  let s = String(v).trim().replace(/[×xX\u00d7]/g, '*').replace(/÷/g, '/').replace(/,/g, '.').replace(/[−–—]/g, '-').replace(/\s+/g, '').replace(/m$/i, '');
+  if(!s || !/^[\d.+\-*/()]+$/.test(s)) return null;
+  let pos = 0, bad = false;
+  const peek = ()=> s[pos];
+  function pFactor(){
+    if(peek() === '-'){ pos++; return -pFactor(); }
+    if(peek() === '+'){ pos++; return pFactor(); }
+    if(peek() === '('){ pos++; const v2 = pExpr(); if(peek() === ')') pos++; else bad = true; return v2; }
+    const m = /^(?:\d+(?:\.\d+)?|\.\d+)/.exec(s.slice(pos));
+    if(!m){ bad = true; return 0; }
+    pos += m[0].length; return parseFloat(m[0]);
+  }
+  function pTerm(){
+    let a = pFactor();
+    while(peek() === '*' || peek() === '/'){ const op = s[pos++], b = pFactor(); if(op === '/' && b === 0){ bad = true; return 0; } a = op === '*' ? a * b : a / b; }
+    return a;
+  }
+  function pExpr(){
+    let a = pTerm();
+    while(peek() === '+' || peek() === '-'){ const op = s[pos++], b = pTerm(); a = op === '+' ? a + b : a - b; }
+    return a;
+  }
+  const val = pExpr();
+  if(bad || pos !== s.length || !isFinite(val)) return null;
+  const isExpr = /[+\-*/()]/.test(s.replace(/^-/, ''));
+  return {val: val, expr: isExpr ? s.replace(/\*/g, '×').replace(/\./g, ',') : null};
+}
+function _bqPick(o, keys){ for(let i = 0; i < keys.length; i++){ const v = o[keys[i]]; if(v !== undefined && v !== null && v !== '') return v; } return null; }
+
+function _bqLine(raw){
+  const o = (raw && typeof raw === 'object') ? raw : {};
+  const ln = { d: String(_bqPick(o, ['d', 'desc', 'designation']) || '').trim(), obs: String(_bqPick(o, ['obs', 'note']) || '').trim(), notes: [], bad: false, flag: false, est: !!(o.est || o.estime), err: '' };
+  const ev = (keys, label)=>{
+    const r0 = _bqPick(o, keys); if(r0 === null) return null;
+    const r = _bqEval(r0);
+    if(!r){ ln.bad = true; ln.err += (ln.err ? ' ; ' : '') + label + ' = "' + r0 + '"'; return null; }
+    if(r.expr) ln.notes.push(label + ' = ' + r.expr);
+    return r.val;
+  };
+  ln.n = ev(['n', 'nb', 'nbre'], 'Nbre');
+  ln.L = ev(['L', 'long', 'longueur'], 'L');
+  ln.l = ev(['l', 'larg', 'largeur'], 'l');
+  ln.h = ev(['h', 'H', 'haut', 'hauteur', 'e', 'ep', 'epaisseur'], 'h');
+  ln.q = ev(['q', 'qte', 'quantite', 'S', 'V'], 'Qté');
+  ln.k = ev(['k', 'coef'], 'k');
+  ln.ref = (o.ref !== undefined && o.ref !== null && String(o.ref).trim() !== '') ? String(o.ref).trim() : null;
+  let neg = o.neg === true || o.neg === 1 || /^(true|1|oui|yes|neg)$/i.test(String(o.neg == null ? '' : o.neg)) || String(o.sign == null ? '' : o.sign).trim() === '-';
+  if(o.neg === undefined && o.sign === undefined && /^\s*(?:[àa]\s+d[ée]duire|d[ée]duction|خصم|ناقص)/i.test(ln.d)) neg = true;
+  ln.neg = neg;
+  return ln;
+}
+
+function computeBordereau(data){
+  data = (data && typeof data === 'object') ? data : {};
+  const W = [];
+  const warn = (ar, fr)=>{ W.push({ar: ar, fr: fr || ar}); };
+  const P = (data.params && typeof data.params === 'object') ? data.params : {};
+  const tvaN = _mNum(P.tva), tvaRate = (tvaN !== null && tvaN >= 0 && tvaN <= 30) ? tvaN : 20;
+  const mgN = _mNum(P.marge), marge = (mgN !== null && mgN >= 0 && mgN <= 50) ? mgN : 5;
+  const SbN = _mNum(P.surface_batie), Sb = (SbN !== null && SbN > 0) ? SbN : null;
+  const dtOk = /^\d{4}-\d{2}-\d{2}/.test(String(data.date || ''));
+  const meta = { projet: String(data.projet || '').trim(), client: String(data.client || '').trim(), adresse: String(data.adresse || '').trim(), ref: String(data.ref || '').trim(), date: dtOk ? String(data.date).slice(0, 10) : new Date().toLocaleDateString('en-CA') };
+  const lots = [], arts = [], artByNo = {};
+
+  (Array.isArray(data.lots) ? data.lots : []).forEach((lt, li)=>{
+    if(!lt || typeof lt !== 'object') return;
+    const lot = { code: _bqLotCode(lt, li), titre: String(lt.titre || lt.t || lt.d || '').trim(), articles: [], amount: 0 };
+    (Array.isArray(lt.articles) ? lt.articles : []).forEach((ar, ai)=>{
+      if(!ar || typeof ar !== 'object') return;
+      let no = _bqNo(lt, li, ar, ai);
+      if(artByNo[no]){ warn('رقم المادة ' + no + ' مكرر (تبدل ليه الرقم).', 'Numéro d\'article ' + no + ' en double (renuméroté).'); no += '*'; }
+      const puN = _mNum(ar.pu);
+      const a = { no: no, d: String(ar.d || '').trim(), u: _bqUnit(ar.u), cat: String(ar.cat || '').toLowerCase().trim(), obs: String(ar.obs || '').trim(), pu: (puN !== null && puN > 0) ? puN : null, lines: [], mat: [], total: 0, amount: 0, lot: lot };
+      a.uLbl = BQ_ULBL[a.u] || String(ar.u || '').trim() || 'U';
+      if(!a.d) warn('المادة ' + no + ' بلا désignation.', 'Article ' + no + ' sans désignation.');
+      if(!BQ_ULBL[a.u]) warn('الوحدة «' + (ar.u || '') + '» فالمادة ' + no + ' ما معروفاش.', 'Unité « ' + (ar.u || '') + ' » inconnue (article ' + no + ').');
+      (Array.isArray(ar.mat) ? ar.mat : []).forEach(mt=>{
+        let m, u, c;
+        if(Array.isArray(mt)){ m = mt[0]; u = mt[1]; c = _mNum(mt[2]); } else if(mt && typeof mt === 'object'){ m = mt.m || mt.nom; u = mt.u; c = _mNum(mt.c !== undefined ? mt.c : mt.coef); }
+        if(m && c !== null && c > 0) a.mat.push({ m: String(m).trim(), u: String(u || '').trim(), c: c });
+      });
+      const rawLines = Array.isArray(ar.lignes) ? ar.lignes : (Array.isArray(ar.lines) ? ar.lines : []);
+      rawLines.forEach(rl=>{
+        const ln = _bqLine(rl); ln.art = a;
+        const nm = (a.no + ' — ' + (ln.d || '(سطر)')).slice(0, 80);
+        if(ln.err){ ln.bad = true; warn('السطر «' + nm + '»: قيمة ما فهمتهاش (' + ln.err + ') — ما تحسبش.', 'Ligne « ' + nm + ' » : valeur illisible (' + ln.err + ') — ignorée.'); }
+        ['n', 'L', 'l', 'h', 'q', 'k'].forEach(k=>{ if(ln[k] !== null && !(ln[k] > 0)){ ln.bad = true; warn('السطر «' + nm + '»: ' + k + ' = ' + ln[k] + ' (خاصو يكون موجب؛ للخصم استعمل neg:true) — ما تحسبش.', 'Ligne « ' + nm + ' » : ' + k + ' = ' + ln[k] + ' (doit être positif ; utiliser neg:true pour une déduction) — ignorée.'); } });
+        if((ln.L !== null && ln.L > 100) || (ln.l !== null && ln.l > 100)) warn('السطر «' + nm + '»: قياس كبير بزاف (> 100 م) — واش بالسنتيمتر؟', 'Ligne « ' + nm + ' » : dimension > 100 m — vérifier l\'unité (cm ?).');
+        if(ln.h !== null && ln.h > 15) warn('السطر «' + nm + '»: h = ' + ln.h + ' م كبير بزاف — واش بالسنتيمتر؟', 'Ligne « ' + nm + ' » : h = ' + ln.h + ' m trop grand — vérifier l\'unité (cm ?).');
+        if(!ln.bad && ln.n === null && ln.L === null && ln.l === null && ln.h === null && ln.q === null && ln.k === null && !ln.ref){ ln.bad = true; warn('السطر «' + nm + '» بلا أي رقم.', 'Ligne « ' + nm + ' » sans valeur numérique.'); }
+        if(!ln.bad && BQ_COUNT_UNITS.includes(a.u) && (ln.L !== null || ln.l !== null || ln.h !== null)){ ln.info = true; ln.notes.push('dimensions indicatives (non multipliées)'); }
+        else if(!ln.bad && ln.q === null && ln.k === null && !ln.ref && BQ_DIMS[a.u] !== undefined){
+          const dc = ['L', 'l', 'h'].filter(k=> ln[k] !== null).length;
+          if(dc !== BQ_DIMS[a.u]){ ln.flag = true; warn('السطر «' + nm + '»: ' + dc + ' أبعاد ولكن الوحدة ' + a.uLbl + ' كتطلب ' + BQ_DIMS[a.u] + '.', 'Ligne « ' + nm + ' » : ' + dc + ' dimension(s) pour une unité ' + a.uLbl + ' (attendu : ' + BQ_DIMS[a.u] + ').'); }
+        }
+        a.lines.push(ln);
+      });
+      if(!a.lines.length) warn('المادة ' + no + ' بلا سطور حساب.', 'Article ' + no + ' sans lignes de calcul.');
+      artByNo[no] = a; arts.push(a); lot.articles.push(a);
+    });
+    lots.push(lot);
+  });
+
+  // حل المراجع (ref) بين المواد: الكمية = مجموع مادة أخرى × k
+  const art2 = a=> a.lines.every(x=> x.done || x.bad);
+  const sumArt = a=> _bqR2(a.lines.reduce((s, x)=> s + ((x.bad || x.partial == null) ? 0 : x.partial), 0));
+  let progress = true, guard = 0;
+  while(progress && guard++ < 12){
+    progress = false;
+    arts.forEach(a=> a.lines.forEach(ln=>{
+      if(ln.done || ln.bad) return;
+      let refVal = null;
+      if(ln.ref){
+        const ra = artByNo[ln.ref];
+        if(!ra){ ln.bad = true; warn('السطر «' + a.no + ' — ' + ln.d + '»: المادة المرجعية ' + ln.ref + ' ما كايناش.', 'Ligne « ' + a.no + ' — ' + ln.d + ' » : article référencé ' + ln.ref + ' introuvable.'); progress = true; return; }
+        if(ra === a){ ln.bad = true; warn('السطر «' + a.no + ' — ' + ln.d + '»: مرجع دائري (المادة كتحيل على راسها).', 'Ligne « ' + a.no + ' — ' + ln.d + ' » : référence circulaire.'); progress = true; return; }
+        if(!art2(ra)) return;
+        ra.total = sumArt(ra); refVal = ra.total; ln.refVal = refVal;
+        if(!(refVal > 0)){ ln.notes.push('article ' + ln.ref + ' = 0'); }
+      }
+      const f = [];
+      if(ln.n !== null) f.push(ln.n);
+      if(!ln.info){ ['L', 'l', 'h'].forEach(k=>{ if(ln[k] !== null) f.push(ln[k]); }); }
+      if(ln.q !== null) f.push(ln.q);
+      if(ln.k !== null) f.push(ln.k);
+      if(refVal !== null) f.push(refVal);
+      if(ln.info && !f.length) f.push(1);
+      ln.partial = f.length ? _bqR2(f.reduce((x, y)=> x * y, 1)) * (ln.neg ? -1 : 1) : null;
+      if(ln.partial === null){ ln.bad = true; }
+      ln.done = true; progress = true;
+    }));
+  }
+  arts.forEach(a=> a.lines.forEach(ln=>{ if(!ln.done && !ln.bad){ ln.bad = true; warn('السطر «' + a.no + ' — ' + ln.d + '»: ما قدرتش نحل المرجع ' + (ln.ref || '') + '.', 'Ligne « ' + a.no + ' — ' + ln.d + ' » : référence ' + (ln.ref || '') + ' non résolue.'); } }));
+
+  let nLines = 0, nEst = 0;
+  arts.forEach(a=>{
+    a.total = sumArt(a);
+    a.lines.forEach(ln=>{ if(!ln.bad){ nLines++; if(ln.est) nEst++; } });
+    if(a.lines.length && a.total < 0) warn('المادة ' + a.no + ' مجموعها سالب (' + a.total + ') — الخصومات كتفوق الكميات.', 'Article ' + a.no + ' : total négatif (' + a.total + ') — déductions supérieures aux quantités.');
+    else if(a.lines.some(x=> !x.bad) && a.total === 0) warn('المادة ' + a.no + ' مجموعها 0.', 'Article ' + a.no + ' : total nul.');
+    const seen = {};
+    a.lines.forEach(ln=>{ if(ln.bad) return; const key = [ln.d.toLowerCase(), ln.n, ln.L, ln.l, ln.h, ln.q, ln.k, ln.ref, ln.neg].join('|'); if(seen[key]) warn('المادة ' + a.no + ': السطر «' + ln.d + '» مكرر بنفس الأرقام (تكرار محتمل).', 'Article ' + a.no + ' : ligne « ' + ln.d + ' » en double (même valeurs) — doublon possible.'); seen[key] = 1; });
+    if(a.pu){ a.amount = _bqR2(a.total * a.pu); }
+  });
+  if(nEst) warn(nEst + ' سطر مقدّر (est) — خاصو تأكيد من البلان.', nEst + ' ligne(s) estimée(s) — à confirmer sur plan.');
+
+  const hasPrices = arts.some(a=> a.pu);
+  let ht = 0;
+  lots.forEach(l=>{ l.amount = _bqR2(l.articles.reduce((s, a)=> s + a.amount, 0)); ht += l.amount; });
+  ht = _bqR2(ht);
+  const tva = _bqR2(ht * tvaRate / 100), ttc = _bqR2(ht + tva);
+
+  // المواد (approvisionnement)
+  const matMap = {}, mats = [];
+  arts.forEach(a=>{ if(!(a.total > 0)) return; a.mat.forEach(mt=>{ const key = mt.m.toLowerCase() + '|' + mt.u.toLowerCase(); if(!matMap[key]){ matMap[key] = { m: mt.m, u: mt.u, net: 0 }; mats.push(matMap[key]); } matMap[key].net += a.total * mt.c; }); });
+  mats.forEach(m=>{ m.net = _bqR2(m.net); m.gross = _bqR2(m.net * (1 + marge / 100)); if(/ciment/i.test(m.m) && /^kg$/i.test(m.u)){ m.extra = '≈ ' + Math.ceil(m.gross / 50) + ' sacs de 50 kg'; } });
+
+  // مراقبة النسب (استئناسية)
+  const cat = {};
+  arts.forEach(a=>{ if(!a.cat) return; let v = a.total; if(a.u === 'T') v *= 1000; cat[a.cat] = (cat[a.cat] || 0) + v; });
+  const ctl = [];
+  if(cat.beton > 0 && cat.acier > 0){
+    const r = cat.acier / cat.beton, ok = r >= 50 && r <= 200;
+    ctl.push({ ok: ok, ar: 'نسبة الحديد/البيتون = ' + fmtNum(r) + ' كلغ/م³ (المعتاد ≈ 70–150)' + (ok ? '' : ' ⚠️ خاصها مراجعة'), fr: 'Ratio acier/béton = ' + fmtNum(r) + ' kg/m³ (usuel ≈ 70–150)' + (ok ? '' : ' — à vérifier') });
+  }
+  if(Sb && cat.beton > 0){
+    const r = cat.beton / Sb, ok = r >= 0.12 && r <= 0.6;
+    ctl.push({ ok: ok, ar: 'بيتون/م² مبني = ' + fmtNum(r) + ' م³/م² (المعتاد ≈ 0.20–0.40 لفيلا R+1)' + (ok ? '' : ' ⚠️ خاصها مراجعة'), fr: 'Béton / m² bâti = ' + fmtNum(r) + ' m³/m² (usuel ≈ 0,20–0,40 villa R+1)' + (ok ? '' : ' — à vérifier') });
+  }
+  if(Sb && cat.maconnerie > 0){
+    const r = cat.maconnerie / Sb, ok = r >= 0.8 && r <= 4;
+    ctl.push({ ok: ok, ar: 'maçonnerie/م² مبني = ' + fmtNum(r) + ' م²/م² (المعتاد ≈ 1.5–2.5)' + (ok ? '' : ' ⚠️ خاصها مراجعة'), fr: 'Maçonnerie / m² bâti = ' + fmtNum(r) + ' m²/m² (usuel ≈ 1,5–2,5)' + (ok ? '' : ' — à vérifier') });
+  }
+  ctl.forEach(c=>{ if(!c.ok) warn(c.ar, c.fr); });
+
+  return {
+    title: 'المتري' + (meta.projet ? ' — ' + meta.projet : ''), meta: meta, lots: lots, arts: arts, hasPrices: hasPrices,
+    ht: ht, tva: tva, ttc: ttc, tvaRate: tvaRate, marge: marge, mats: mats, ctl: ctl, warn: W,
+    hyp: (Array.isArray(data.hyp) ? data.hyp : []).map(h=> String(h)).filter(Boolean),
+    stats: { lots: lots.length, arts: arts.length, lines: nLines, est: nEst }, Sb: Sb
+  };
+}
+
+// نص الكمية ديال مادة (U/Ens/FF بلا فاصلة إلا كانت صحيحة)
+function _bqQty(a){ return (BQ_COUNT_UNITS.includes(a.u) && Number.isInteger(a.total)) ? String(a.total) : fmtNum(a.total); }
+function _bqCnt(v){ return v === null || v === undefined ? '' : (Number.isInteger(v) ? String(v) : fmtNum(v)); }
+function bordereauRecapText(R){
+  const L = [];
+  R.lots.forEach(lot=>{ L.push('LOT ' + lot.code + ' ' + lot.titre); lot.articles.forEach(a=> L.push(a.no + ' ' + a.d + ': ' + _bqQty(a) + ' ' + a.uLbl + (a.pu ? ' × ' + a.pu + ' DH = ' + fmtNum(a.amount) + ' DH' : ''))); });
+  if(R.hasPrices) L.push('Total HT ' + fmtNum(R.ht) + ' DH — TVA ' + R.tvaRate + '% ' + fmtNum(R.tva) + ' — TTC ' + fmtNum(R.ttc));
+  R.mats.forEach(m=> L.push('Matériau ' + m.m + ': ' + fmtNum(m.net) + ' ' + m.u + ' (avec marge ' + R.marge + '%: ' + fmtNum(m.gross) + ')'));
+  return L.slice(0, 260).join('\n');
+}
+
+/* ---------- تجميع الكتل (suite) وإصلاح JSON المقطوع ---------- */
+// الجواب إلا تقطع (MAX_TOKENS) كنقطعو للسطر الأخير الكامل وكنسدو الأقواس، باش اللي تحسب يبان وما يضيعش
+function _bqRepair(txt){
+  let s = String(txt || ''); const st = s.indexOf('{'); if(st < 0) return null; s = s.slice(st);
+  const stack = []; let inStr = false, esc = false, lastSafe = -1, safeStack = null;
+  for(let i = 0; i < s.length; i++){
+    const ch = s[i];
+    if(inStr){ if(esc) esc = false; else if(ch === '\\') esc = true; else if(ch === '"') inStr = false; continue; }
+    if(ch === '"'){ inStr = true; continue; }
+    if(ch === '{' || ch === '['){ stack.push(ch); continue; }
+    if(ch === '}' || ch === ']'){ stack.pop(); if(stack.length >= 1){ lastSafe = i + 1; safeStack = stack.slice(); } }
+  }
+  if(lastSafe < 0 || !safeStack) return null;
+  const cut = s.slice(0, lastSafe).replace(/,\s*$/, '');
+  const closers = safeStack.reverse().map(c=> c === '{' ? '}' : ']').join('');
+  try{ return JSON.parse(cut + closers); }catch(e){ return null; }
+}
+function _bqParseBlock(txt){
+  const t = String(txt || '').trim();
+  let d = _mParse(t), trunc = false;
+  if(!d || typeof d !== 'object'){ d = _bqRepair(t); trunc = !!d; }
+  return (d && typeof d === 'object' && Array.isArray(d.lots)) ? {d: d, trunc: trunc} : null;
+}
+// كتلة bordereau ما تسدّاتش (الجواب تقطع): كنسدوها باش العرض يخدم
+function _bqCloseUnclosed(raw){
+  raw = String(raw == null ? '' : raw);
+  const i = raw.lastIndexOf('```bordereau');
+  if(i < 0 || raw.indexOf('```', i + 12) >= 0) return raw;
+  let body = raw.slice(i), note = '';
+  const j = body.search(/\n\n⚠️ _الجواب تقطع/);
+  if(j >= 0){ note = body.slice(j); body = body.slice(0, j); }
+  return raw.slice(0, i) + body + '\n```' + note;
+}
+function _bqMessageBlocks(text){
+  const out = [], t = _bqCloseUnclosed(text), rx = /```bordereau\s*([\s\S]*?)```/g; let m;
+  while((m = rx.exec(t)) !== null){ const p = _bqParseBlock(m[1]); if(p) out.push(p); }
+  return out;
+}
+function _bqMerge(base, add){
+  const out = JSON.parse(JSON.stringify(base));
+  ['projet', 'client', 'adresse', 'ref', 'date'].forEach(k=>{ if(add[k] && !out[k]) out[k] = add[k]; });
+  out.params = Object.assign({}, out.params || {}, add.params || {});
+  out.hyp = (out.hyp || []).concat((add.hyp || []).filter(h=> (out.hyp || []).indexOf(h) < 0));
+  out.lots = out.lots || [];
+  (add.lots || []).forEach(lt=>{
+    const code = _bqLotCode(lt, out.lots.length), i = out.lots.findIndex((x, xi)=> _bqLotCode(x, xi) === code);
+    if(i >= 0) out.lots[i] = lt; else out.lots.push(lt);
+  });
+  return out;
+}
+// المتري الكامل حتى للرسالة اللي فيها هاد الكتلة (الكتل اللي فيها suite كتتجمّع مع اللي قبلها)
+function _bqChain(jsonText){
+  let ix = -1;
+  try{ for(let i = messages.length - 1; i >= 0; i--){ const m = messages[i]; if(m && m.role !== 'user' && typeof m.text === 'string' && m.text.indexOf(jsonText) >= 0){ ix = i; break; } } }catch(e){}
+  if(ix < 0){ const p = _bqParseBlock(jsonText); return p ? {data: p.d, trunc: p.trunc} : null; }
+  let chain = null, trunc = false;
+  for(let i = 0; i <= ix; i++){
+    const m = messages[i]; if(!m || m.role === 'user' || typeof m.text !== 'string' || m.text.indexOf('```bordereau') < 0) continue;
+    _bqMessageBlocks(m.text).forEach(p=>{ chain = (p.d.suite && chain) ? _bqMerge(chain, p.d) : JSON.parse(JSON.stringify(p.d)); trunc = p.trunc; });
+  }
+  if(!chain){ const p = _bqParseBlock(jsonText); return p ? {data: p.d, trunc: p.trunc} : null; }
+  return {data: chain, trunc: trunc};
+}
+
+/* ---------- كشف وضع المتري + سياق المتابعة ---------- */
+const BQ_STRONG_RX = /(متري|ميتري|métr|metr[eé]|bordereau|quantitatif|\bDQE\b|\bBPU\b|حساب\s+الكميات|حسب(?:\s+لي?ا?)?\s+(?:ال)?كميات|كميات\s+(?:المواد|الأشغال|البناء|الورش))/i;
+const BQ_WEAK_RX = /(بلان|plan|تصميم|مخطط|coupe|façade|facade|كميات|احسب|حسّب|حسب|حساب|surface|مساحة|بيتون|béton|حديد|طوب|brique|enduit|carrelage|صباغة|peinture|dalle|longrine|poteau|semelle)/i;
+const BQ_EDIT_RX = /(زيد|بدل|بدّل|عدل|عدّل|نقص|حيد|شيل|ضيف|غير|غيّر|صحح|صحّح|كمّل|كمل|ثمن|ثمّن|أثمنة|الأثمنة|سعر|prix|tva|لوط|lot\b|الطابق|étage|rdc|السقف|الجدران|الباب|الشباك|الصباغة)/i;
+function _isAgentQ(q){ q = String(q || ''); return /^\s*(يا\s+)?(ال)?(عليو[ةهاى]?|وكيل)(?![\u0621-\u064A])/.test(q) || /^\s*(agent|alioua|aliwa)\b/i.test(q); }
+function _bqHasBlock(m){ return !!(m && m.role !== 'user' && typeof m.text === 'string' && m.text.indexOf('```bordereau') >= 0); }
+function _bqLastUserText(msgs){ const u = (msgs || []).slice().reverse().find(m=> m && m.role === 'user' && String(m.text || '').trim()); return u ? String(u.text) : ''; }
+function _bqWanted(msgs, q, asAgent){
+  q = String(q || '');
+  let recentAtt = false;
+  try{ recentAtt = _lastAttachmentIndex(msgs, 6) >= 0 || _lastFileIndex(msgs, 6) >= 0; }catch(e){}
+  if(asAgent && (BQ_STRONG_RX.test(q) || (recentAtt && BQ_WEAK_RX.test(q)))) return true;
+  const last = (msgs || []).slice(-6).reverse().find(m=> m && m.role !== 'user');   // متابعة: كاين متري فآخر ردود الموديل
+  return !!(last && _bqHasBlock(last) && (BQ_STRONG_RX.test(q) || BQ_EDIT_RX.test(q) || BQ_WEAK_RX.test(q) || q.length < 120));
+}
+function _metreurActive(msgs){
+  try{ if(typeof currentRole !== 'undefined' && currentRole !== 'admin') return false; const q = _bqLastUserText(msgs); return _bqWanted(msgs, q, _isAgentQ(q)); }catch(e){ return false; }
+}
+// آخر جدول متري حسبو التطبيق كيتزاد للبرومت: أسئلة المتابعة كتتجاوب من الأرقام الدقيقة
+function _bqContext(msgs){
+  try{
+    for(let i = (msgs || []).length - 1; i >= 0; i--){
+      if(!_bqHasBlock(msgs[i])) continue;
+      const bl = []; const rx = /```bordereau\s*([\s\S]*?)```/g, t = _bqCloseUnclosed(msgs[i].text); let m; while((m = rx.exec(t)) !== null) bl.push(m[1]);
+      if(!bl.length) return '';
+      const info = _bqChain(bl[bl.length - 1].trim()); if(!info) return '';
+      const R = computeBordereau(info.data);
+      return '\n\n[جدول المتري الحالي — محسوب بدقة بالتطبيق: استعمل هاد الأرقام للأجوبة على أسئلة الكميات وما تحسبش بيدك. وإلا بغا المستخدم تعديل ولّد كتلة bordereau جديدة]\n' + bordereauRecapText(R)
+        + (R.warn.length ? '\nتنبيهات المراجعة: ' + R.warn.slice(0, 8).map(w=> w.ar).join(' | ') : '');
+    }
+  }catch(e){}
+  return '';
+}
+
+/* ---------- التعديلات المحلية (معلومات المشروع + الأثمنة + TVA) بلا ما نعيطو للذكاء الاصطناعي ---------- */
+function bqApplyEdits(ed){
+  let changedAny = false;
+  for(let mi = 0; mi < messages.length; mi++){
+    const m = messages[mi];
+    if(!m || m.role === 'user' || typeof m.text !== 'string' || m.text.indexOf('```bordereau') < 0) continue;
+    m.text = m.text.replace(/```bordereau\s*([\s\S]*?)```/g, (all, body)=>{
+      const d = _mParse(String(body).trim());
+      if(!d || !Array.isArray(d.lots)) return all;
+      let ch = false;
+      if(!d.suite && ed.meta){ Object.keys(ed.meta).forEach(k=>{ if(ed.meta[k] !== undefined && String(d[k] || '') !== String(ed.meta[k])){ d[k] = ed.meta[k]; ch = true; } }); }
+      if(!d.suite && ed.tva !== undefined && ed.tva !== null){ d.params = d.params || {}; if(d.params.tva !== ed.tva){ d.params.tva = ed.tva; ch = true; } }
+      d.lots.forEach((lt, li)=> (Array.isArray(lt.articles) ? lt.articles : []).forEach((ar, ai)=>{
+        const no = _bqNo(lt, li, ar, ai);
+        if(ed.pu && Object.prototype.hasOwnProperty.call(ed.pu, no)){
+          const v = ed.pu[no];
+          if(v === null){ if(ar.pu !== undefined){ delete ar.pu; ch = true; } }
+          else if(ar.pu !== v){ ar.pu = v; ch = true; }
+        }
+      }));
+      if(!ch) return all;
+      changedAny = true;
+      return '```bordereau\n' + JSON.stringify(d) + '\n```';
+    });
+  }
+  if(changedAny){ try{ saveHistory(); }catch(e){} try{ renderMessages(); }catch(e){} }
+  return changedAny;
+}
+function bqOpenInfoPanel(R){
+  const old = document.getElementById('bqInfoPanel'); if(old) old.remove();
+  const ov = document.createElement('div'); ov.id = 'bqInfoPanel';
+  ov.style.cssText = 'position:fixed; inset:0; z-index:100001; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; justify-content:center;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--paper, #fff); color:var(--ink, #111); width:100%; max-width:640px; max-height:92vh; overflow:auto; border-radius:16px 16px 0 0; padding:14px 14px calc(14px + env(safe-area-inset-bottom)); box-sizing:border-box;';
+  const inp = 'width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid rgba(127,127,127,.5); border-radius:8px; background:transparent; color:inherit; font:inherit; font-size:14px;';
+  let h = '<div style="font-weight:800; font-size:15px; margin-bottom:8px;">💰 معلومات المتري والأثمنة</div>'
+    + '<div style="font-size:12px; opacity:.8; margin-bottom:8px;">كلشي كيتحسب محلياً بلا ما نعيطو للذكاء الاصطناعي. حط الأثمنة (DH HT لكل وحدة) وغادي يطلعو المبالغ والـTVA فالجدول وPDF وExcel.</div>'
+    + '<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">'
+    + '<label style="font-size:12px;">المشروع<input data-k="projet" style="' + inp + '"></label>'
+    + '<label style="font-size:12px;">الزبون (Client)<input data-k="client" style="' + inp + '"></label>'
+    + '<label style="font-size:12px;">العنوان / الموقع<input data-k="adresse" style="' + inp + '"></label>'
+    + '<label style="font-size:12px;">المرجع (Réf.)<input data-k="ref" style="' + inp + '"></label>'
+    + '<label style="font-size:12px;">TVA %<input data-k="tva" type="number" inputmode="decimal" style="' + inp + '"></label></div>'
+    + '<div style="font-weight:700; margin:12px 0 6px; font-size:13px;">الثمن الوحدوي (P.U. HT) لكل مادة</div><div data-pu></div>'
+    + '<div style="display:flex; gap:8px; margin-top:12px;"><button class="btn-primary" data-save style="flex:1;">حفظ</button><button class="btn-ghost" data-cancel style="flex:1;">إلغاء</button></div>';
+  box.innerHTML = h; ov.appendChild(box); document.body.appendChild(ov);
+  const set = (k, v)=>{ const e = box.querySelector('[data-k="' + k + '"]'); if(e) e.value = v == null ? '' : v; };
+  set('projet', R.meta.projet); set('client', R.meta.client); set('adresse', R.meta.adresse); set('ref', R.meta.ref); set('tva', R.tvaRate);
+  const host = box.querySelector('[data-pu]');
+  R.arts.forEach(a=>{
+    const row = document.createElement('div'); row.style.cssText = 'display:grid; grid-template-columns:1fr 112px; gap:8px; align-items:center; margin-bottom:6px;';
+    const lb = document.createElement('div'); lb.style.cssText = 'font-size:12.5px; line-height:1.35;'; lb.setAttribute('dir', 'auto');
+    const b = document.createElement('b'); b.setAttribute('dir', 'ltr'); b.textContent = a.no + ' '; lb.appendChild(b);
+    lb.appendChild(document.createTextNode(a.d.slice(0, 90) + ' — ' + _bqQty(a) + ' ' + a.uLbl));
+    const i = document.createElement('input'); i.type = 'number'; i.inputMode = 'decimal'; i.step = 'any'; i.min = '0'; i.setAttribute('dir', 'ltr'); i.dataset.no = a.no; i.placeholder = 'DH / ' + a.uLbl; i.value = a.pu == null ? '' : a.pu; i.style.cssText = inp;
+    row.appendChild(lb); row.appendChild(i); host.appendChild(row);
+  });
+  box.querySelector('[data-cancel]').onclick = ()=> ov.remove();
+  ov.addEventListener('click', e=>{ if(e.target === ov) ov.remove(); });
+  box.querySelector('[data-save]').onclick = ()=>{
+    const meta = {}; ['projet', 'client', 'adresse', 'ref'].forEach(k=>{ meta[k] = box.querySelector('[data-k="' + k + '"]').value.trim(); });
+    const tvaV = _mNum(box.querySelector('[data-k="tva"]').value), pu = {};
+    box.querySelectorAll('input[data-no]').forEach(i=>{ const v = _mNum(i.value); pu[i.dataset.no] = (v !== null && v > 0) ? v : null; });
+    ov.remove();
+    bqApplyEdits({meta: meta, tva: (tvaV !== null && tvaV >= 0 && tvaV <= 30) ? tvaV : null, pu: pu});
+  };
+}
+
+/* ---------- العرض فالدردشة (مدمج، كل لوط وكل مادة كتتفتح) ---------- */
+function bqLineObs(ln){
+  const o = [];
+  if(ln.obs) o.push(ln.obs);
+  if(ln.q !== null) o.push('Qté = ' + fmtNum(ln.q));
+  if(ln.ref) o.push('Art. ' + ln.ref + ' (' + fmtNum(ln.refVal) + ')' + (ln.k !== null ? ' × ' + fmtNum(ln.k) : ''));
+  else if(ln.k !== null) o.push('k = ' + fmtNum(ln.k));
+  (ln.notes || []).forEach(n=> o.push(n));
+  if(ln.est) o.push('estimé');
+  if(ln.flag) o.push('à vérifier');
+  return o.join(' ; ');
+}
+function appendBordereauCard(container, jsonText){
+  const wrap = document.createElement('div'); wrap.className = 'appt-action-card metre-card';
+  const info = _bqChain(jsonText);
+  let R = null;
+  if(info && info.data){ try{ R = computeBordereau(info.data); R.trunc = !!info.trunc; }catch(e){ console.error('bordereau:', e); } }
+  if(!R){ wrap.innerHTML = '<span class="appt-action-icon">⚠️</span> ما قدرتش نقرا جدول المتري (JSON غير صالح). كتب «عاود المتري» باش يتولد من جديد.'; container.appendChild(wrap); return; }
+  const mk = (tag, css, txt, dir)=>{ const e = document.createElement(tag); if(css) e.style.cssText = css; if(txt != null) e.textContent = txt; if(dir) e.setAttribute('dir', dir); return e; };
+  const head = document.createElement('div'); head.innerHTML = '<span class="appt-action-icon">📐</span> <strong>' + escapeHtml(R.title) + '</strong>'; wrap.appendChild(head);
+  wrap.appendChild(mk('div', 'font-size:12px; opacity:.85; margin:2px 0 6px;', R.stats.lots + ' لوط · ' + R.stats.arts + ' مادة · ' + R.stats.lines + ' سطر حساب (كلشي محسوب بالتطبيق)'));
+  if(R.trunc) wrap.appendChild(mk('div', 'font-size:12.5px; margin:6px 0; padding:6px 8px; border-radius:8px; background:rgba(245,158,11,.18);', '⚠️ الجواب تقطع قبل ما يكمل: اللي تحسب هو اللي كاين تحت. كتب «كمّل المتري» باش يزيد اللوطات الناقصة.'));
+  const tbl = (cols, rows, numFrom)=>{
+    const w = document.createElement('div'); w.className = 'table-wrap'; const t = document.createElement('table'); t.className = 'msg-table'; t.setAttribute('dir', 'auto');
+    const tr0 = document.createElement('tr'); cols.forEach(c=>{ const th = document.createElement('th'); th.textContent = c; tr0.appendChild(th); });
+    const th0 = document.createElement('thead'); th0.appendChild(tr0); t.appendChild(th0);
+    const tb = document.createElement('tbody');
+    rows.forEach(r=>{ const tr = document.createElement('tr'); r.forEach((c, i)=>{ const td = document.createElement('td'); if(c && typeof c === 'object'){ td.textContent = c.t == null ? '' : String(c.t); if(c.s){ const sm = document.createElement('div'); sm.style.cssText = 'font-size:10.5px; opacity:.7; line-height:1.35; margin-top:2px;'; sm.textContent = c.s; td.appendChild(sm); } } else td.textContent = c == null ? '' : String(c); if(i >= numFrom){ td.setAttribute('dir', 'ltr'); td.style.textAlign = 'right'; td.style.whiteSpace = 'nowrap'; } else td.setAttribute('dir', 'auto'); tr.appendChild(td); }); tb.appendChild(tr); });
+    t.appendChild(tb); w.appendChild(t); return w;
+  };
+  R.lots.forEach(lot=>{
+    const det = mk('details', 'margin:8px 0; border:1px solid rgba(127,127,127,.35); border-radius:10px; padding:6px 10px;');
+    det.appendChild(mk('summary', 'cursor:pointer; font-weight:700; font-size:13px;', 'LOT ' + lot.code + ' — ' + lot.titre.toUpperCase() + ' (' + lot.articles.length + ')', 'auto'));
+    lot.articles.forEach(a=>{
+      const d2 = mk('details', 'margin:6px 0 0;');
+      const s2 = mk('summary', 'cursor:pointer; font-size:12.5px; line-height:1.5;'); s2.setAttribute('dir', 'auto');
+      const b1 = mk('b', '', a.no + ' ', 'ltr'); const b2 = mk('b', 'white-space:nowrap;', ' ' + _bqQty(a) + ' ' + a.uLbl, 'ltr');
+      s2.appendChild(b1); s2.appendChild(document.createTextNode(a.d + ' — ')); s2.appendChild(b2);
+      if(a.pu) s2.appendChild(document.createTextNode('  (' + fmtNum(a.amount) + ' DH)'));
+      d2.appendChild(s2);
+      d2.appendChild(tbl(['التفصيل', 'Nbre', 'L', 'l', 'h', 'الكمية'], a.lines.map(ln=> [{t: ln.d + (ln.bad ? ' ⚠️ (ما تحسبش)' : ''), s: bqLineObs(ln)}, _bqCnt(ln.n), ln.L === null ? '' : fmtNum(ln.L), ln.l === null ? '' : fmtNum(ln.l), ln.h === null ? '' : fmtNum(ln.h), ln.partial == null ? '' : fmtNum(ln.partial)]), 1));
+      det.appendChild(d2);
+    });
+    wrap.appendChild(det);
+  });
+  if(R.hasPrices){
+    const tl = mk('div', 'margin:8px 0; font-size:13px; line-height:1.8;', null, 'auto');
+    tl.innerHTML = '💰 <b>Total HT</b>: <span dir="ltr">' + fmtNum(R.ht) + '</span> DH · <b>TVA ' + R.tvaRate + '%</b>: <span dir="ltr">' + fmtNum(R.tva) + '</span> · <b>TTC</b>: <span dir="ltr">' + fmtNum(R.ttc) + '</span> DH';
+    wrap.appendChild(tl);
+  }
+  if(R.mats.length){ wrap.appendChild(mk('div', 'font-weight:700; margin:10px 0 4px; font-size:13px;', '🧱 المواد المطلوبة (مع احتياط ' + R.marge + '%)')); wrap.appendChild(tbl(['المادة', 'الصافي', 'للطلب', 'الوحدة', ''], R.mats.map(m=> [m.m, fmtNum(m.net), fmtNum(m.gross), m.u, m.extra || '']), 1)); }
+  const notes = [];
+  R.ctl.forEach(c=> notes.push((c.ok ? '✅ ' : '⚠️ ') + c.ar));
+  R.warn.filter(w=> !R.ctl.some(c=> c.ar === w.ar)).forEach(w=> notes.push('⚠️ ' + w.ar));
+  R.hyp.forEach(h=> notes.push('فرضية: ' + h));
+  if(notes.length){
+    const nd = mk('details', 'margin:8px 0; font-size:12.5px; line-height:1.7;');
+    nd.appendChild(mk('summary', 'cursor:pointer; font-weight:700;', '🔎 المراجعة والفرضيات (' + notes.length + ')'));
+    const nb = mk('div', 'margin-top:4px;', null, 'auto'); nb.innerHTML = notes.map(n=> escapeHtml(n)).join('<br>'); nd.appendChild(nb); wrap.appendChild(nd);
+  }
+  wrap.appendChild(mk('div', 'font-size:11.5px; opacity:.75; margin-top:6px;', 'الكميات صافية. نسب الحديد والمواد تقديرية شائعة؛ مكتب الدراسات (BET) هو المرجع النهائي قبل الطلب.'));
+  const btnRow = mk('div', 'display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;');
+  [['👁 PDF', ()=> openBordereauPreview(R, 'pdf')], ['👁 Excel', ()=> openBordereauPreview(R, 'excel')], ['💰 الأثمنة والمعلومات', ()=> bqOpenInfoPanel(R)]].forEach(([lbl, fn])=>{
+    const b = document.createElement('button'); b.className = 'btn-ghost'; b.style.cssText = 'padding:8px 14px; font-size:12.5px;'; b.textContent = lbl; b.addEventListener('click', fn); btnRow.appendChild(b);
+  });
+  wrap.appendChild(btnRow); container.appendChild(wrap);
+}
+
+/* ---------- المعاينة والتحميل (PDF / Excel) ---------- */
+function _bqFileBase(R){
+  const nm = (R.meta.projet || 'Projet').replace(/[\\\/:*?"<>|]/g, '-').trim().slice(0, 60);
+  return 'Metre - ' + nm + ' - ' + R.meta.date;
+}
+function openBordereauPreview(R, first){
+  const base = _bqFileBase(R);
+  const all = {
+    pdf: {key: 'pdf', label: 'PDF', filename: base + '.pdf', render: async ()=>{ const w = document.createElement('div'); await renderPdfPreview(w, buildBordereauPdfDoc(R)); return w; }, blob: async ()=> buildBordereauPdfDoc(R).output('blob')},
+    excel: {key: 'excel', label: 'Excel', filename: base + '.xlsx', render: async ()=> bordereauPreviewNode(R), blob: ()=> buildBordereauXlsxBlob(R)}
+  };
+  openFilePreview({title: R.title, first: first, variants: [all.pdf, all.excel], onEdit: ()=> _prefillChat('عليوة، عدّل المتري: ')});
+}
+function _bqPdfTxt(s){
+  s = String(s == null ? '' : s);
+  if(containsArabic(s)) return s;
+  return s.replace(/[\u2018\u2019\u201B]/g, "'").replace(/[\u201C\u201D\u201E]/g, '"').replace(/[\u2013\u2014\u2212]/g, '-').replace(/\u2026/g, '...')
+    .replace(/\u0153/g, 'oe').replace(/\u0152/g, 'OE').replace(/\u2248/g, '~').replace(/\u2265/g, '>=').replace(/\u2264/g, '<=').replace(/\u2192/g, '->')
+    .replace(/[\u202f\u2009]/g, ' ').replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F]/gu, '');
+}
+function _bqVisibleLines(a){ return a.lines.filter(l=> !l.bad && l.partial != null); }
+
+function bordereauPreviewNode(R){
+  const c = loadCompanyInfo(), hasP = R.hasPrices, root = document.createElement('div');
+  root.style.cssText = 'background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:10px; font-size:12px; color:#111; direction:ltr; text-align:left;';
+  root.setAttribute('dir', 'ltr');
+  const head = document.createElement('div'); head.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:8px;';
+  if(c.logoDataUrl){ const im = document.createElement('img'); im.src = c.logoDataUrl; im.style.cssText = 'height:42px;'; head.appendChild(im); }
+  const t = document.createElement('div');
+  const t1 = document.createElement('div'); t1.style.cssText = 'font-weight:800; font-size:16px; color:#1F4E79;'; t1.textContent = 'BORDEREAU DE MÉTRÉ';
+  const t2 = document.createElement('div'); t2.style.cssText = 'color:#334155; font-size:11.5px;'; t2.setAttribute('dir', 'auto');
+  t2.textContent = [R.meta.projet && 'Projet : ' + R.meta.projet, R.meta.client && 'Client : ' + R.meta.client, R.meta.adresse && 'Adresse : ' + R.meta.adresse, R.meta.ref && 'Réf. : ' + R.meta.ref, 'Date : ' + frDate(R.meta.date)].filter(Boolean).join('  —  ');
+  t.appendChild(t1); t.appendChild(t2); head.appendChild(t); root.appendChild(head);
+  const wrap = document.createElement('div'); wrap.style.cssText = 'overflow-x:auto;';
+  const tb = document.createElement('table'); tb.style.cssText = 'border-collapse:collapse; width:100%; min-width:880px; font-size:11.5px;'; tb.setAttribute('dir', 'ltr');
+  const NC = hasP ? 12 : 10;
+  const row = (cells, o)=>{
+    o = o || {}; const tr = document.createElement('tr');
+    cells.forEach((cell, i)=>{
+      const cfg = (cell && typeof cell === 'object') ? cell : {v: cell};
+      const td = document.createElement(o.th ? 'th' : 'td'); td.textContent = cfg.v == null ? '' : String(cfg.v);
+      if(cfg.span) td.colSpan = cfg.span;
+      const num = o.nums && o.nums.includes(i);
+      td.setAttribute('dir', num ? 'ltr' : 'auto');
+      td.style.cssText = 'border:1px solid #cbd5e1; padding:4px 6px;' + (o.bg ? 'background:' + o.bg + ';' : '') + (o.color ? 'color:' + o.color + ';' : '') + (o.bold ? 'font-weight:700;' : '') + (num ? 'text-align:right; white-space:nowrap;' : '') + (o.th ? 'text-align:center;' : (num ? '' : 'text-align:left;')) + (cfg.right ? 'text-align:right;' : '');
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  };
+  const heads = ['N°', 'Désignation des ouvrages', 'U', 'Nbre', 'Long.', 'Larg.', 'Haut./Ép.', 'Partiel', 'Quantité'].concat(hasP ? ['P.U. HT', 'Montant HT'] : [], ['Observations']);
+  row(heads, {th: true, bg: '#1F4E79', color: '#fff', bold: true});
+  const nums = [3, 4, 5, 6, 7, 8].concat(hasP ? [9, 10] : []);
+  R.lots.forEach(lot=>{
+    row([{v: 'LOT ' + lot.code + ' — ' + lot.titre.toUpperCase(), span: NC}], {bg: '#1F4E79', color: '#fff', bold: true});
+    lot.articles.forEach(a=>{
+      row([a.no, a.d, a.uLbl, {v: '', span: 6}].concat(hasP ? [a.pu ? fmtNum(a.pu) : '', ''] : [], [a.obs]), {bg: '#DDEBF7', bold: true, nums: hasP ? [9] : []});
+      _bqVisibleLines(a).forEach(ln=>{
+        row(['', ln.d, '', _bqCnt(ln.n), ln.L === null ? '' : fmtNum(ln.L), ln.l === null ? '' : fmtNum(ln.l), ln.h === null ? '' : fmtNum(ln.h), fmtNum(ln.partial), ''].concat(hasP ? ['', ''] : [], [bqLineObs(ln)]), {nums: nums, color: ln.partial < 0 ? '#b91c1c' : ''});
+      });
+      row(['', {v: 'Total ' + a.no, right: true}, a.uLbl, '', '', '', '', '', _bqQty(a)].concat(hasP ? ['', a.pu ? fmtNum(a.amount) : ''] : [], ['']), {bg: '#F2F2F2', bold: true, nums: nums});
+    });
+    if(hasP) row([{v: 'TOTAL LOT ' + lot.code, span: 10, right: true}, fmtNum(lot.amount), ''], {bg: '#DDE6F2', bold: true, nums: [1]});
+  });
+  wrap.appendChild(tb); root.appendChild(wrap);
+  if(hasP){
+    const p = document.createElement('div'); p.style.cssText = 'margin-top:10px; font-weight:700; text-align:right;'; p.setAttribute('dir', 'ltr');
+    p.textContent = 'Total HT : ' + fmtNum(R.ht) + ' DH   |   TVA ' + R.tvaRate + ' % : ' + fmtNum(R.tva) + '   |   Total TTC : ' + fmtNum(R.ttc) + ' DH';
+    root.appendChild(p);
+  }
+  if(R.mats.length){
+    const h = document.createElement('div'); h.style.cssText = 'margin:12px 0 4px; font-weight:700; color:#1F4E79;'; h.textContent = 'Matériaux à approvisionner (marge ' + R.marge + ' %)'; root.appendChild(h);
+    const t3 = document.createElement('table'); t3.style.cssText = 'border-collapse:collapse; font-size:11.5px;';
+    [['Matériau', 'Unité', 'Quantité nette', 'À commander', '']].concat(R.mats.map(m=> [m.m, m.u, fmtNum(m.net), fmtNum(m.gross), m.extra || ''])).forEach((r, i)=>{
+      const tr = document.createElement('tr'); r.forEach((v, j)=>{ const td = document.createElement(i ? 'td' : 'th'); td.textContent = v; td.style.cssText = 'border:1px solid #cbd5e1; padding:4px 8px;' + (i ? '' : 'background:#1F4E79; color:#fff;') + (i && (j === 2 || j === 3) ? 'text-align:right;' : ''); if(i && (j === 2 || j === 3)) td.setAttribute('dir', 'ltr'); tr.appendChild(td); }); t3.appendChild(tr);
+    }); root.appendChild(t3);
+  }
+  const notes = R.hyp.map(h=> 'Hypothèse : ' + h).concat(R.ctl.map(c=> (c.ok ? 'OK — ' : 'À vérifier — ') + c.fr), R.warn.filter(w=> !R.ctl.some(c=> c.fr === w.fr)).map(w=> 'À vérifier — ' + w.fr));
+  if(notes.length){ const n = document.createElement('div'); n.style.cssText = 'margin-top:10px; color:#334155; line-height:1.6;'; n.setAttribute('dir', 'auto'); n.innerHTML = notes.map(x=> escapeHtml(x)).join('<br>'); root.appendChild(n); }
+  return root;
+}
+
+function buildBordereauPdfDoc(R){
+  if(!window.jspdf) throw new Error('مكتبة PDF ماتحملاتش بعد، تأكد من الإنترنت.');
+  const c = loadCompanyInfo(), { jsPDF } = window.jspdf, T = _bqPdfTxt, hasP = R.hasPrices;
+  const doc = new jsPDF({unit: 'mm', format: 'a4', orientation: 'l'});
+  const PW = 297, PH = 210, ML = 12, MR = 12, RIGHT = PW - MR, CW = PW - ML - MR, BLUE = [31, 78, 121];
+  // ===== الرأس =====
+  let hasLogo = false;
+  if(c.logoDataUrl){ try{ const p = doc.getImageProperties(c.logoDataUrl), w = 46, h = Math.min(18, w * p.height / p.width); doc.addImage(c.logoDataUrl, p.fileType || 'PNG', ML, 9, w, h); hasLogo = true; }catch(e){} }
+  if(!hasLogo){ doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(20, 40, 90); doc.text('ALIOUA BTP', ML, 17); }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]); doc.text('BORDEREAU DE MÉTRÉ', PW / 2, 16, {align: 'center'});
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(100, 100, 100); doc.text('Détail quantitatif par lot et par article', PW / 2, 22, {align: 'center'});
+  doc.setFontSize(8); doc.setTextColor(90, 90, 90);
+  [(c.name && !containsArabic(c.name)) ? c.name : 'ALIOUA BTP', c.email, c.phone].filter(Boolean).forEach((t, i)=> doc.text(T(t), RIGHT, 12 + i * 4, {align: 'right'}));
+  doc.setDrawColor(BLUE[0], BLUE[1], BLUE[2]); doc.setLineWidth(0.6); doc.line(ML, 29, RIGHT, 29);
+  const lab = {fontStyle: 'bold', fillColor: [232, 240, 250], textColor: [30, 60, 100]};
+  arabicAwareAutoTable(doc, {
+    startY: 32, theme: 'grid', body: [
+      [{content: 'Projet', styles: lab}, R.meta.projet || '-', {content: 'Client', styles: lab}, R.meta.client || '-'],
+      [{content: 'Adresse / Lieu', styles: lab}, R.meta.adresse || '-', {content: 'Réf. / Date', styles: lab}, (R.meta.ref ? T(R.meta.ref) + '   -   ' : '') + frDate(R.meta.date)]
+    ],
+    styles: {fontSize: 9, cellPadding: 1.8, lineColor: [170, 170, 170], lineWidth: 0.15, textColor: [20, 20, 20]},
+    columnStyles: {0: {cellWidth: 30}, 1: {cellWidth: 106}, 2: {cellWidth: 30}, 3: {cellWidth: 107}}, margin: {top: 15, bottom: 18, left: ML, right: MR}
+  });
+  let y = doc.lastAutoTable.finalY + 5;
+
+  // ===== الجدول الرئيسي =====
+  const NC = hasP ? 12 : 10;
+  const head = ['N°', 'Désignation des ouvrages', 'U', 'Nbre', 'Long.', 'Larg.', 'Haut./Ép.', 'Partiel', 'Quantité'].concat(hasP ? ['P.U. HT', 'Montant HT'] : [], ['Observations']);
+  const widths = hasP ? [13, 64, 10, 12, 15, 15, 15, 21, 23, 21, 27, 37] : [14, 80, 11, 14, 17, 17, 17, 24, 26, 53];
+  const cs = {}; widths.forEach((w, i)=>{ cs[i] = {cellWidth: w}; });
+  [3, 4, 5, 6, 7, 8].concat(hasP ? [9, 10] : []).forEach(i=>{ cs[i].halign = 'right'; }); cs[2].halign = 'center'; cs[0].halign = 'center';
+  const body = [];
+  R.lots.forEach(lot=>{
+    body.push([{content: T('LOT ' + lot.code + ' - ' + lot.titre.toUpperCase()), colSpan: NC, styles: {fillColor: BLUE, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9.5, halign: 'left'}}]);
+    lot.articles.forEach(a=>{
+      const st = {fillColor: [221, 235, 247], fontStyle: 'bold', textColor: [20, 20, 20]};
+      body.push([{content: a.no, styles: st}, {content: T(a.d), styles: st}, {content: a.uLbl, styles: Object.assign({halign: 'center'}, st)}, {content: '', colSpan: 6, styles: st}].concat(hasP ? [{content: a.pu ? fmtNum(a.pu) : '', styles: Object.assign({halign: 'right'}, st)}, {content: '', styles: st}] : [], [{content: T(a.obs), styles: Object.assign({}, st, {fontStyle: 'italic'})}]));
+      _bqVisibleLines(a).forEach(ln=>{
+        const neg = ln.partial < 0, rc = neg ? {textColor: [185, 28, 28]} : {};
+        body.push(['', {content: T(ln.d), styles: rc}, '', _bqCnt(ln.n), ln.L === null ? '' : fmtNum(ln.L), ln.l === null ? '' : fmtNum(ln.l), ln.h === null ? '' : fmtNum(ln.h), {content: fmtNum(ln.partial), styles: rc}, ''].concat(hasP ? ['', ''] : [], [{content: T(bqLineObs(ln)), styles: {fontSize: 7.2, textColor: [90, 90, 90]}}]));
+      });
+      const tt = {fillColor: [242, 242, 242], fontStyle: 'bold', textColor: [20, 20, 20]};
+      body.push([{content: '', styles: tt}, {content: 'Total ' + a.no, styles: Object.assign({halign: 'right'}, tt)}, {content: a.uLbl, styles: Object.assign({halign: 'center'}, tt)}, {content: '', colSpan: 5, styles: tt}, {content: _bqQty(a), styles: Object.assign({halign: 'right'}, tt)}].concat(hasP ? [{content: '', styles: tt}, {content: a.pu ? fmtNum(a.amount) : '', styles: Object.assign({halign: 'right'}, tt)}] : [], [{content: '', styles: tt}]));
+    });
+    if(hasP) body.push([{content: T('TOTAL LOT ' + lot.code + ' - ' + lot.titre.toUpperCase()), colSpan: 10, styles: {halign: 'right', fontStyle: 'bold', fillColor: [221, 230, 242]}}, {content: fmtNum(lot.amount), styles: {halign: 'right', fontStyle: 'bold', fillColor: [221, 230, 242]}}, {content: '', styles: {fillColor: [221, 230, 242]}}]);
+  });
+  arabicAwareAutoTable(doc, {
+    startY: y, head: [head], body: body, theme: 'grid', rowPageBreak: 'avoid',
+    styles: {fontSize: 8, cellPadding: 1.3, lineColor: [170, 170, 170], lineWidth: 0.1, textColor: [20, 20, 20], halign: 'left', valign: 'middle'},
+    headStyles: {fillColor: BLUE, textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 8.5},
+    columnStyles: cs, margin: {top: 14, bottom: 16, left: ML, right: MR}
+  });
+  y = doc.lastAutoTable.finalY + 7;
+  const ensure = h=>{ if(y + h > PH - 16){ doc.addPage(); y = 16; } };
+  const heading = t=>{ ensure(16); doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]); doc.text(t, ML, y + 4); y += 8; };
+  const bullet = txt=>{
+    txt = String(txt);
+    if(containsArabic(txt)){ ensure(10); y = pdfParagraph(doc, '• ' + txt, RIGHT, y, CW - 4, {fontPt: 9}) + 1; }
+    else { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(50, 50, 50); const ls = doc.splitTextToSize('- ' + T(txt), CW); ensure(ls.length * 4.2 + 2); ls.forEach((l, i)=> doc.text(l, ML, y + 3.5 + i * 4.2)); y += ls.length * 4.2 + 1; }
+  };
+
+  // ===== الملخص المالي (إلا كانت أثمنة) =====
+  if(hasP){
+    heading('Récapitulatif par lot');
+    const rb = R.lots.map(l=> [l.code, T(l.titre.toUpperCase()), fmtNum(l.amount)]);
+    const tot = {fontStyle: 'bold', fillColor: [221, 230, 242]};
+    rb.push([{content: 'TOTAL HT (DH)', colSpan: 2, styles: Object.assign({halign: 'right'}, tot)}, {content: fmtNum(R.ht), styles: Object.assign({halign: 'right'}, tot)}]);
+    rb.push([{content: 'TVA ' + R.tvaRate + ' %', colSpan: 2, styles: Object.assign({halign: 'right'}, tot)}, {content: fmtNum(R.tva), styles: Object.assign({halign: 'right'}, tot)}]);
+    rb.push([{content: 'TOTAL TTC (DH)', colSpan: 2, styles: Object.assign({halign: 'right'}, tot, {fillColor: BLUE, textColor: [255, 255, 255]})}, {content: fmtNum(R.ttc), styles: Object.assign({halign: 'right'}, tot, {fillColor: BLUE, textColor: [255, 255, 255]})}]);
+    arabicAwareAutoTable(doc, {startY: y, head: [['Lot', 'Désignation', 'Montant HT (DH)']], body: rb, theme: 'grid', styles: {fontSize: 8.5, cellPadding: 1.6, lineColor: [170, 170, 170], lineWidth: 0.1}, headStyles: {fillColor: BLUE, textColor: 255, fontStyle: 'bold'}, columnStyles: {0: {cellWidth: 18, halign: 'center'}, 1: {cellWidth: 82}, 2: {cellWidth: 40, halign: 'right'}}, margin: {top: 15, bottom: 18, left: RIGHT - 140, right: MR}});
+    y = doc.lastAutoTable.finalY + 6;
+    ensure(10); doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(30, 30, 30);
+    const ar = doc.splitTextToSize('Arrêté le présent bordereau à la somme TTC de : ' + amountWordsFr(R.ttc), CW); ar.forEach((l, i)=> doc.text(l, ML, y + 3.5 + i * 4.5)); y += ar.length * 4.5 + 6;
+  }
+  // ===== المواد =====
+  if(R.mats.length){
+    heading('Matériaux à approvisionner (marge ' + R.marge + ' %)');
+    arabicAwareAutoTable(doc, {startY: y, head: [['Matériau', 'Unité', 'Quantité nette', 'Quantité à commander', 'Équivalent']], body: R.mats.map(m=> [T(m.m), T(m.u), fmtNum(m.net), fmtNum(m.gross), T(m.extra || '')]), theme: 'grid', styles: {fontSize: 8.5, cellPadding: 1.6, lineColor: [170, 170, 170], lineWidth: 0.1}, headStyles: {fillColor: BLUE, textColor: 255, fontStyle: 'bold'}, columnStyles: {0: {cellWidth: 80}, 1: {cellWidth: 25, halign: 'center'}, 2: {cellWidth: 40, halign: 'right'}, 3: {cellWidth: 50, halign: 'right'}, 4: {cellWidth: 78}}, margin: {top: 15, bottom: 18, left: ML, right: MR}});
+    y = doc.lastAutoTable.finalY + 7;
+  }
+  // ===== الفرضيات والمراجعة =====
+  const notes = R.hyp.slice();
+  const ctlNotes = R.ctl.map(x=> (x.ok ? 'Contrôle OK - ' : 'A vérifier - ') + x.fr);
+  const warnNotes = R.warn.filter(w=> !R.ctl.some(x=> x.fr === w.fr)).map(w=> 'A vérifier - ' + w.fr);
+  if(notes.length){ heading('Hypothèses de métré'); notes.forEach(bullet); y += 2; }
+  heading('Observations');
+  ['Quantités nettes (hors pertes, chutes et marges d\'approvisionnement).', 'Les quantités d\'acier estimées par ratio sont indicatives : le bureau d\'études (BET) fait foi avant commande.'].concat(ctlNotes, warnNotes).forEach(bullet);
+  // ===== التوقيعات =====
+  ensure(34); y += 4;
+  doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.3);
+  [['Établi par :  ' + ((c.name && !containsArabic(c.name)) ? c.name : 'ALIOUA BTP'), ML], ['Vérifié et approuvé par :', ML + 100]].forEach(([t, x])=>{ doc.rect(x, y, 90, 24); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(40, 40, 40); doc.text(T(t), x + 3, y + 5.5); });
+  // ===== التذييل =====
+  const n = doc.getNumberOfPages(), brand = (c.name && !containsArabic(c.name)) ? c.name : 'ALIOUA BTP', proj = (R.meta.projet && !containsArabic(R.meta.projet)) ? ' - ' + T(R.meta.projet) : '';
+  for(let i = 1; i <= n; i++){
+    doc.setPage(i); doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2); doc.line(ML, PH - 12, RIGHT, PH - 12);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(120, 120, 120);
+    doc.text(brand + '  -  Bordereau de métré' + proj + '  -  Page ' + i + ' / ' + n, PW / 2, PH - 7, {align: 'center'});
+  }
+  return doc;
+}
+
+function _bqXlsxPlain(R){
+  if(!window.XLSX) throw new Error('مكتبة Excel ماتحملاتش بعد، تأكد من الإنترنت.');
+  const aoa = [['BORDEREAU DE MÉTRÉ'], ['Projet', R.meta.projet, 'Client', R.meta.client], [], ['N°', 'Désignation', 'U', 'Nbre', 'Long.', 'Larg.', 'Haut./Ép.', 'Partiel', 'Quantité', 'P.U. HT', 'Montant HT', 'Observations']];
+  R.lots.forEach(lot=>{ aoa.push(['LOT ' + lot.code + ' - ' + lot.titre]); lot.articles.forEach(a=>{ aoa.push([a.no, a.d, a.uLbl]); _bqVisibleLines(a).forEach(ln=> aoa.push(['', ln.d, '', ln.n, ln.L, ln.l, ln.h, ln.partial, '', '', '', bqLineObs(ln)])); aoa.push(['', 'Total ' + a.no, a.uLbl, '', '', '', '', '', a.total, a.pu || '', a.pu ? a.amount : '', '']); }); });
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Métré');
+  return new Blob([XLSX.write(wb, {bookType: 'xlsx', type: 'array'})], {type: 'application/octet-stream'});
+}
+
+async function buildBordereauXlsxBlob(R){
+  try{ await loadScriptOnce(EXCELJS_URL); }catch(e){ return _bqXlsxPlain(R); }
+  const c = loadCompanyInfo(), hasP = R.hasPrices;
+  const wb = new ExcelJS.Workbook(); wb.creator = 'ALIOUA BTP'; wb.created = new Date();
+  let logoId = null; const lm = c.logoDataUrl && /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(c.logoDataUrl);
+  if(lm) logoId = wb.addImage({base64: lm[2], extension: /png/i.test(lm[1]) ? 'png' : 'jpeg'});
+  const NC = hasP ? 12 : 10, brand = (c.name && !containsArabic(c.name)) ? c.name : 'ALIOUA BTP';
+  const ws = wb.addWorksheet('Métré', {views: [{state: 'frozen', ySplit: 8}], pageSetup: {paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: {left: 0.35, right: 0.35, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3}}});
+  ws.columns = [{width: 8}, {width: 58}, {width: 6}, {width: 8}, {width: 9}, {width: 9}, {width: 10}, {width: 12}, {width: 14}].concat(hasP ? [{width: 13}, {width: 16}] : [], [{width: 40}]);
+  ws.pageSetup.printTitlesRow = '8:8';
+  const thin = {style: 'thin', color: {argb: 'FFBFC7D1'}}, border = {top: thin, left: thin, bottom: thin, right: thin};
+  const fillOf = argb=> ({type: 'pattern', pattern: 'solid', fgColor: {argb: argb}});
+  const L = n=> String.fromCharCode(64 + n), NF = '#,##0.00;[Red]-#,##0.00', DF = '0.00';
+  [1, 2, 3].forEach(r=> ws.getRow(r).height = 17);
+  if(logoId !== null) ws.addImage(logoId, {tl: {col: 0, row: 0}, ext: {width: 150, height: 50}});
+  [[1, brand, {bold: true, size: 13, color: {argb: 'FF1F4E79'}}], [2, c.email || '', {size: 9, color: {argb: 'FF64748B'}}], [3, c.phone || '', {size: 9, color: {argb: 'FF64748B'}}]].forEach(([r, v, f])=>{ ws.mergeCells(r, 6, r, NC); const cell = ws.getCell(r, 6); cell.value = v; cell.font = f; cell.alignment = {horizontal: 'right'}; });
+  ws.mergeCells(4, 1, 4, NC); const tt = ws.getCell(4, 1); tt.value = 'BORDEREAU DE MÉTRÉ'; tt.font = {bold: true, size: 16, color: {argb: 'FF1F4E79'}}; tt.alignment = {horizontal: 'center', vertical: 'middle'}; ws.getRow(4).height = 26;
+  const info = (r, a, b)=>{ ws.mergeCells(r, 1, r, 5); ws.mergeCells(r, 6, r, NC); [[1, a], [6, b]].forEach(([col, v])=>{ const cell = ws.getCell(r, col); cell.value = v; cell.font = {bold: true, size: 10}; cell.alignment = {vertical: 'middle', wrapText: true}; cell.border = border; cell.fill = fillOf('FFE8F0FA'); }); ws.getRow(r).height = 20; };
+  info(5, 'Projet : ' + (R.meta.projet || '-'), 'Client : ' + (R.meta.client || '-'));
+  info(6, 'Adresse / Lieu : ' + (R.meta.adresse || '-'), 'Réf. : ' + (R.meta.ref || '-') + '      Date : ' + frDate(R.meta.date));
+  ws.getRow(7).height = 6;
+  const hr = ws.getRow(8); hr.height = 24;
+  ['N°', 'Désignation des ouvrages', 'U', 'Nbre', 'Long.', 'Larg.', 'Haut./Ép.', 'Partiel', 'Quantité'].concat(hasP ? ['P.U. HT', 'Montant HT'] : [], ['Observations']).forEach((h, i)=>{ const cell = hr.getCell(i + 1); cell.value = h; cell.font = {bold: true, color: {argb: 'FFFFFFFF'}}; cell.fill = fillOf('FF1F4E79'); cell.alignment = {horizontal: 'center', vertical: 'middle', wrapText: true}; cell.border = border; });
+
+  // ترتيب الأسطر (قبل الكتابة) باش المراجع بين المواد تعرف الصفوف
+  let rr = 9; const byNo = {};
+  R.arts.forEach(a=>{ byNo[a.no] = a; });
+  R.lots.forEach(lot=>{ lot._r = rr++; lot.articles.forEach(a=>{ a._h = rr++; a._f = rr; a._v = _bqVisibleLines(a); rr += a._v.length; a._l = rr - 1; a._t = rr++; }); if(hasP) lot._t = rr++; });
+  const OC = NC, PC = 8, QC = 9, UC = 10, MC = 11;
+  const styleRow = (r, fill, font)=>{ for(let col = 1; col <= NC; col++){ const cell = ws.getCell(r, col); cell.border = border; if(fill) cell.fill = fillOf(fill); if(font) cell.font = font; } };
+  R.lots.forEach(lot=>{
+    ws.mergeCells(lot._r, 1, lot._r, NC); styleRow(lot._r, 'FF1F4E79', {bold: true, size: 11, color: {argb: 'FFFFFFFF'}});
+    const lc = ws.getCell(lot._r, 1); lc.value = 'LOT ' + lot.code + ' — ' + lot.titre.toUpperCase(); lc.alignment = {vertical: 'middle'}; ws.getRow(lot._r).height = 20;
+    lot.articles.forEach(a=>{
+      styleRow(a._h, 'FFDDEBF7', {bold: true});
+      ws.getCell(a._h, 1).value = a.no; ws.getCell(a._h, 1).alignment = {horizontal: 'center', vertical: 'top'};
+      const dc = ws.getCell(a._h, 2); dc.value = a.d; dc.alignment = {wrapText: true, vertical: 'top'};
+      const uc = ws.getCell(a._h, 3); uc.value = a.uLbl; uc.alignment = {horizontal: 'center', vertical: 'top'};
+      if(hasP){ const pc = ws.getCell(a._h, UC); pc.value = a.pu || null; pc.numFmt = NF; pc.font = {bold: true, color: {argb: 'FF1D4ED8'}}; pc.alignment = {horizontal: 'right', vertical: 'top'}; }
+      const oc = ws.getCell(a._h, OC); oc.value = a.obs || null; oc.font = {italic: true}; oc.alignment = {wrapText: true, vertical: 'top'};
+      a._v.forEach((ln, k)=>{
+        const r = a._f + k; styleRow(r, k % 2 ? 'FFF8FAFC' : null);
+        const bc = ws.getCell(r, 2); bc.value = ln.d; bc.alignment = {wrapText: true, vertical: 'top', indent: 1};
+        [[4, ln.n], [5, ln.L], [6, ln.l], [7, ln.h]].forEach(([col, v])=>{ const cell = ws.getCell(r, col); if(v !== null){ cell.value = v; cell.numFmt = col === 4 ? '0.##' : DF; } cell.alignment = {horizontal: 'right', vertical: 'top'}; });
+        const f = [];
+        if(ln.n !== null) f.push('D' + r);
+        if(!ln.info){ if(ln.L !== null) f.push('E' + r); if(ln.l !== null) f.push('F' + r); if(ln.h !== null) f.push('G' + r); }
+        if(ln.q !== null) f.push(String(ln.q)); if(ln.k !== null) f.push(String(ln.k));
+        if(ln.ref && byNo[ln.ref]) f.push('I' + byNo[ln.ref]._t);
+        if(!f.length) f.push('1');
+        const pcell = ws.getCell(r, PC); pcell.value = {formula: (ln.neg ? '-' : '') + 'ROUND(' + f.join('*') + ',2)', result: ln.partial}; pcell.numFmt = NF; pcell.alignment = {horizontal: 'right', vertical: 'top'};
+        const o = ws.getCell(r, OC); o.value = bqLineObs(ln) || null; o.font = {size: 9, color: {argb: 'FF64748B'}}; o.alignment = {wrapText: true, vertical: 'top'};
+      });
+      styleRow(a._t, 'FFF2F2F2', {bold: true});
+      const tl = ws.getCell(a._t, 2); tl.value = 'Total ' + a.no; tl.alignment = {horizontal: 'right'};
+      const tu = ws.getCell(a._t, 3); tu.value = a.uLbl; tu.alignment = {horizontal: 'center'};
+      const tq = ws.getCell(a._t, QC); tq.value = a._v.length ? {formula: 'ROUND(SUM(H' + a._f + ':H' + a._l + '),2)', result: a.total} : 0; tq.numFmt = (BQ_COUNT_UNITS.includes(a.u) && Number.isInteger(a.total)) ? '#,##0' : NF; tq.alignment = {horizontal: 'right'};
+      if(hasP){ const mc = ws.getCell(a._t, MC); mc.value = {formula: 'IF(J' + a._h + '="","",ROUND(I' + a._t + '*J' + a._h + ',2))', result: a.pu ? a.amount : ''}; mc.numFmt = NF; mc.alignment = {horizontal: 'right'}; }
+    });
+    if(hasP){
+      ws.mergeCells(lot._t, 1, lot._t, UC); styleRow(lot._t, 'FFDDE6F2', {bold: true});
+      const lt = ws.getCell(lot._t, 1); lt.value = 'TOTAL LOT ' + lot.code + ' — ' + lot.titre.toUpperCase(); lt.alignment = {horizontal: 'right'};
+      const lm2 = ws.getCell(lot._t, MC); lm2.value = {formula: 'SUM(K' + (lot._r + 1) + ':K' + (lot._t - 1) + ')', result: lot.amount}; lm2.numFmt = NF; lm2.alignment = {horizontal: 'right'};
+    }
+  });
+  ws.headerFooter.oddFooter = '&L' + brand + '&CBordereau de métré&RPage &P / &N';
+
+  // ورقة الملخص المالي
+  if(hasP){
+    const w2 = wb.addWorksheet('Récapitulatif', {pageSetup: {paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0}});
+    w2.columns = [{width: 10}, {width: 56}, {width: 22}];
+    w2.mergeCells('A1:C1'); w2.getCell('A1').value = 'RÉCAPITULATIF — ' + (R.meta.projet || 'Métré'); w2.getCell('A1').font = {bold: true, size: 14, color: {argb: 'FF1F4E79'}}; w2.getRow(1).height = 24;
+    ['Lot', 'Désignation', 'Montant HT (DH)'].forEach((h, i)=>{ const cell = w2.getCell(3, i + 1); cell.value = h; cell.font = {bold: true, color: {argb: 'FFFFFFFF'}}; cell.fill = fillOf('FF1F4E79'); cell.border = border; cell.alignment = {horizontal: 'center'}; });
+    let r2 = 4;
+    R.lots.forEach(lot=>{ w2.getCell(r2, 1).value = lot.code; w2.getCell(r2, 2).value = lot.titre.toUpperCase(); const mc = w2.getCell(r2, 3); mc.value = {formula: "'Métré'!K" + lot._t, result: lot.amount}; mc.numFmt = NF; for(let k = 1; k <= 3; k++) w2.getCell(r2, k).border = border; w2.getCell(r2, 1).alignment = {horizontal: 'center'}; r2++; });
+    const htRow = r2, tvaRow = r2 + 1, ttcRow = r2 + 2;
+    w2.getCell(htRow, 2).value = 'TOTAL HT (DH)'; w2.getCell(htRow, 3).value = {formula: 'SUM(C4:C' + (htRow - 1) + ')', result: R.ht};
+    w2.getCell(tvaRow, 1).value = R.tvaRate; w2.getCell(tvaRow, 1).numFmt = '0"%"'; w2.getCell(tvaRow, 1).font = {bold: true, color: {argb: 'FF1D4ED8'}}; w2.getCell(tvaRow, 2).value = 'TVA'; w2.getCell(tvaRow, 3).value = {formula: 'ROUND(C' + htRow + '*A' + tvaRow + '/100,2)', result: R.tva};
+    w2.getCell(ttcRow, 2).value = 'TOTAL TTC (DH)'; w2.getCell(ttcRow, 3).value = {formula: 'C' + htRow + '+C' + tvaRow, result: R.ttc};
+    [htRow, tvaRow, ttcRow].forEach((r, i)=>{ for(let k = 1; k <= 3; k++){ const cell = w2.getCell(r, k); cell.border = border; cell.fill = fillOf(i === 2 ? 'FF1F4E79' : 'FFDDE6F2'); cell.font = {bold: true, color: {argb: i === 2 ? 'FFFFFFFF' : (k === 1 && i === 1 ? 'FF1D4ED8' : 'FF000000')}}; } w2.getCell(r, 2).alignment = {horizontal: 'right'}; w2.getCell(r, 3).numFmt = NF; });
+    w2.mergeCells(ttcRow + 2, 1, ttcRow + 2, 3); const ar = w2.getCell(ttcRow + 2, 1); ar.value = 'Arrêté le présent bordereau à la somme TTC de : ' + amountWordsFr(R.ttc); ar.alignment = {wrapText: true, vertical: 'top'}; w2.getRow(ttcRow + 2).height = 34;
+  }
+  // ورقة المواد
+  if(R.mats.length){
+    const w3 = wb.addWorksheet('Matériaux', {pageSetup: {paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0}});
+    w3.columns = [{width: 34}, {width: 10}, {width: 16}, {width: 11}, {width: 20}, {width: 26}];
+    w3.mergeCells('A1:F1'); w3.getCell('A1').value = 'MATÉRIAUX À APPROVISIONNER'; w3.getCell('A1').font = {bold: true, size: 14, color: {argb: 'FF1F4E79'}};
+    ['Matériau', 'Unité', 'Quantité nette', 'Marge %', 'Quantité à commander', 'Équivalent'].forEach((h, i)=>{ const cell = w3.getCell(3, i + 1); cell.value = h; cell.font = {bold: true, color: {argb: 'FFFFFFFF'}}; cell.fill = fillOf('FF1F4E79'); cell.border = border; cell.alignment = {horizontal: 'center', wrapText: true}; });
+    R.mats.forEach((m, i)=>{ const r = 4 + i; w3.getCell(r, 1).value = m.m; w3.getCell(r, 2).value = m.u; w3.getCell(r, 3).value = m.net; w3.getCell(r, 4).value = R.marge; const g = w3.getCell(r, 5); g.value = {formula: 'ROUND(C' + r + '*(1+D' + r + '/100),2)', result: m.gross}; w3.getCell(r, 6).value = m.extra || null; w3.getCell(r, 3).numFmt = NF; g.numFmt = NF; w3.getCell(r, 4).font = {color: {argb: 'FF1D4ED8'}}; for(let k = 1; k <= 6; k++) w3.getCell(r, k).border = border; });
+  }
+  // ورقة الفرضيات والمراجعة
+  const notes = R.hyp.map(h=> ['Hypothèse', h]).concat(R.ctl.map(x=> [x.ok ? 'Contrôle OK' : 'À vérifier', x.fr]), R.warn.filter(w=> !R.ctl.some(x=> x.fr === w.fr)).map(w=> ['À vérifier', w.fr]), [['Note', 'Quantités nettes (hors pertes et marges). Les ratios d\'acier estimés sont indicatifs : le BET fait foi avant commande.']]);
+  const w4 = wb.addWorksheet('Hypothèses et contrôles', {pageSetup: {paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0}});
+  w4.columns = [{width: 18}, {width: 120}];
+  w4.mergeCells('A1:B1'); w4.getCell('A1').value = 'HYPOTHÈSES ET POINTS DE CONTRÔLE'; w4.getCell('A1').font = {bold: true, size: 14, color: {argb: 'FF1F4E79'}};
+  notes.forEach((n, i)=>{ const r = 3 + i; w4.getCell(r, 1).value = n[0]; w4.getCell(r, 2).value = n[1]; w4.getCell(r, 1).font = {bold: true, color: {argb: /vérifier/i.test(n[0]) ? 'FFB45309' : 'FF1F4E79'}}; w4.getCell(r, 2).alignment = {wrapText: true, vertical: 'top'}; w4.getCell(r, 1).alignment = {vertical: 'top'}; for(let k = 1; k <= 2; k++) w4.getCell(r, k).border = border; });
+  return new Blob([await wb.xlsx.writeBuffer()], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
+/* ---------- برومت métreur ديال عليوة ---------- */
+const BQ_RULE_RAW = `
+
+[وضع المتري المحترف — عليوة métreur]
+دابا نتا «عليوة» فدور métreur vérificateur محترف فالبناء بالمغرب (خبرة 20 عام فكل الأشغال: terrassement، gros œuvre، maçonnerie، étanchéité، revêtements، menuiserie، plomberie، électricité، peinture...). خدمتك: تقرا البلانات والتصاميم وتحسب الكميات بنفس طريقة métreur حقيقي، وتقدمها فجدول métré احترافي. نتا كتقرا وكتفكر وكتعطي الأبعاد؛ التطبيق هو اللي كيضرب ويجمع ويخصم وكيصاوب الجدول وPDF وExcel. ما تكتب حتى نتيجة محسوبة بيدك، ما تدير حتى جدول Markdown للمتري، وما تستعملش كتلة metre القديمة: استعمل حصراً كتلة bordereau.
+إلا كان طلب المستخدم ماشي متري ولا تعديل عليه (سؤال عادي)، جاوب عادي بلا كتلة.
+
+## طريقة الخدمة (فكر فيها بالترتيب وبصمت قبل ما تكتب):
+1. **جرد الوثائق**: عرف كل صفحة (plan de situation، plan de masse، RDC، étage، terrasse، coupes، façades، fondations، coffrage، ferraillage، plomberie، électricité، tableau des menuiseries، CPS/CCTP...). حدد الـéchelle والوحدات وعدد الطوابق وHSP (hauteur sous plafond) وسمك الدالات والجدران والـlégende والـcartouche.
+2. **الأرقام المكتوبة فقط (cotes)**: ما تقيسش بالعين ولا تخمن من الصورة. إلا بعد ناقص، دبّرو من cotes أخرى (مجموع القياسات الجزئية = القياس الإجمالي، المقطع، الواجهة، جدول menuiserie). إلا ما بقاش ممكن، خدم بفرضية معقولة، علّم السطر بـ "est":true وكتبها فـ hyp.
+3. **تحقق متقاطع**: نفس العنصر فصفحات مختلفة لازم يكون بنفس القياس؛ مجموع مساحات الغرف + الجدران = المساحة الإجمالية؛ عدد الأبواب والشبابيك = جدول menuiserie. أي تناقض اذكرو فـ hyp، وسول المستخدم إلا كان مؤثر.
+4. **ترتيب الأشغال (lots)** بترتيب الورش، ودخل غير اللي كاين فالمشروع ولا المطلوب: 01 Installation de chantier — 02 Terrassements — 03 Fondations et infrastructure BA — 04 Superstructure BA — 05 Maçonnerie — 06 Étanchéité — 07 Enduits — 08 Revêtements (sols، murs، faïence) — 09 Menuiserie (bois، aluminium، métallique) — 10 Plomberie sanitaire — 11 Électricité — 12 Peinture — 13 Plâtrerie / faux plafond — 14 Aménagements extérieurs — 15 Divers.
+5. **كل مادة (article) على حدة**: بيتون وcoffrage وحديد = ثلاث مواد منفصلة. فكل مادة فصّل سطر لكل عنصر ولكل طابق (S1، S2، P1... RDC، étage) ماشي مجموع إجمالي، باش المراجع يقدر يتحقق من كل سطر. n = عدد العناصر المتشابهة.
+6. **الخصومات**: الفتحات (أبواب، شبابيك، فتحة الدرج...) سطور مستقلة بـ "neg":true فمواد المساحة (maçonnerie، enduit، peinture، faïence). كل فتحة كتتخصم مرة وحدة. الجدار الداخلي كيتحسب فوجهين فـ enduit وpeinture. صرح فـ hyp بقاعدة الخصم المعتمدة (وإلا كان CPS ديال المشروع فاعتمدو).
+7. **الكميات صافية (nettes)**: بلا خسارة ولا هامش فسطور الجدول. الهدر والاحتياط كيتحسبو غير فـ "mat" (المواد للشراء).
+8. **مراجعة قبل الإرسال (ratios)**: بيتون ≈ 0.20–0.40 م³ لكل م² مبني فـ villa R+1، حديد ≈ 80–130 كلغ/م³ فالمجموع، maçonnerie ≈ 1.5–2.5 م² لكل م² مبني. إلا خرج رقم بعيد، أعد قراءة القياسات قبل ما تبعت.
+9. **إلا ما كاينش بلان واضح** ولا القياسات الأساسية ناقصة بزاف: ما تخترعش، وقل بالضبط شنو ناقص (سؤال واحد قصير). إلا المعطيات كافية بفرضيات بسيطة: حسب وصرح بالفرضيات. إلا عطاك المستخدم الأبعاد بالكلام بلا بلان، احسب منها مباشرة.
+
+## صيغة الكتلة (JSON صحيح 100%: بلا تعليقات ولا فواصل زايدة، الأرقام أرقام بالمتر، النصوص بالفرنسية التقنية):
+§§§bordereau
+{"projet":"Villa R+1 — M. X","client":"","adresse":"","date":"YYYY-MM-DD","hyp":["HSP 3,00 m","Dalles pleines ép. 0,15 m"],"params":{"surface_batie":270,"tva":20,"marge":5},
+"lots":[{"code":"02","titre":"Terrassements","articles":[
+ {"n":"2.1","d":"Fouilles en rigoles pour semelles filantes","u":"M3","cat":"terrassement","lignes":[
+  {"d":"Semelle filante axe A","n":2,"L":12.5,"l":0.6,"h":0.8},
+  {"d":"Semelle filante axe B","L":"4.50+3.20","l":0.6,"h":0.8}]}]},
+ {"code":"04","titre":"Superstructure BA","articles":[
+ {"n":"4.1","d":"Béton armé dosé à 350 kg/m³ pour poteaux","u":"M3","cat":"beton","lignes":[{"d":"P1 à P10 RDC","n":10,"L":0.25,"l":0.25,"h":3.0}]},
+ {"n":"4.2","d":"Acier HA pour poteaux (ratio estimé)","u":"KG","cat":"acier","lignes":[{"d":"Ratio 160 kg/m³","ref":"4.1","k":160,"est":true}]}]}]}
+§§§
+- **Article**: n (نص "لوط.رقم")، d (désignation كاملة بأسلوب CPS: النوع + الخصائص + dosage/épaisseur)، u (M3 | M2 | ML | U | ENS | FF | KG | T | L)، cat (اختياري: beton | proprete | coffrage | acier | maconnerie | enduit | terrassement | carrelage | peinture | etancheite | menuiserie | autre)، obs (اختياري)، pu (غير إلا عطاك المستخدم الثمن؛ ما تخترع حتى ثمن)، mat (اختياري، شوف تحت)، lignes.
+- **Ligne**: d، n (عدد العناصر المتشابهة، والافتراضي 1)، L، l، h (h = hauteur ولا épaisseur)، q (كمية مباشرة إلا ما كاينش أبعاد)، k (معامل، مثلاً ratio ديال الحديد)، ref (رقم مادة أخرى: الكمية = مجموع تلك المادة × k)، neg:true (خصم)، est:true (مقدّر)، obs.
+- الأبعاد تقدر تكتبها كتعبير بسيط "4.50+3.20" ولا "2*(0.30+0.30)" (أرقام + − × ÷ وأقواس فقط) والتطبيق هو اللي كيحسبو.
+- عدد الأبعاد خاصو يوافق الوحدة: M3 = ثلاثة (L,l,h)، M2 = بعدين، ML = بعد واحد، U/ENS/FF = n أو q فقط. التطبيق كيبين تنبيه إلا ما وافقش.
+- **الحديد**: إلا كاين plan de ferraillage ولا جدول حديد، احسبو منو (KG بالتفصيل: Ø، الطول، العدد). وإلا ما كايناش: ratio بالسطر بـ ref وk وest:true (كلغ/م³): semelle isolée 70، semelle filante 60، longrine 110، poteau 160، poutre 130، chaînage 120، voile 90، dalle pleine 100، escalier 110، وصرح فـ hyp بلي تقديرية والـBET هو المرجع.
+- **البيتون**: dosage 350 كلغ/م³ للبيتون المسلح، و150 كلغ/م³ لبيتون النظافة (سمك 5–10 سم). coffrage فمادة منفصلة بالمتر المربع.
+- **المواد (mat)** غير إلا طلب المستخدم الإسمنت/المواد/approvisionnement: فالمادة زيد "mat":[{"m":"Ciment","u":"kg","c":350},{"m":"Sable","u":"m³","c":0.4},{"m":"Gravier","u":"m³","c":0.8}] (المعامل لكل وحدة ديال المادة). مراجع: بيتون 350 = ciment 350 كلغ + sable 0.4 م³ + gravier 0.8 م³ لكل م³؛ mortier = ciment 350 كلغ + sable 1.1 م³ لكل م³؛ enduit 2 سم = 0.02 م³ ديال mortier لكل م²؛ maçonnerie ≈ 12.5 briques لكل م².
+- **مشروع كبير**: ولّد اللوطات فعدة رسائل: فكل رسالة اللوطات ديالها، وبدا من الرسالة الثانية زيد "suite":true فالكتلة باش التطبيق يجمعهم. إلا الجواب تقطع وقال المستخدم «كمّل»، ولّد غير اللوطات الناقصة بـ "suite":true.
+- **التعديل**: إلا طلب المستخدم تبديل قياس ولا حذف عنصر، عاود كتب الكتلة كاملة محيّنة (بلا suite). تعديل الأثمنة وTVA ومعلومات الزبون كيديرهم المستخدم بنفسو فزر «💰 الأثمنة والمعلومات» تحت الجدول، ما تعاودش الكتلة من أجل هادشي.
+
+## الرد:
+بدا بـ «🧠 عليوة:» وسطرين لـ 6 بالدارجة: شنو قريت (الصفحات، الطوابق، الـéchelle، أهم القياسات) وأهم الفرضيات. من بعد كتلة bordereau وحدة. وفالأخير (أقصى 5 سطور): النقط اللي خاصها تأكيد، وسؤال واحد إلا كان ضروري. ما تعاودش الأرقام والمجاميع فالكلام (التطبيق كيعرضهم)، وما تقولش بلي صايب ملف: الأزرار PDF وExcel كتبان تحت الجدول.`;
+const BQ_RULE = BQ_RULE_RAW.replace(/§§§/g, '```');
+
+
 const chatEl = document.getElementById('chat');
 const inputEl = document.getElementById('msgInput');
 const sendBtn = document.getElementById('sendBtn');
@@ -2777,8 +3570,9 @@ function stripLatex(t){
 
 /* ---------- عرض غني: نص + جداول + رسوم بيانية + صور + مواعيد ---------- */
 function renderRichBotContent(container, rawText){
+  rawText = _bqCloseUnclosed(rawText);   // كتلة bordereau ما تسدّاتش (الجواب تقطع)
   // نقسم النص لأجزاء: كتل chart، كتل image، كتل add_appointment، وبقية النص
-  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```report\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)|```metre\s*([\s\S]*?)```|```devis\s*([\s\S]*?)```|```tree\s*([\s\S]*?)```/g;
+  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```report\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)|```metre\s*([\s\S]*?)```|```devis\s*([\s\S]*?)```|```tree\s*([\s\S]*?)```|```bordereau\s*([\s\S]*?)```/g;
   let lastIndex = 0;
   let match;
   const parts = [];
@@ -2790,6 +3584,7 @@ function renderRichBotContent(container, rawText){
     else if(match[6] !== undefined){ parts.push({type:'metre', content: match[6].trim()}); }
     else if(match[7] !== undefined){ parts.push({type:'devis', content: match[7].trim()}); }
     else if(match[8] !== undefined){ parts.push({type:'tree', content: match[8].trim()}); }
+    else if(match[9] !== undefined){ parts.push({type:'bordereau', content: match[9].trim()}); }
     else{ parts.push({type:'image', content: (match[4] !== undefined ? match[4] : match[5]).trim()}); }
     lastIndex = blockRegex.lastIndex;
   }
@@ -2811,6 +3606,8 @@ function renderRichBotContent(container, rawText){
       try{ appendTreeCard(container, part.content); }catch(e){ appendTextWithTables(container, fixNumGroups(part.content)); }
     }else if(part.type === 'metre'){
       try{ appendMetreCard(container, part.content); }catch(e){ appendTextWithTables(container, '⚠️ تعذر عرض جدول المتري.'); }
+    }else if(part.type === 'bordereau'){
+      try{ appendBordereauCard(container, part.content); }catch(e){ console.error('bordereau:', e); appendTextWithTables(container, '⚠️ تعذر عرض جدول المتري المحترف.'); }
     }else if(part.type === 'image'){
       appendImage(container, part.content);
     }
@@ -5074,13 +5871,21 @@ async function sendMessage(){
   renderMessages();
   saveHistory();
 
+  const _mtx = _metreurActive(messages);
+  if(_mtx && !getApiKey()){
+    messages.push({role:'model', text:'📐 المتري المحترف (قراءة البلانات وحساب الكميات) خاصو مفتاح Gemini مفعّل، حيت الجدول الكامل كبير وكيحتاج موديل قوي. ضيف مفتاح Gemini من الإعدادات ⚙️ وعاود الطلب.', time:Date.now()});
+    renderMessages();
+    saveHistory();
+    return;
+  }
+
   sendBtn.disabled = true;
   showTyping();
 
   let chain = buildProviderChain(hasImage);
   // متابعة على بلان/PDF مصيفط قبل (فآخر 6 رسائل): Gemini أولاً باش يبقى كيشوف المرفق
   const _heavy = !hasImage && HEAVY_GEMINI_FIRST && _isHeavyQuery(text, false) && Date.now() > _geminiQuotaUntil;
-  if(!hasImage && getApiKey() && (_lastAttachmentIndex(messages, 6) >= 0 || _lastFileIndex(messages, 6) >= 0 || _heavy)){
+  if(!hasImage && getApiKey() && (_lastAttachmentIndex(messages, 6) >= 0 || _lastFileIndex(messages, 6) >= 0 || _heavy || _mtx)){
     chain = chain.filter(c=> c.name !== 'Gemini');
     chain.unshift({fn: callGemini, key: getApiKey(), name: 'Gemini'});
   }
@@ -5276,6 +6081,7 @@ async function callGemini(key, msgs){
   });
 
   const fullSystemPrompt = _yunusFullSystemPrompt(msgs);
+  const _mt = _metreurActive(msgs);   // وضع المتري المحترف: Pro + ميزانية كبيرة (الجدول الكامل ممكن يوصل لعشرات الآلاف من الـtokens)
   // رسالة جديدة فيها بلان/PDF/صورة (ولا مرفق تسجل بلا نص والمستخدم كتب التعليمات فالرسالة اللي بعدو)
   const _gFi = _lastFileIndex(msgs, 14);
   const _gFresh = (_gAttIdx >= 0 && (_gAttIdx === msgs.length - 1 || (_gAttIdx === msgs.length - 2 && !msgs[_gAttIdx].text && msgs[msgs.length - 1].role === 'user')))
@@ -5290,9 +6096,9 @@ async function callGemini(key, msgs){
 
   async function tryModel(modelId, noThink){
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`;
-    const gc = {temperature: _gFresh ? 0.1 : 0.2, maxOutputTokens: _gFresh ? 20000 : 10240};
+    const gc = {temperature: (_gFresh || _mt) ? 0.1 : 0.2, maxOutputTokens: _mt ? 60000 : (_gFresh ? 20000 : 10240)};
     // Pro كيفكر دائماً وكيستهلك من maxOutputTokens: كنحدو التفكير باش الجواب ما يتقطعش ولا يجي خاوي
-    if(!noThink && /gemini-2\.5-pro/.test(modelId)) gc.thinkingConfig = { thinkingBudget: _gFresh ? 8192 : 4096 };
+    if(!noThink && /gemini-2\.5-pro/.test(modelId)) gc.thinkingConfig = { thinkingBudget: _mt ? 16384 : (_gFresh ? 8192 : 4096) };
     let res;
     try{
       res = await fetch(url, {
@@ -5312,7 +6118,7 @@ async function callGemini(key, msgs){
 
   // سلم الموديلات: (Pro للبلانات) ← MODEL ← FALLBACK. أي موديل ما نجحش (404/400/403/429/5xx) كنعدّيو للموالي، وآخر واحد هو اللي كيحدد الخطأ.
   const _order = [];
-  if(_gFresh) _order.push(PRO_MODEL);
+  if(_gFresh || _mt) _order.push(PRO_MODEL);
   [MODEL, FALLBACK_MODEL].forEach(m=>{ if(!_order.includes(m)) _order.push(m); });
   let res = null;
   for(let i = 0; i < _order.length; i++){
@@ -5383,7 +6189,7 @@ function _yunusFullSystemPrompt(msgs, compact){
   const _recentUser = msgs.filter(m=>m.role==='user').slice(-2).map(m=>m.text || '').join(' ');
   let accountingSnapshot = accountingSnapshotNeeded(_recentUser || lastUserMsg) ? buildAccountingSnapshotText() : '';
   if(compact && accountingSnapshot.length > 7000) accountingSnapshot = accountingSnapshot.slice(0, 7000) + '\n… (باقي البيانات مقتطع لضيق الحدود)';
-  return (compact ? _yunusCompactPrompt() : SYSTEM_PROMPT) + YUNUS_DARIJA_RULE + YUNUS_ROUTING_RULE + (msgs.some(m=> m && m.files && m.files.length) ? YUNUS_FILES_RULE : '') + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + (accountingSnapshot || YUNUS_ACCT_MISSING) + _metreContext(msgs);
+  return (compact ? _yunusCompactPrompt() : SYSTEM_PROMPT) + YUNUS_DARIJA_RULE + YUNUS_ROUTING_RULE + (msgs.some(m=> m && m.files && m.files.length) ? YUNUS_FILES_RULE : '') + (voiceChatActive ? VOICE_CALL_RULE : '') + `\n\nمعلومة مهمة: التاريخ اليوم هو ${todayStr} (${dayName})، والوقت الحالي ${timeStr}. استعمل هاد المعلومة لحساب أي تاريخ نسبي يذكره المستخدم.` + (accountingSnapshot || YUNUS_ACCT_MISSING) + _metreContext(msgs) + _bqContext(msgs);
 }
 
 async function _openAiStyleCall(url, apiKey, body, providerName){
@@ -7670,6 +8476,7 @@ function speakViaGoogleTTS(text, onStatus){
       .replace(/```report[\s\S]*?```/g, ' فيه تقرير بالرد. ')
       .replace(/```devis[\s\S]*?```/g, ' فيه عرض سعر بالرد. ')
       .replace(/```tree[\s\S]*?```/g, ' فيه شجرة بالرد. ')
+      .replace(/```bordereau[\s\S]*?```/g, ' فيه جدول متري احترافي بالرد. ')
       .replace(/```metre[\s\S]*?```/g, ' فيه جدول متري بالرد. ')
       .replace(/```image:[\s\S]*?```/g, ' فيه صورة بالرد. ')
       .replace(/```image:.+/g, ' فيه صورة بالرد. ')
@@ -14298,8 +15105,9 @@ const SITE_AGENT = (function(){
     const base = _sp.apply(this, arguments);
     try{
       if(currentRole !== 'admin') return base;
+      if(_metreurActive(msgs)) return base + BQ_RULE;   // وضع المتري المحترف ديال عليوة (métreur)
       const q = ((msgs || []).slice().reverse().find(m=> m && m.role === 'user') || {}).text || '';
-      const asAgent = /^\s*(يا\s+)?(ال)?(عليو[ةهاى]?|وكيل)(?![\u0621-\u064A])/.test(q) || /^\s*(agent|alioua|aliwa)\b/i.test(q);
+      const asAgent = _isAgentQ(q);
       if(!asAgent && !/مشروع|مشاريع|ورش|أوراش|اوراش|إنجاز|انجاز|تأخر|تاخر|غرامة|غرامه|عقد|ميزانية|ميزانيه|الأجل|اجل|أشغال|اشغال|بند|بنود|صفقة|متعاقد|لوط|فلوط|الدفعة|دفعات|الضمان|retenue/i.test(q)) return base;
       return base + '\n\n[حالة الأوراش — محسوبة بالكود: استعملها وما تخترع أرقام. ملخص العقد [عقد ...] هو المرجع: ما تناقضوه، وإلا الحاجة ما مذكورة فيه قولها صراحة]\n' + statusText(q)
         + (asAgent ? '\n[وضع عليوة: سميتك «عليوة»، وكيل الأوراش ديال المدير العام. بدا جوابك بعبارة «🧠 عليوة:» وجاوب كمدير عمليات خبير فالبناء: حلل، نبّه للمخاطر، واقترح خطوات واضحة، بالدارجة المغربية وبأرقام الحالة فقط.]' : '');
