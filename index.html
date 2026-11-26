@@ -2727,6 +2727,97 @@ function bordereauRecapText(R){
   return L.slice(0, 260).join('\n');
 }
 
+/* =====================================================================
+   ذاكرة عليوة: (1) مكتبة البلانات (IndexedDB) كتبقى حتى بعد إعادة فتح التطبيق
+                 (2) ذاكرة القواعد والمعطيات (تصحيحات المستخدم + قرارات المشروع)
+   ===================================================================== */
+const BQ_PLAN_DB = 'alioua_btp_plans', BQ_PLAN_ST = 'p', BQ_MEM_KEY = 'alioua_btp_metre_memory';
+function _bqPlanDb(){
+  return new Promise((res, rej)=>{
+    if(!window.indexedDB){ rej(new Error('NOIDB')); return; }
+    const r = indexedDB.open(BQ_PLAN_DB, 1);
+    r.onupgradeneeded = ()=>{ r.result.createObjectStore(BQ_PLAN_ST, {keyPath: 'id'}); };
+    r.onsuccess = ()=> res(r.result); r.onerror = ()=> rej(r.error);
+  });
+}
+function _bqSig(img){ const d = String((img && img.data) || ''); return String((img && img.mime) || '') + ':' + d.length + ':' + d.slice(0, 48) + ':' + d.slice(-48); }
+function _bqHash(s){ let h = 5381; for(let i = 0; i < s.length; i++) h = (((h << 5) + h) + s.charCodeAt(i)) | 0; return 'p' + (h >>> 0).toString(36); }
+async function bqPlansAll(){
+  const d = await _bqPlanDb();
+  return new Promise((res, rej)=>{ const q = d.transaction(BQ_PLAN_ST).objectStore(BQ_PLAN_ST).getAll(); q.onsuccess = ()=> res((q.result || []).sort((a, b)=> a.ts - b.ts)); q.onerror = ()=> rej(q.error); });
+}
+async function bqPlansDelete(ids){
+  const d = await _bqPlanDb();
+  return new Promise((res, rej)=>{ const t = d.transaction(BQ_PLAN_ST, 'readwrite'); ids.forEach(id=> t.objectStore(BQ_PLAN_ST).delete(id)); t.oncomplete = ()=> res(); t.onerror = t.onabort = ()=> rej(t.error); });
+}
+async function bqPlansClear(){
+  const d = await _bqPlanDb();
+  return new Promise((res, rej)=>{ const t = d.transaction(BQ_PLAN_ST, 'readwrite'); t.objectStore(BQ_PLAN_ST).clear(); t.oncomplete = ()=> res(); t.onerror = t.onabort = ()=> rej(t.error); });
+}
+// كنحفظو الصور/PDF (ماشي الملفات النصية) باش يبقاو متاحين لعليوة فكل طلب
+async function bqPlansPut(atts){
+  const now = Date.now();
+  const items = (atts || []).filter(a=> a && a.data && a.mime && !a.kind).map((a, i)=> ({
+    id: _bqHash(_bqSig(a)), sig: _bqSig(a), mime: a.mime, data: a.data, ts: now + i,
+    name: a.name || ((/pdf/i.test(a.mime) ? 'plan' : 'image') + '-' + String(now % 100000) + '-' + (i + 1) + (/pdf/i.test(a.mime) ? '.pdf' : ''))
+  }));
+  if(!items.length) return;
+  const d = await _bqPlanDb();
+  await new Promise((res, rej)=>{ const t = d.transaction(BQ_PLAN_ST, 'readwrite'); items.forEach(it=> t.objectStore(BQ_PLAN_ST).put(it)); t.oncomplete = ()=> res(); t.onerror = t.onabort = ()=> rej(t.error); });
+  const all = await bqPlansAll(); let total = all.reduce((s, x)=> s + x.data.length, 0), left = all.length; const del = [];
+  for(let i = 0; i < all.length && (total > 60 * 1048576 || left > 14); i++){ del.push(all[i].id); total -= all[i].data.length; left--; }
+  if(del.length) await bqPlansDelete(del);
+}
+async function _bqPlanLib(){
+  const all = await bqPlansAll(); const sigs = new Set(all.map(p=> p.sig));
+  return {all: all, sigs: sigs};
+}
+
+/* ---------- ذاكرة القواعد والمعطيات ---------- */
+function bqMemLoad(){ try{ const a = JSON.parse(LS.getItem(BQ_MEM_KEY) || '[]'); return Array.isArray(a) ? a.filter(x=> x && x.t) : []; }catch(e){ return []; } }
+function bqMemSave(a){ try{ safeSetItem(BQ_MEM_KEY, JSON.stringify(a)); }catch(e){} }
+function bqMemText(){
+  const a = bqMemLoad();
+  if(!a.length) return '\n\n[ذاكرة عليوة: فارغة دابا. كل تصحيح ولا معطى مؤكد غادي تسجلو بكتلة memoire.]';
+  const rules = a.filter(x=> x.k === 'regle'), facts = a.filter(x=> x.k !== 'regle');
+  return '\n\n[ذاكرة عليوة — محفوظة من المحادثات السابقة. طبّقها كلها وما تسول على اللي فيها، وما تعاودش تسجلها]\n'
+    + (rules.length ? 'قواعد المستخدم (إلزامية):\n' + rules.map((x, i)=> (i + 1) + '. ' + x.t).join('\n') + '\n' : '')
+    + (facts.length ? 'معطيات ومقرّرات متفق عليها:\n' + facts.map(x=> '- ' + x.t).join('\n') : '');
+}
+// كيتنفذ مرة وحدة عند وصول جواب جديد (ماشي عند إعادة العرض)
+async function bqProcessMemory(text){
+  const rx = /```memoire\s*([\s\S]*?)```/g; let m, changed = false, mem = bqMemLoad();
+  const norm = s=> String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  while((m = rx.exec(String(text || ''))) !== null){
+    const d = _mParse(m[1].trim()); if(!d || typeof d !== 'object') continue;
+    (Array.isArray(d.ajouter) ? d.ajouter : []).forEach(x=>{
+      const t = String(typeof x === 'string' ? x : (x && x.t) || '').trim().slice(0, 320); if(!t) return;
+      if(mem.some(y=> norm(y.t) === norm(t))) return;
+      mem.push({id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), k: (x && x.k === 'regle') ? 'regle' : 'fait', t: t, ts: Date.now()}); changed = true;
+    });
+    (Array.isArray(d.supprimer) ? d.supprimer : []).forEach(f=>{ const fr = norm(f); if(fr.length < 3) return; const n = mem.length; mem = mem.filter(y=> norm(y.t).indexOf(fr) < 0); if(mem.length !== n) changed = true; });
+    if(d.oublier_plans === true){ try{ await bqPlansClear(); }catch(e){} }
+    if(typeof d.retirer_plan === 'string' && norm(d.retirer_plan).length >= 2){ try{ const fr = norm(d.retirer_plan), all = await bqPlansAll(); const ids = all.filter(p=> norm(p.name).indexOf(fr) >= 0).map(p=> p.id); if(ids.length) await bqPlansDelete(ids); }catch(e){} }
+  }
+  if(changed){
+    while(mem.length > 80){ const i = mem.findIndex(y=> y.k !== 'regle'); mem.splice(i >= 0 ? i : 0, 1); }   // الحقائق القديمة كتمشي قبل القواعد
+    bqMemSave(mem);
+  }
+}
+function appendMemoryChip(container, jsonText){
+  const d = _mParse(String(jsonText || '').trim()); if(!d || typeof d !== 'object') return;
+  const add = (Array.isArray(d.ajouter) ? d.ajouter : []).map(x=> String(typeof x === 'string' ? x : (x && x.t) || '').trim()).filter(Boolean);
+  const del = (Array.isArray(d.supprimer) ? d.supprimer : []).map(x=> String(x || '').trim()).filter(Boolean);
+  if(!add.length && !del.length && !d.oublier_plans && !d.retirer_plan) return;
+  const det = document.createElement('details'); det.style.cssText = 'margin:8px 0; font-size:12px; border:1px dashed rgba(127,127,127,.55); border-radius:10px; padding:6px 10px;';
+  const sm = document.createElement('summary'); sm.style.cssText = 'cursor:pointer; font-weight:700;'; sm.setAttribute('dir', 'auto');
+  sm.textContent = '🧠 ذاكرة عليوة' + (add.length ? ' — تحفظ ' + add.length : '') + (del.length ? ' — تمسح ' + del.length : '') + ((d.oublier_plans || d.retirer_plan) ? ' — تمسحو بلانات' : '');
+  det.appendChild(sm);
+  const body = document.createElement('div'); body.style.cssText = 'margin-top:4px; line-height:1.7;'; body.setAttribute('dir', 'auto');
+  body.innerHTML = add.map(t=> '✅ ' + escapeHtml(t)).concat(del.map(t=> '🗑 ' + escapeHtml(t))).join('<br>');
+  det.appendChild(body); container.appendChild(det);
+}
+
 /* ---------- تجميع الكتل (suite) وإصلاح JSON المقطوع ---------- */
 // الجواب إلا تقطع (MAX_TOKENS) كنقطعو للسطر الأخير الكامل وكنسدو الأقواس، باش اللي تحسب يبان وما يضيعش
 function _bqRepair(txt){
@@ -2795,16 +2886,26 @@ function _bqChain(jsonText){
 const BQ_STRONG_RX = /(متري|ميتري|métr|metr[eé]|bordereau|quantitatif|\bDQE\b|\bBPU\b|حساب\s+الكميات|حسب(?:\s+لي?ا?)?\s+(?:ال)?كميات|كميات\s+(?:المواد|الأشغال|البناء|الورش))/i;
 const BQ_WEAK_RX = /(بلان|plan|تصميم|مخطط|coupe|façade|facade|كميات|احسب|حسّب|حسب|حساب|surface|مساحة|بيتون|béton|حديد|طوب|brique|enduit|carrelage|صباغة|peinture|dalle|longrine|poteau|semelle)/i;
 const BQ_EDIT_RX = /(زيد|بدل|بدّل|عدل|عدّل|نقص|حيد|شيل|ضيف|غير|غيّر|صحح|صحّح|كمّل|كمل|ثمن|ثمّن|أثمنة|الأثمنة|سعر|prix|tva|لوط|lot\b|الطابق|étage|rdc|السقف|الجدران|الباب|الشباك|الصباغة)/i;
+const BQ_STATUS_RX = /(حالة|وضعية|تأخر|تاخر|غرامة|ميزانية|إنجاز|انجاز|دفعة|دفعات|ضمان|صفقة|متعاقد|retenue|الأجل|شنو\s+حال|كيفاش\s+(?:الأوراش|الورش))/i;   // أسئلة حالة الأوراش (ماشي متري)
+const BQ_OFFTOPIC_RX = /(سلف|الأجرة|أجرة|مورد|فاتور|عميل|سيولة|مصروف|مصاريف|رصيد|موعد|rendez)/;
 function _isAgentQ(q){ q = String(q || ''); return /^\s*(يا\s+)?(ال)?(عليو[ةهاى]?|وكيل)(?![\u0621-\u064A])/.test(q) || /^\s*(agent|alioua|aliwa)\b/i.test(q); }
 function _bqHasBlock(m){ return !!(m && m.role !== 'user' && typeof m.text === 'string' && m.text.indexOf('```bordereau') >= 0); }
 function _bqLastUserText(msgs){ const u = (msgs || []).slice().reverse().find(m=> m && m.role === 'user' && String(m.text || '').trim()); return u ? String(u.text) : ''; }
+var _bqStickyUntil = 0;
 function _bqWanted(msgs, q, asAgent){
   q = String(q || '');
   let recentAtt = false;
   try{ recentAtt = _lastAttachmentIndex(msgs, 6) >= 0 || _lastFileIndex(msgs, 6) >= 0; }catch(e){}
-  if(asAgent && (BQ_STRONG_RX.test(q) || (recentAtt && BQ_WEAK_RX.test(q)))) return true;
-  const last = (msgs || []).slice(-6).reverse().find(m=> m && m.role !== 'user');   // متابعة: كاين متري فآخر ردود الموديل
-  return !!(last && _bqHasBlock(last) && (BQ_STRONG_RX.test(q) || BQ_EDIT_RX.test(q) || BQ_WEAK_RX.test(q) || q.length < 120));
+  let hit = false;
+  if(BQ_STRONG_RX.test(q)) hit = true;                                // كلمات المتري الصريحة كتفعّل الوضع حتى بلا ما تنادي «عليوة»
+  else if(asAgent && recentAtt && BQ_WEAK_RX.test(q)) hit = true;      // «عليوة» + بلان مرفق + سؤال على الكميات/المواد
+  else if(!BQ_OFFTOPIC_RX.test(q) && !BQ_STATUS_RX.test(q)){
+    // وضع «لاصق»: ملي عليوة خدّام على المتري (جدول ولا ذاكرة ولا رد بـ«🧠 عليوة:» فآخر 24 رسالة، ولا فآخر ساعة ونصف)، كل رسالة موالية كتبقى فنفس الوضع باش ما يرجعش يبدا من الصفر
+    const hadMetre = (msgs || []).slice(-24).some(m=> m && m.role !== 'user' && typeof m.text === 'string' && (m.text.indexOf('```bordereau') >= 0 || m.text.indexOf('```memoire') >= 0 || /^\s*(?:🤖[^\n]*\n+)?\s*🧠\s*عليوة\s*:/.test(m.text)));
+    if(hadMetre || (Date.now() < _bqStickyUntil && q.trim())) hit = true;
+  }
+  if(hit) _bqStickyUntil = Math.max(_bqStickyUntil, Date.now() + 90 * 60000);
+  return hit;
 }
 function _metreurActive(msgs){
   try{ if(typeof currentRole !== 'undefined' && currentRole !== 'admin') return false; const q = _bqLastUserText(msgs); return _bqWanted(msgs, q, _isAgentQ(q)); }catch(e){ return false; }
@@ -3254,43 +3355,58 @@ async function buildBordereauXlsxBlob(R){
 const BQ_RULE_RAW = `
 
 [وضع المتري المحترف — عليوة métreur]
-دابا نتا «عليوة» فدور métreur vérificateur محترف فالبناء بالمغرب (خبرة 20 عام فكل الأشغال: terrassement، gros œuvre، maçonnerie، étanchéité، revêtements، menuiserie، plomberie، électricité، peinture...). خدمتك: تقرا البلانات والتصاميم وتحسب الكميات بنفس طريقة métreur حقيقي، وتقدمها فجدول métré احترافي. نتا كتقرا وكتفكر وكتعطي الأبعاد؛ التطبيق هو اللي كيضرب ويجمع ويخصم وكيصاوب الجدول وPDF وExcel. ما تكتب حتى نتيجة محسوبة بيدك، ما تدير حتى جدول Markdown للمتري، وما تستعملش كتلة metre القديمة: استعمل حصراً كتلة bordereau.
-إلا كان طلب المستخدم ماشي متري ولا تعديل عليه (سؤال عادي)، جاوب عادي بلا كتلة.
+نتا «عليوة»: métreur محترف كبير (20 عام) فالبناء بالمغرب، وخدّام مع مقاول محترف. تعامل معاه بمستوى المحترفين: بلا شروحات للمبتدئين، بلا أسئلة ماشي ضرورية، وافهم قصدو من كلمة وحدة (قرا الأفكار). التطبيق هو اللي كيحسب (ضرب/جمع/خصم) وكيرسم الجدول وPDF وExcel؛ نتا كتقرا البلان وكتعطي الأبعاد فكتلة bordereau.
 
-## طريقة الخدمة (فكر فيها بالترتيب وبصمت قبل ما تكتب):
-1. **جرد الوثائق**: عرف كل صفحة (plan de situation، plan de masse، RDC، étage، terrasse، coupes، façades، fondations، coffrage، ferraillage، plomberie، électricité، tableau des menuiseries، CPS/CCTP...). حدد الـéchelle والوحدات وعدد الطوابق وHSP (hauteur sous plafond) وسمك الدالات والجدران والـlégende والـcartouche.
-2. **الأرقام المكتوبة فقط (cotes)**: ما تقيسش بالعين ولا تخمن من الصورة. إلا بعد ناقص، دبّرو من cotes أخرى (مجموع القياسات الجزئية = القياس الإجمالي، المقطع، الواجهة، جدول menuiserie). إلا ما بقاش ممكن، خدم بفرضية معقولة، علّم السطر بـ "est":true وكتبها فـ hyp.
-3. **تحقق متقاطع**: نفس العنصر فصفحات مختلفة لازم يكون بنفس القياس؛ مجموع مساحات الغرف + الجدران = المساحة الإجمالية؛ عدد الأبواب والشبابيك = جدول menuiserie. أي تناقض اذكرو فـ hyp، وسول المستخدم إلا كان مؤثر.
-4. **ترتيب الأشغال (lots)** بترتيب الورش، ودخل غير اللي كاين فالمشروع ولا المطلوب: 01 Installation de chantier — 02 Terrassements — 03 Fondations et infrastructure BA — 04 Superstructure BA — 05 Maçonnerie — 06 Étanchéité — 07 Enduits — 08 Revêtements (sols، murs، faïence) — 09 Menuiserie (bois، aluminium، métallique) — 10 Plomberie sanitaire — 11 Électricité — 12 Peinture — 13 Plâtrerie / faux plafond — 14 Aménagements extérieurs — 15 Divers.
-5. **كل مادة (article) على حدة**: بيتون وcoffrage وحديد = ثلاث مواد منفصلة. فكل مادة فصّل سطر لكل عنصر ولكل طابق (S1، S2، P1... RDC، étage) ماشي مجموع إجمالي، باش المراجع يقدر يتحقق من كل سطر. n = عدد العناصر المتشابهة.
-6. **الخصومات**: الفتحات (أبواب، شبابيك، فتحة الدرج...) سطور مستقلة بـ "neg":true فمواد المساحة (maçonnerie، enduit، peinture، faïence). كل فتحة كتتخصم مرة وحدة. الجدار الداخلي كيتحسب فوجهين فـ enduit وpeinture. صرح فـ hyp بقاعدة الخصم المعتمدة (وإلا كان CPS ديال المشروع فاعتمدو).
-7. **الكميات صافية (nettes)**: بلا خسارة ولا هامش فسطور الجدول. الهدر والاحتياط كيتحسبو غير فـ "mat" (المواد للشراء).
-8. **مراجعة قبل الإرسال (ratios)**: بيتون ≈ 0.20–0.40 م³ لكل م² مبني فـ villa R+1، حديد ≈ 80–130 كلغ/م³ فالمجموع، maçonnerie ≈ 1.5–2.5 م² لكل م² مبني. إلا خرج رقم بعيد، أعد قراءة القياسات قبل ما تبعت.
-9. **إلا ما كاينش بلان واضح** ولا القياسات الأساسية ناقصة بزاف: ما تخترعش، وقل بالضبط شنو ناقص (سؤال واحد قصير). إلا المعطيات كافية بفرضيات بسيطة: حسب وصرح بالفرضيات. إلا عطاك المستخدم الأبعاد بالكلام بلا بلان، احسب منها مباشرة.
+## 1) لغة المتري — شنو كيعني «métré de X» (ما يطلبو المستخدم غير هو)
+- **métré de la maçonnerie / الطوب / الحيطان / الجدران**: كمية maçonnerie بـ **م² (مساحة)** = مساحة الجدران الصافية (L × h) بعد خصم الفتحات، مفصلة حسب نوع الجدار والسمك (خارجي، cloison داخلية...) وحسب الطابق. **ماشي عدد الطوب، ماشي الخرسانة، ماشي الإسمنت**.
+- enduit / crépissage / plâtre / peinture / faux plafond / étanchéité / carrelage / faïence / marbre / revêtement: **م²** (الأرضية صافية بيت بيت؛ الحيطان بعد خصم الفتحات).
+- béton / béton armé: **م³** حسب العنصر (semelles، longrines، poteaux، poutres، dalles، escaliers، acrotères). coffrage: م². ferraillage: كلغ.
+- terrassement / fouilles / remblai: **م³**.
+- menuiserie (portes، fenêtres): **عدد (U)** حسب repère مع الأبعاد. plomberie / électricité: U و ml حسب النوع.
+- عدد الطوب أو الأكياس أو كمية الإسمنت والرمل (matériaux) غير إلا قالها المستخدم صراحة («شحال من طوب»، «شحال كيس»، «approvisionnement») — ساعتها استعمل mat.
+- «métré» بلا ذكر الأشغال وبلا «كامل / complet / كلشي»: سول سؤال واحد قصير (أشنو الأشغال؟). وإلا قال «كامل / كلشي» دير كل اللوطات.
 
-## صيغة الكتلة (JSON صحيح 100%: بلا تعليقات ولا فواصل زايدة، الأرقام أرقام بالمتر، النصوص بالفرنسية التقنية):
-§§§bordereau
-{"projet":"Villa R+1 — M. X","client":"","adresse":"","date":"YYYY-MM-DD","hyp":["HSP 3,00 m","Dalles pleines ép. 0,15 m"],"params":{"surface_batie":270,"tva":20,"marge":5},
-"lots":[{"code":"02","titre":"Terrassements","articles":[
- {"n":"2.1","d":"Fouilles en rigoles pour semelles filantes","u":"M3","cat":"terrassement","lignes":[
-  {"d":"Semelle filante axe A","n":2,"L":12.5,"l":0.6,"h":0.8},
-  {"d":"Semelle filante axe B","L":"4.50+3.20","l":0.6,"h":0.8}]}]},
- {"code":"04","titre":"Superstructure BA","articles":[
- {"n":"4.1","d":"Béton armé dosé à 350 kg/m³ pour poteaux","u":"M3","cat":"beton","lignes":[{"d":"P1 à P10 RDC","n":10,"L":0.25,"l":0.25,"h":3.0}]},
- {"n":"4.2","d":"Acier HA pour poteaux (ratio estimé)","u":"KG","cat":"acier","lignes":[{"d":"Ratio 160 kg/m³","ref":"4.1","k":160,"est":true}]}]}]}
+## 2) الانضباط والسرعة
+- دير **غير اللي طلب المستخدم بالضبط** (لوط واحد، مادة وحدة...). ما تزيد حتى لوط ولا مادة ولا mat ولا اقتراح. وإلا بغيتي تمشي لحاجة أخرى، سول فسطر واحد فالأخير («نكمل بـ ...؟») وسنا الجواب.
+- **ابدا الحساب مباشرة.** ممنوع تبدا بلائحة فرضيات ولا بأسئلة. اقرا البلان، حسب، وقدم الجدول. الفرضيات اللي استعملتي فعلاً فقط، فـ hyp (1 إلى 4 جمل قصار). إلا وقعتي فمشكل حقيقي (قياس ناقص ولا ما مقروءش وكيأثر بزاف): سلّم الجزء اللي كتقدر تحسبو، وسول **سؤال واحد دقيق** (ذكر الصفحة والمكان) وكمّل من بعد جوابو.
+- **البلان هو المصدر.** البلانات والمرفقات (اللي فهاد الطلب ولا المحفوظة لهاد المحادثة، كتجيك مرفقة) كلها قدامك. ما تطلبش من المستخدم الأبعاد اللي فالبلان، وما تقولش «ما عنديش البلان» ولا تطلب منو يعاود يصيفطو؛ شوفو فالمرفقات. إلا فعلاً ما كاين حتى مرفق فالمحادثة قل «ما كاينش بلان» مرة وحدة.
+- إلا صيفط المستخدم بلان بلا طلب واضح: عطيه سطرين على اللي قريتي (الصفحات، الطوابق، الـéchelle) وسول سؤال واحد: أشنو المتري المطلوب؟
+
+## 3) الذاكرة (كلشي كيتحفظ للمحادثات الجاية)
+- كل تصحيح ولا تعليمة دايمة من المستخدم («ماشي هكا»، «ديما...»، «من دابا...»، «خصم...»، «ما تحسبش...») طبقها فالحين وسجلها بكتلة memoire بصنف "regle". ما تعاودش نفس الغلطة أبداً.
+- كل معطى مؤكد أو قرار متفق عليه (HSP، السمك، قاعدة الخصم، عدد الطوابق، قياس أكده المستخدم...) سجلو بصنف "fait" بجملة قصيرة وكاملة. من بعد قراءة البلان لأول مرة سجل: لائحة الصفحات، الطوابق، HSP، السمك، الـéchelle.
+§§§memoire
+{"ajouter":[{"k":"regle","t":"..."},{"k":"fait","t":"..."}],"supprimer":["جزء من نص قديم"],"oublier_plans":false}
 §§§
-- **Article**: n (نص "لوط.رقم")، d (désignation كاملة بأسلوب CPS: النوع + الخصائص + dosage/épaisseur)، u (M3 | M2 | ML | U | ENS | FF | KG | T | L)، cat (اختياري: beton | proprete | coffrage | acier | maconnerie | enduit | terrassement | carrelage | peinture | etancheite | menuiserie | autre)، obs (اختياري)، pu (غير إلا عطاك المستخدم الثمن؛ ما تخترع حتى ثمن)، mat (اختياري، شوف تحت)، lignes.
-- **Ligne**: d، n (عدد العناصر المتشابهة، والافتراضي 1)، L، l، h (h = hauteur ولا épaisseur)، q (كمية مباشرة إلا ما كاينش أبعاد)، k (معامل، مثلاً ratio ديال الحديد)، ref (رقم مادة أخرى: الكمية = مجموع تلك المادة × k)، neg:true (خصم)، est:true (مقدّر)، obs.
-- الأبعاد تقدر تكتبها كتعبير بسيط "4.50+3.20" ولا "2*(0.30+0.30)" (أرقام + − × ÷ وأقواس فقط) والتطبيق هو اللي كيحسبو.
-- عدد الأبعاد خاصو يوافق الوحدة: M3 = ثلاثة (L,l,h)، M2 = بعدين، ML = بعد واحد، U/ENS/FF = n أو q فقط. التطبيق كيبين تنبيه إلا ما وافقش.
-- **الحديد**: إلا كاين plan de ferraillage ولا جدول حديد، احسبو منو (KG بالتفصيل: Ø، الطول، العدد). وإلا ما كايناش: ratio بالسطر بـ ref وk وest:true (كلغ/م³): semelle isolée 70، semelle filante 60، longrine 110، poteau 160، poutre 130، chaînage 120، voile 90، dalle pleine 100، escalier 110، وصرح فـ hyp بلي تقديرية والـBET هو المرجع.
-- **البيتون**: dosage 350 كلغ/م³ للبيتون المسلح، و150 كلغ/م³ لبيتون النظافة (سمك 5–10 سم). coffrage فمادة منفصلة بالمتر المربع.
-- **المواد (mat)** غير إلا طلب المستخدم الإسمنت/المواد/approvisionnement: فالمادة زيد "mat":[{"m":"Ciment","u":"kg","c":350},{"m":"Sable","u":"m³","c":0.4},{"m":"Gravier","u":"m³","c":0.8}] (المعامل لكل وحدة ديال المادة). مراجع: بيتون 350 = ciment 350 كلغ + sable 0.4 م³ + gravier 0.8 م³ لكل م³؛ mortier = ciment 350 كلغ + sable 1.1 م³ لكل م³؛ enduit 2 سم = 0.02 م³ ديال mortier لكل م²؛ maçonnerie ≈ 12.5 briques لكل م².
-- **مشروع كبير**: ولّد اللوطات فعدة رسائل: فكل رسالة اللوطات ديالها، وبدا من الرسالة الثانية زيد "suite":true فالكتلة باش التطبيق يجمعهم. إلا الجواب تقطع وقال المستخدم «كمّل»، ولّد غير اللوطات الناقصة بـ "suite":true.
-- **التعديل**: إلا طلب المستخدم تبديل قياس ولا حذف عنصر، عاود كتب الكتلة كاملة محيّنة (بلا suite). تعديل الأثمنة وTVA ومعلومات الزبون كيديرهم المستخدم بنفسو فزر «💰 الأثمنة والمعلومات» تحت الجدول، ما تعاودش الكتلة من أجل هادشي.
+- الذاكرة الحالية مكتوبة فالأخير: استعملها وما تسول على اللي فيها. إلا سولك المستخدم شنو حافظ، عدّدها. «انسى ...» = supprimer. «انسى البلانات / مشروع جديد» = oublier_plans:true (أو retirer_plan:"جزء من اسم الملف"). سجل غير الجديد، بلا تكرار، وبلا كتلة فارغة.
 
-## الرد:
-بدا بـ «🧠 عليوة:» وسطرين لـ 6 بالدارجة: شنو قريت (الصفحات، الطوابق، الـéchelle، أهم القياسات) وأهم الفرضيات. من بعد كتلة bordereau وحدة. وفالأخير (أقصى 5 سطور): النقط اللي خاصها تأكيد، وسؤال واحد إلا كان ضروري. ما تعاودش الأرقام والمجاميع فالكلام (التطبيق كيعرضهم)، وما تقولش بلي صايب ملف: الأزرار PDF وExcel كتبان تحت الجدول.`;
+## 4) طريقة métreur (فكر فيها بصمت قبل ما تكتب)
+1. **جرد الوثائق**: عرف كل صفحة (plan RDC، étage، terrasse، coupes، façades، fondations، tableau menuiseries، CPS...) وحدد الـéchelle والطوابق وHSP وسمك الجدران والدالات والـlégende.
+2. **الأرقام المكتوبة فقط (cotes)**: ما تقيسش بالعين. بعد ناقص: دبّرو من cotes أخرى (مجموع الجزئية = الإجمالية، المقطع، الواجهة، جدول menuiserie). إلا ما بقاش ممكن خدم بفرضية معقولة، علّم السطر "est":true.
+3. **تحقق متقاطع** بين الصفحات (نفس العنصر بنفس القياس، عدد الأبواب والشبابيك = الجدول). أي تناقض اذكرو.
+4. **كل مادة (article) على حدة، وسطر لكل عنصر/طابق/غرفة** (ماشي مجموع إجمالي) باش المراجع يتحقق. الفتحات سطور مستقلة بـ "neg":true، كل فتحة مرة وحدة. الكميات صافية (بلا خسارة).
+5. **maçonnerie بالتفصيل**: لكل طابق ولكل نوع/سمك: سطور L × h من المحاور والـcotes؛ h = HSP ولا (ارتفاع الطابق − سمك الدالة/الجوائز) حسب المقطع، وصرح بالاختيار فـ obs. الفتحات من جدول menuiserie ولا الواجهات (سطر لكل نوع بـ n). الجدران الخارجية المزدوجة (double cloison) والـacrotères والـsoubassements مواد منفصلة إلا كانو فالبلان. الوحدة دائماً M2.
+6. **مراجعة قبل الإرسال (ratios)**: بيتون ≈ 0.20–0.40 م³ لكل م² مبني فـ villa R+1، حديد ≈ 80–130 كلغ/م³، maçonnerie ≈ 1.5–2.5 م² لكل م² مبني. إلا خرج رقم بعيد أعد قراءة القياسات.
+7. ما تخترعش أرقام أو أثمنة.
+
+## 5) صيغة الكتلة (JSON صحيح 100%: بلا تعليقات ولا فواصل زايدة، الأرقام أرقام بالمتر، النصوص بالفرنسية التقنية)
+§§§bordereau
+{"projet":"Villa R+1 — M. X","client":"","adresse":"","date":"YYYY-MM-DD","hyp":["HSP 3,00 m (coupe A-A)"],"params":{"surface_batie":270},
+"lots":[{"code":"05","titre":"Maçonnerie","articles":[
+ {"n":"5.1","d":"Maçonnerie en briques creuses de 20 cm — murs extérieurs RDC","u":"M2","cat":"maconnerie","lignes":[
+  {"d":"Façade nord","L":14.2,"h":3.0},
+  {"d":"À déduire : porte d'entrée","L":1.1,"h":2.2,"neg":true},
+  {"d":"À déduire : fenêtres F1","n":4,"L":1.2,"h":1.2,"neg":true}]}]}]}
+§§§
+- **Article**: n (نص "لوط.رقم")، d (désignation كاملة)، u (M3 | M2 | ML | U | ENS | FF | KG | T | L)، cat (اختياري: beton | proprete | coffrage | acier | maconnerie | enduit | terrassement | carrelage | peinture | etancheite | menuiserie | autre)، obs، pu (غير إلا عطاك المستخدم الثمن)، mat (غير إلا طلبو)، lignes.
+- **Ligne**: d، n (عدد المتشابهين، الافتراضي 1)، L، l، h (h = hauteur ولا épaisseur)، q (كمية مباشرة)، k (معامل)، ref (رقم مادة أخرى: الكمية = مجموعها × k)، neg:true (خصم)، est:true (مقدّر)، obs.
+- الأبعاد تقدر تكتبها كتعبير بسيط "4.50+3.20" ولا "2*(0.30+0.30)" والتطبيق هو اللي كيحسبو. عدد الأبعاد يوافق الوحدة: M3 = 3 (L,l,h)، M2 = 2، ML = 1، U/ENS/FF = n أو q.
+- الحديد (إلا طلبو المستخدم): من plan de ferraillage إلا كان؛ وإلا ratio بـ ref وk وest:true (كلغ/م³): semelle isolée 70، semelle filante 60، longrine 110، poteau 160، poutre 130، chaînage 120، voile 90، dalle pleine 100، escalier 110 (تقديرية، والـBET هو المرجع). بيتون 350 كلغ/م³، بيتون النظافة 150 كلغ/م³. mat (غير إلا طلبو): "mat":[{"m":"Ciment","u":"kg","c":350},{"m":"Sable","u":"m³","c":0.4},{"m":"Gravier","u":"m³","c":0.8}] (المعامل لكل وحدة).
+- **مشروع كبير**: ولّد اللوطات فعدة رسائل، وبدا من الرسالة الثانية زيد "suite":true فالكتلة باش التطبيق يجمعهم. إلا الجواب تقطع وقال «كمّل»: ولّد غير اللوطات الناقصة بـ "suite":true.
+- **التعديل**: إلا طلب المستخدم تبديل قياس ولا حذف عنصر، عاود كتب الكتلة كاملة محيّنة (بلا suite). الأثمنة وTVA ومعلومات الزبون كيديرهم المستخدم بنفسو فزر «💰 الأثمنة والمعلومات»، ما تعاودش الكتلة من أجلهم.
+
+## 6) شكل الجواب
+«🧠 عليوة:» + سطر ولا سطرين (شنو كتحسب ومن أي صفحات) ← كتلة bordereau وحدة ← كتلة memoire (إلا كاين جديد يستاحق الحفظ) ← فالأخير أقصى 3 أسطر: فرضية استعملتيها، ولا سؤال واحد إلا وقعتي فمشكل، ولا «نكمل بـ ...؟». ما تعاودش الأرقام والمجاميع فالكلام (التطبيق كيعرضهم)، وما تدير حتى جدول Markdown. إلا كان الطلب سؤال عادي ماشي متري، جاوب عادي بلا كتل.`;
 const BQ_RULE = BQ_RULE_RAW.replace(/§§§/g, '```');
 
 
@@ -3572,7 +3688,7 @@ function stripLatex(t){
 function renderRichBotContent(container, rawText){
   rawText = _bqCloseUnclosed(rawText);   // كتلة bordereau ما تسدّاتش (الجواب تقطع)
   // نقسم النص لأجزاء: كتل chart، كتل image، كتل add_appointment، وبقية النص
-  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```report\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)|```metre\s*([\s\S]*?)```|```devis\s*([\s\S]*?)```|```tree\s*([\s\S]*?)```|```bordereau\s*([\s\S]*?)```/g;
+  const blockRegex = /```chart\s*([\s\S]*?)```|```add_appointment\s*([\s\S]*?)```|```report\s*([\s\S]*?)```|```image:\s*([\s\S]*?)```|```image:\s*(.+)|```metre\s*([\s\S]*?)```|```devis\s*([\s\S]*?)```|```tree\s*([\s\S]*?)```|```bordereau\s*([\s\S]*?)```|```memoire\s*([\s\S]*?)```/g;
   let lastIndex = 0;
   let match;
   const parts = [];
@@ -3585,6 +3701,7 @@ function renderRichBotContent(container, rawText){
     else if(match[7] !== undefined){ parts.push({type:'devis', content: match[7].trim()}); }
     else if(match[8] !== undefined){ parts.push({type:'tree', content: match[8].trim()}); }
     else if(match[9] !== undefined){ parts.push({type:'bordereau', content: match[9].trim()}); }
+    else if(match[10] !== undefined){ parts.push({type:'memoire', content: match[10].trim()}); }
     else{ parts.push({type:'image', content: (match[4] !== undefined ? match[4] : match[5]).trim()}); }
     lastIndex = blockRegex.lastIndex;
   }
@@ -3608,6 +3725,8 @@ function renderRichBotContent(container, rawText){
       try{ appendMetreCard(container, part.content); }catch(e){ appendTextWithTables(container, '⚠️ تعذر عرض جدول المتري.'); }
     }else if(part.type === 'bordereau'){
       try{ appendBordereauCard(container, part.content); }catch(e){ console.error('bordereau:', e); appendTextWithTables(container, '⚠️ تعذر عرض جدول المتري المحترف.'); }
+    }else if(part.type === 'memoire'){
+      try{ appendMemoryChip(container, part.content); }catch(e){ console.error('memoire:', e); }
     }else if(part.type === 'image'){
       appendImage(container, part.content);
     }
@@ -4968,6 +5087,7 @@ function showTyping(){
   div.className = 'typing';
   div.id = 'typingIndicator';
   div.innerHTML = '<span></span><span></span><span></span>';
+  try{ if(_metreurActive(messages)){ div.style.flexWrap = 'wrap'; div.style.maxWidth = '85%'; const lb = document.createElement('div'); lb.style.cssText = 'flex-basis:100%; font-size:12px; opacity:.85; margin-top:6px;'; lb.textContent = '📐 عليوة كيقرا البلان ويحسب المتري... (ممكن ياخد دقيقة ولا أكثر)'; div.appendChild(lb); } }catch(e){}
   chatEl.appendChild(div);
   chatEl.scrollTop = chatEl.scrollHeight;
 }
@@ -5837,6 +5957,7 @@ async function sendMessage(){
     else if(_vis.length > 1) stageMsg.images = _vis.slice();
     if(_docs.length) stageMsg.files = _docs.slice();
     messages.push(stageMsg);
+    try{ if(_vis.length) bqPlansPut(_vis).catch(()=>{}); }catch(e){}   // نحفظو البلان فمكتبة عليوة
     pendingImages = [];
     renderAttachPreview();
     autoGrow();
@@ -5864,6 +5985,7 @@ async function sendMessage(){
   else if(_vis.length > 1) msgObj.images = _vis.slice();
   if(_docs.length) msgObj.files = _docs.slice();
   messages.push(msgObj);
+  let _planSave = null; try{ if(hasImage) _planSave = bqPlansPut(_vis).catch(()=>{}); }catch(e){}
   inputEl.value = '';
   pendingImages = [];
   renderAttachPreview();
@@ -5882,6 +6004,7 @@ async function sendMessage(){
   sendBtn.disabled = true;
   showTyping();
 
+  if(_planSave){ try{ await _planSave; }catch(e){} }   // البلان لازم يتحفظ قبل ما نصيفطو الطلب
   let chain = buildProviderChain(hasImage);
   // متابعة على بلان/PDF مصيفط قبل (فآخر 6 رسائل): Gemini أولاً باش يبقى كيشوف المرفق
   const _heavy = !hasImage && HEAVY_GEMINI_FIRST && _isHeavyQuery(text, false) && Date.now() > _geminiQuotaUntil;
@@ -5889,6 +6012,8 @@ async function sendMessage(){
     chain = chain.filter(c=> c.name !== 'Gemini');
     chain.unshift({fn: callGemini, key: getApiKey(), name: 'Gemini'});
   }
+  // المتري المحترف: Gemini فقط. موديل نصي (Groq/Cerebras) ما كيشوفش البلان وكيقول «ما عنديش البلان»
+  if(_mtx){ chain = chain.filter(c=> c.name === 'Gemini'); if(!chain.length) chain = [{fn: callGemini, key: getApiKey(), name: 'Gemini'}]; }
 
   try{
     let lastErr = null; const errLog = [];
@@ -5903,6 +6028,7 @@ async function sendMessage(){
         messages.push({role:'model', text, time:Date.now()});
         renderMessages();
         saveHistory();
+        try{ bqProcessMemory(reply); }catch(e){}   // تصحيحات المستخدم والمعطيات المؤكدة كتتحفظ
         if(voiceChatActive){ VC.onReply(reply); }
         else{ speakText(reply); }
         lastErr = null;
@@ -5937,6 +6063,7 @@ async function sendMessage(){
           : (attMB > 4 ? `\nالمرفق كبير (≈${attMB.toFixed(1)} ميجا) والاتصال ما قدرش يرفعو. جرب بـ WiFi، ولا قسّم/صغّر الملف.` : '\nتأكد من الإنترنت وعاود كتب طلبك.'));
       }
       if(errLog.length) friendly += '\n🔎 ' + errLog.join('\n🔎 ');
+      if(_mtx) friendly += '\n📐 المتري المحترف كيخدم غير بـ Gemini (باش البلان ما يضيعش). البلانات محفوظة، عاود الطلب من بعد شوية.';
       messages.push({role:'model', text:friendly, time:Date.now()});
       renderMessages();
       saveHistory();
@@ -6061,27 +6188,45 @@ function buildAccountingSnapshotText(){
 
 async function callGemini(key, msgs){
   // الملفات (صور/PDF) كنصيفطوها غير من آخر رسالة فيها مرفق، والباقي كيتعوض بملاحظة — باش الطلب ما يتجاوزش 20MB
-  const _gBase = Math.max(0, msgs.length - 14);
-  const _gAttIdx = _lastAttachmentIndex(msgs, 14);
-  const _gSlice = msgs.slice(-14), _gFiles = _fileCtx(_gSlice, 200000, 120000);   // نص ملفات Excel/Word/... كيتصيفط كنص عادي
+  const _mt = _metreurActive(msgs);   // وضع المتري المحترف: Pro + ميزانية كبيرة + ذاكرة (البلانات المحفوظة + آخر 30 رسالة)
+  let _lib = null; if(_mt){ try{ _lib = await _bqPlanLib(); }catch(e){} }   // مكتبة البلانات المحفوظة (كتبقى حتى بعد إعادة فتح التطبيق)
+  const _gN = _mt ? 30 : 14;
+  const _gBase = Math.max(0, msgs.length - _gN);
+  const _gAttIdx = _lastAttachmentIndex(msgs, _gN);
+  const _gSlice = msgs.slice(-_gN), _gFiles = _fileCtx(_gSlice, 200000, 120000);   // نص ملفات Excel/Word/... كيتصيفط كنص عادي
+  let _lastBq = -1; if(_mt) _gSlice.forEach((m, k)=>{ if(_bqHasBlock(m)) _lastBq = k; });
+  let _inlineB64 = 0;
   const contents = _gSlice.map((m, k)=>{
     const parts = [];
-    const _tx = (m.text || '') + (_gFiles[k] ? (m.text ? '\n\n' : '') + _gFiles[k] : '');
+    let _mtext = m.text || '';
+    if(_mt && k < _lastBq && _bqHasBlock(m)) _mtext = _mtext.replace(/```bordereau[\s\S]*?```/g, '[جدول متري سابق — تحذف من السياق لتخفيف الطلب؛ آخر نتائج محسوبة فملخص النظام]');
+    const _tx = _mtext + (_gFiles[k] ? (_mtext ? '\n\n' : '') + _gFiles[k] : '');
     if(_tx) parts.push({text: _tx});
-    const hasAtt = (m.images && m.images.length) || m.image;
-    if(hasAtt && (_gBase + k) !== _gAttIdx){
-      parts.push({text: '[كان فهاد الرسالة مرفق (صورة/PDF) تصيفط قبل]'});
-    }else if(m.images && m.images.length){
-      m.images.forEach(img=> parts.push({inlineData:{mimeType: img.mime, data: img.data}}));
-    }else if(m.image){
-      parts.push({inlineData:{mimeType: m.image.mime, data: m.image.data}});
+    const _ims = (m.images && m.images.length) ? m.images : (m.image ? [m.image] : []);
+    if(_ims.length){
+      if(_lib && _ims.every(im=> _lib.sigs.has(_bqSig(im)))){
+        parts.push({text: '[مرفق: ' + _ims.map(im=> im.name || (/pdf/i.test(im.mime) ? 'PDF' : 'صورة')).join('، ') + ' — موجود فالبلانات المحفوظة المرفقة فبداية المحادثة]'});
+      }else if((_gBase + k) !== _gAttIdx){
+        parts.push({text: '[كان فهاد الرسالة مرفق (صورة/PDF) تصيفط قبل]'});
+      }else{
+        _ims.forEach(img=>{ _inlineB64 += String(img.data || '').length; parts.push({inlineData:{mimeType: img.mime, data: img.data}}); });
+      }
     }
     if(parts.length === 0) parts.push({text:''});
     return { role: m.role === 'user' ? 'user' : 'model', parts };
   });
+  // البلانات المحفوظة كتتصيفط فكل طلب فبداية المحادثة (الأحدث أولاً حتى حد ≈17MB)
+  if(_mt && _lib && _lib.all.length){
+    const _budget = Math.max(0, 17 * 1048576 - _inlineB64), _inc = [], _exc = []; let _used = 0;
+    for(let i = _lib.all.length - 1; i >= 0; i--){ const p = _lib.all[i]; if(_used + p.data.length <= _budget){ _inc.unshift(p); _used += p.data.length; } else _exc.unshift(p); }
+    if(_inc.length){
+      const lp = [{text: '[البلانات والمرفقات المحفوظة لهاد المشروع — مرفقة هنا، شوفها مباشرة وما تطلبش من المستخدم يعاود يصيفطها: ' + _inc.map((p, i)=> (i + 1) + ') ' + p.name).join(' ، ') + (_exc.length ? ' || ما قدرتش نصيفطهم (كبار بزاف): ' + _exc.map(p=> p.name).join(' ، ') : '') + ']'}];
+      _inc.forEach(p=> lp.push({inlineData: {mimeType: p.mime, data: p.data}}));
+      contents.unshift({role: 'user', parts: lp});
+    }
+  }
 
   const fullSystemPrompt = _yunusFullSystemPrompt(msgs);
-  const _mt = _metreurActive(msgs);   // وضع المتري المحترف: Pro + ميزانية كبيرة (الجدول الكامل ممكن يوصل لعشرات الآلاف من الـtokens)
   // رسالة جديدة فيها بلان/PDF/صورة (ولا مرفق تسجل بلا نص والمستخدم كتب التعليمات فالرسالة اللي بعدو)
   const _gFi = _lastFileIndex(msgs, 14);
   const _gFresh = (_gAttIdx >= 0 && (_gAttIdx === msgs.length - 1 || (_gAttIdx === msgs.length - 2 && !msgs[_gAttIdx].text && msgs[msgs.length - 1].role === 'user')))
@@ -8477,6 +8622,7 @@ function speakViaGoogleTTS(text, onStatus){
       .replace(/```devis[\s\S]*?```/g, ' فيه عرض سعر بالرد. ')
       .replace(/```tree[\s\S]*?```/g, ' فيه شجرة بالرد. ')
       .replace(/```bordereau[\s\S]*?```/g, ' فيه جدول متري احترافي بالرد. ')
+      .replace(/```memoire[\s\S]*?```/g, ' ')
       .replace(/```metre[\s\S]*?```/g, ' فيه جدول متري بالرد. ')
       .replace(/```image:[\s\S]*?```/g, ' فيه صورة بالرد. ')
       .replace(/```image:.+/g, ' فيه صورة بالرد. ')
@@ -14379,7 +14525,7 @@ function buildShareBtn(blob){
 
 /* ---------- بدء التشغيل ---------- */
 // بصمة النسخة: باش تعرف شمن نسخة محملة فالتطبيق
-try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 23-11-2026 (أ)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
+try{ const _v = document.createElement('div'); _v.textContent = 'نسخة 25-11-2026 (متري 2)'; _v.style.cssText = 'position:fixed; left:8px; bottom:4px; font-size:10px; opacity:.5; color:#999; z-index:99998; pointer-events:none;'; document.body.appendChild(_v); }catch(e){}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -14387,7 +14533,7 @@ if('serviceWorker' in navigator){
   });
   // تنظيف لمرة واحدة: يمسح النسخ القديمة المخزّنة ثم يعيد التحميل
   try{
-    const BUILD='files-2026-11-20a';
+    const BUILD='metre-2026-11-25b';
     if(LS.getItem('alioua_build') !== BUILD){
       LS.setItem('alioua_build', BUILD);
       Promise.all([
@@ -15105,7 +15251,7 @@ const SITE_AGENT = (function(){
     const base = _sp.apply(this, arguments);
     try{
       if(currentRole !== 'admin') return base;
-      if(_metreurActive(msgs)) return base + BQ_RULE;   // وضع المتري المحترف ديال عليوة (métreur)
+      if(_metreurActive(msgs)) return base + BQ_RULE + bqMemText();   // وضع المتري المحترف ديال عليوة (métreur)
       const q = ((msgs || []).slice().reverse().find(m=> m && m.role === 'user') || {}).text || '';
       const asAgent = _isAgentQ(q);
       if(!asAgent && !/مشروع|مشاريع|ورش|أوراش|اوراش|إنجاز|انجاز|تأخر|تاخر|غرامة|غرامه|عقد|ميزانية|ميزانيه|الأجل|اجل|أشغال|اشغال|بند|بنود|صفقة|متعاقد|لوط|فلوط|الدفعة|دفعات|الضمان|retenue/i.test(q)) return base;
